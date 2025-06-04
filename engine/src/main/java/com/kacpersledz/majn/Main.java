@@ -31,6 +31,8 @@ import static org.lwjgl.opengl.GL.createCapabilities;
 import static org.lwjgl.opengl.GL11.GL_COLOR_BUFFER_BIT;
 import static org.lwjgl.opengl.GL11.GL_DEPTH_BUFFER_BIT;
 import static org.lwjgl.opengl.GL11.GL_DEPTH_TEST;
+import static org.lwjgl.opengl.GL11.GL_FILL;
+import static org.lwjgl.opengl.GL11.GL_LINE;
 import static org.lwjgl.opengl.GL11.GL_MODELVIEW;
 import static org.lwjgl.opengl.GL11.GL_PROJECTION;
 import static org.lwjgl.opengl.GL11.GL_QUADS;
@@ -42,9 +44,11 @@ import static org.lwjgl.opengl.GL11.glColor3f;
 import static org.lwjgl.opengl.GL11.glEnable;
 import static org.lwjgl.opengl.GL11.glEnd;
 import static org.lwjgl.opengl.GL11.glGetString;
+import static org.lwjgl.opengl.GL11.glLineWidth;
 import static org.lwjgl.opengl.GL11.glLoadIdentity;
 import static org.lwjgl.opengl.GL11.glMatrixMode;
 import static org.lwjgl.opengl.GL11.glOrtho;
+import static org.lwjgl.opengl.GL11.glPolygonMode;
 import static org.lwjgl.opengl.GL11.glPopMatrix;
 import static org.lwjgl.opengl.GL11.glPushMatrix;
 import static org.lwjgl.opengl.GL11.glRotatef;
@@ -254,6 +258,58 @@ public class Main implements AutoCloseable, Runnable {
                         glVertex3f(-blockSize / 2, blockSize / 2, blockSize / 2);
                         glVertex3f(-blockSize / 2, blockSize / 2, -blockSize / 2);
                         glEnd();
+
+                        // Draw block borders
+                        glColor3f(0.0f, 0.0f, 0.0f); // Black color for borders
+                        glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+                        glLineWidth(2.0f); // Make lines a bit thicker
+
+                        // Re-draw the cube (lines will be rendered)
+                        // Front face
+                        glBegin(GL_QUADS);
+                        glVertex3f(-blockSize / 2, -blockSize / 2, blockSize / 2);
+                        glVertex3f(blockSize / 2, -blockSize / 2, blockSize / 2);
+                        glVertex3f(blockSize / 2, blockSize / 2, blockSize / 2);
+                        glVertex3f(-blockSize / 2, blockSize / 2, blockSize / 2);
+                        glEnd();
+                        // Back face
+                        glBegin(GL_QUADS);
+                        glVertex3f(-blockSize / 2, -blockSize / 2, -blockSize / 2);
+                        glVertex3f(-blockSize / 2, blockSize / 2, -blockSize / 2);
+                        glVertex3f(blockSize / 2, blockSize / 2, -blockSize / 2);
+                        glVertex3f(blockSize / 2, -blockSize / 2, -blockSize / 2);
+                        glEnd();
+                        // Top face
+                        glBegin(GL_QUADS);
+                        glVertex3f(-blockSize / 2, blockSize / 2, -blockSize / 2);
+                        glVertex3f(-blockSize / 2, blockSize / 2, blockSize / 2);
+                        glVertex3f(blockSize / 2, blockSize / 2, blockSize / 2);
+                        glVertex3f(blockSize / 2, blockSize / 2, -blockSize / 2);
+                        glEnd();
+                        // Bottom face
+                        glBegin(GL_QUADS);
+                        glVertex3f(-blockSize / 2, -blockSize / 2, -blockSize / 2);
+                        glVertex3f(blockSize / 2, -blockSize / 2, -blockSize / 2);
+                        glVertex3f(blockSize / 2, -blockSize / 2, blockSize / 2);
+                        glVertex3f(-blockSize / 2, -blockSize / 2, blockSize / 2);
+                        glEnd();
+                        // Right face
+                        glBegin(GL_QUADS);
+                        glVertex3f(blockSize / 2, -blockSize / 2, -blockSize / 2);
+                        glVertex3f(blockSize / 2, blockSize / 2, -blockSize / 2);
+                        glVertex3f(blockSize / 2, blockSize / 2, blockSize / 2);
+                        glVertex3f(blockSize / 2, -blockSize / 2, blockSize / 2);
+                        glEnd();
+                        // Left face
+                        glBegin(GL_QUADS);
+                        glVertex3f(-blockSize / 2, -blockSize / 2, -blockSize / 2);
+                        glVertex3f(-blockSize / 2, -blockSize / 2, blockSize / 2);
+                        glVertex3f(-blockSize / 2, blockSize / 2, blockSize / 2);
+                        glVertex3f(-blockSize / 2, blockSize / 2, -blockSize / 2);
+                        glEnd();
+
+                        glPolygonMode(GL_FRONT_AND_BACK, GL_FILL); // Reset to fill mode
+
                         glPopMatrix();
                     }
                 }
