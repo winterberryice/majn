@@ -204,9 +204,11 @@ public class Main implements AutoCloseable, Runnable {
                     if (block != null && block.getType() != Block.BlockType.AIR) {
 
                         if (block.getType() == Block.BlockType.DIRT) {
-                            glColor3f(0.6f, 0.4f, 0.2f);
+                            glColor3f(0.6f, 0.4f, 0.2f); // Brownish color for DIRT
+                        } else if (block.getType() == Block.BlockType.GRASS) {
+                            glColor3f(0.0f, 0.8f, 0.0f); // Green color for GRASS
                         } else {
-                            glColor3f(0.5f, 0.5f, 0.5f);
+                            glColor3f(0.5f, 0.5f, 0.5f); // Default grey for other types (if any)
                         }
 
                         float worldX = (chunkToRenderX * Chunk.CHUNK_WIDTH + x) * blockSize;

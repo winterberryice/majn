@@ -4,6 +4,7 @@ public class Block {
 
     public enum BlockType {
         DIRT,
+        GRASS, // Added GRASS
         AIR
     }
 
