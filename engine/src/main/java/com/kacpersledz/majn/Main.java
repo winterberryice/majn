@@ -39,6 +39,8 @@ import static org.lwjgl.system.MemoryUtil.NULL;
 import java.nio.IntBuffer;
 import org.lwjgl.Version;
 import org.lwjgl.glfw.GLFWVidMode;
+import com.kacpersledz.majn.world.World;
+import com.kacpersledz.majn.world.Block;
 import org.lwjgl.system.MemoryStack;
 
 /**
@@ -71,6 +73,28 @@ public class Main implements AutoCloseable, Runnable {
   }
 
   public void init() {
+    // Demonstrate World Generation
+    World world = new World();
+
+    // Generate a couple of chunks
+    System.out.println("Requesting chunk 0,0,0");
+    world.getChunk(0, 0, 0);
+    System.out.println("Requesting chunk 1,0,0");
+    world.getChunk(1, 0, 0);
+    System.out.println("Requesting chunk 0,0,0 again (should be cached)");
+    world.getChunk(0, 0, 0); // Should be cached
+
+    // Get and print some block types
+    System.out.println("Block at 0,0,0 type: " + world.getBlock(0, 0, 0).getType());
+    System.out.println("Block at 15,0,0 type: " + world.getBlock(15, 0, 0).getType()); // Still in chunk 0,0,0
+    System.out.println("Block at 16,0,0 type: " + world.getBlock(16, 0, 0).getType()); // Should be in chunk 1,0,0
+    System.out.println("Block at 5,5,5 type: " + world.getBlock(5, 5, 5).getType());
+
+    // Example of how to get a block from a non-generated chunk (will generate it)
+    System.out.println("Requesting block from new chunk 0,1,0 implicitly");
+    System.out.println("Block at 0,16,0 type: " + world.getBlock(0, 16, 0).getType());
+    System.out.println("--- End of World Generation Demonstration ---");
+
     createPrint(System.err).set();
     System.out.println("Starting LWJGL " + Version.getVersion());
     if (!glfwInit()) {
