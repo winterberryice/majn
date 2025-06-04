@@ -27,11 +27,23 @@ public class World {
     private void generateChunk(int chunkX, int chunkY, int chunkZ) {
         String key = getChunkKey(chunkX, chunkY, chunkZ);
         Chunk chunk = new Chunk();
-        // For now, fill the entire chunk with DIRT
+        int grassLevel = Chunk.CHUNK_HEIGHT / 2 - 1; // e.g., 16 / 2 - 1 = 7
+
+        // For now, generate a flat world with a layer of grass on top of dirt
         for (int x = 0; x < Chunk.CHUNK_WIDTH; x++) {
             for (int y = 0; y < Chunk.CHUNK_HEIGHT; y++) {
                 for (int z = 0; z < Chunk.CHUNK_DEPTH; z++) {
-                    chunk.setBlock(x, y, z, Block.BlockType.DIRT);
+                    if (y < grassLevel) {
+                        chunk.setBlock(x, y, z, Block.BlockType.DIRT);
+                    } else if (y == grassLevel) {
+                        chunk.setBlock(x, y, z, Block.BlockType.GRASS);
+                    } else {
+                        // This is important: ensure blocks above grass are AIR
+                        // The Chunk constructor already initializes to AIR,
+                        // so explicitly setting to AIR here is for clarity
+                        // or if the default Chunk initialization changes.
+                        chunk.setBlock(x, y, z, Block.BlockType.AIR);
+                    }
                 }
             }
         }
