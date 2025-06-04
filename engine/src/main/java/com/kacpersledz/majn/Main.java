@@ -30,17 +30,35 @@ import static org.lwjgl.glfw.GLFWErrorCallback.createPrint;
 import static org.lwjgl.opengl.GL.createCapabilities;
 import static org.lwjgl.opengl.GL11.GL_COLOR_BUFFER_BIT;
 import static org.lwjgl.opengl.GL11.GL_DEPTH_BUFFER_BIT;
+import static org.lwjgl.opengl.GL11.GL_DEPTH_TEST;
+import static org.lwjgl.opengl.GL11.GL_MODELVIEW;
+import static org.lwjgl.opengl.GL11.GL_PROJECTION;
+import static org.lwjgl.opengl.GL11.GL_QUADS;
 import static org.lwjgl.opengl.GL11.GL_VERSION;
+import static org.lwjgl.opengl.GL11.glBegin;
 import static org.lwjgl.opengl.GL11.glClear;
 import static org.lwjgl.opengl.GL11.glClearColor;
+import static org.lwjgl.opengl.GL11.glColor3f;
+import static org.lwjgl.opengl.GL11.glEnable;
+import static org.lwjgl.opengl.GL11.glEnd;
 import static org.lwjgl.opengl.GL11.glGetString;
+import static org.lwjgl.opengl.GL11.glLoadIdentity;
+import static org.lwjgl.opengl.GL11.glMatrixMode;
+import static org.lwjgl.opengl.GL11.glOrtho;
+import static org.lwjgl.opengl.GL11.glPopMatrix;
+import static org.lwjgl.opengl.GL11.glPushMatrix;
+import static org.lwjgl.opengl.GL11.glRotatef;
+import static org.lwjgl.opengl.GL11.glTranslatef;
+import static org.lwjgl.opengl.GL11.glVertex3f;
 import static org.lwjgl.system.MemoryStack.stackPush;
 import static org.lwjgl.system.MemoryUtil.NULL;
+
 import java.nio.IntBuffer;
 import org.lwjgl.Version;
 import org.lwjgl.glfw.GLFWVidMode;
-import com.kacpersledz.majn.world.World;
 import com.kacpersledz.majn.world.Block;
+import com.kacpersledz.majn.world.Chunk;
+import com.kacpersledz.majn.world.World;
 import org.lwjgl.system.MemoryStack;
 
 /**
@@ -57,6 +75,7 @@ public class Main implements AutoCloseable, Runnable {
   private static final int windowWidth = 300;
   private static final int windowHeight = 300;
   private long windowHandle;
+  private World world;
 
   public static void main(String... args) {
     try (Main main = new Main()) {
@@ -74,25 +93,25 @@ public class Main implements AutoCloseable, Runnable {
 
   public void init() {
     // Demonstrate World Generation
-    World world = new World();
+    this.world = new World();
 
     // Generate a couple of chunks
     System.out.println("Requesting chunk 0,0,0");
-    world.getChunk(0, 0, 0);
+    this.world.getChunk(0, 0, 0);
     System.out.println("Requesting chunk 1,0,0");
-    world.getChunk(1, 0, 0);
+    this.world.getChunk(1, 0, 0);
     System.out.println("Requesting chunk 0,0,0 again (should be cached)");
-    world.getChunk(0, 0, 0); // Should be cached
+    this.world.getChunk(0, 0, 0); // Should be cached
 
     // Get and print some block types
-    System.out.println("Block at 0,0,0 type: " + world.getBlock(0, 0, 0).getType());
-    System.out.println("Block at 15,0,0 type: " + world.getBlock(15, 0, 0).getType()); // Still in chunk 0,0,0
-    System.out.println("Block at 16,0,0 type: " + world.getBlock(16, 0, 0).getType()); // Should be in chunk 1,0,0
-    System.out.println("Block at 5,5,5 type: " + world.getBlock(5, 5, 5).getType());
+    System.out.println("Block at 0,0,0 type: " + this.world.getBlock(0, 0, 0).getType());
+    System.out.println("Block at 15,0,0 type: " + this.world.getBlock(15, 0, 0).getType()); // Still in chunk 0,0,0
+    System.out.println("Block at 16,0,0 type: " + this.world.getBlock(16, 0, 0).getType()); // Should be in chunk 1,0,0
+    System.out.println("Block at 5,5,5 type: " + this.world.getBlock(5, 5, 5).getType());
 
     // Example of how to get a block from a non-generated chunk (will generate it)
     System.out.println("Requesting block from new chunk 0,1,0 implicitly");
-    System.out.println("Block at 0,16,0 type: " + world.getBlock(0, 16, 0).getType());
+    System.out.println("Block at 0,16,0 type: " + this.world.getBlock(0, 16, 0).getType());
     System.out.println("--- End of World Generation Demonstration ---");
 
     createPrint(System.err).set();
@@ -127,12 +146,126 @@ public class Main implements AutoCloseable, Runnable {
     glfwShowWindow(windowHandle);
     createCapabilities();
     System.out.println("OpenGL: " + glGetString(GL_VERSION));
+    glEnable(GL_DEPTH_TEST);
+    setupProjection();
     glClearColor(0.0f, 0.0f, 0.2f, 0.0f);
+  }
+
+  private void setupProjection() {
+    glMatrixMode(GL_PROJECTION);
+    glLoadIdentity();
+    // Simple orthographic projection for now
+    // Show a 20x20x20 volume. Adjust as needed.
+    float aspectRatio = (float)windowWidth / windowHeight;
+    // Define a viewing volume for orthographic projection
+    // Let's try to view a 32x32 block area, assuming block size is 1.
+    float viewSize = 32.0f;
+    glOrtho(-viewSize * aspectRatio / 2, viewSize * aspectRatio / 2, -viewSize / 2, viewSize / 2, -100, 200); // increased far clipping plane
+    glMatrixMode(GL_MODELVIEW);
+  }
+
+  private void renderWorld() {
+    if (this.world == null) {
+        return;
+    }
+
+    // Clear ModelView matrix
+    glMatrixMode(GL_MODELVIEW);
+    glLoadIdentity();
+
+    // Basic camera positioning: look at origin from a distance
+    //glTranslatef(0f, -5f, -30f); // Camera position
+    // Let's try to view the first chunk (16x16x16 blocks)
+    // Center camera on the middle of the first chunk and pull back
+    glTranslatef(-(Chunk.CHUNK_WIDTH/2.0f), -(Chunk.CHUNK_HEIGHT/2.0f) - 5.0f, - (Chunk.CHUNK_DEPTH * 2.0f) - 20.0f);
+    glRotatef(30f, 1f, 0f, 0f); // Tilt camera down
+    glRotatef(45f, 0f, 1f, 0f); // Rotate camera
+
+    glEnable(GL_DEPTH_TEST);
+    // Define block size (assuming 1x1x1 blocks)
+    float blockSize = 1.0f;
+
+    // Render a small portion of the world, e.g., one chunk (0,0,0)
+    int chunkToRenderX = 0;
+    int chunkToRenderY = 0;
+    int chunkToRenderZ = 0;
+    Chunk chunkToRender = this.world.getChunk(chunkToRenderX, chunkToRenderY, chunkToRenderZ);
+
+    if (chunkToRender != null) {
+        for (int x = 0; x < Chunk.CHUNK_WIDTH; x++) {
+            for (int y = 0; y < Chunk.CHUNK_HEIGHT; y++) {
+                for (int z = 0; z < Chunk.CHUNK_DEPTH; z++) {
+                    Block block = chunkToRender.getBlock(x, y, z);
+                    if (block != null && block.getType() != Block.BlockType.AIR) {
+
+                        if (block.getType() == Block.BlockType.DIRT) {
+                            glColor3f(0.6f, 0.4f, 0.2f);
+                        } else {
+                            glColor3f(0.5f, 0.5f, 0.5f);
+                        }
+
+                        float worldX = (chunkToRenderX * Chunk.CHUNK_WIDTH + x) * blockSize;
+                        float worldY = (chunkToRenderY * Chunk.CHUNK_HEIGHT + y) * blockSize;
+                        float worldZ = (chunkToRenderZ * Chunk.CHUNK_DEPTH + z) * blockSize;
+
+                        glPushMatrix();
+                        glTranslatef(worldX, worldY, worldZ);
+
+                        // Draw a cube (same cube drawing code as before)
+                        // Front face
+                        glBegin(GL_QUADS);
+                        glVertex3f(-blockSize / 2, -blockSize / 2, blockSize / 2);
+                        glVertex3f(blockSize / 2, -blockSize / 2, blockSize / 2);
+                        glVertex3f(blockSize / 2, blockSize / 2, blockSize / 2);
+                        glVertex3f(-blockSize / 2, blockSize / 2, blockSize / 2);
+                        glEnd();
+                        // Back face
+                        glBegin(GL_QUADS);
+                        glVertex3f(-blockSize / 2, -blockSize / 2, -blockSize / 2);
+                        glVertex3f(-blockSize / 2, blockSize / 2, -blockSize / 2);
+                        glVertex3f(blockSize / 2, blockSize / 2, -blockSize / 2);
+                        glVertex3f(blockSize / 2, -blockSize / 2, -blockSize / 2);
+                        glEnd();
+                        // Top face
+                        glBegin(GL_QUADS);
+                        glVertex3f(-blockSize / 2, blockSize / 2, -blockSize / 2);
+                        glVertex3f(-blockSize / 2, blockSize / 2, blockSize / 2);
+                        glVertex3f(blockSize / 2, blockSize / 2, blockSize / 2);
+                        glVertex3f(blockSize / 2, blockSize / 2, -blockSize / 2);
+                        glEnd();
+                        // Bottom face
+                        glBegin(GL_QUADS);
+                        glVertex3f(-blockSize / 2, -blockSize / 2, -blockSize / 2);
+                        glVertex3f(blockSize / 2, -blockSize / 2, -blockSize / 2);
+                        glVertex3f(blockSize / 2, -blockSize / 2, blockSize / 2);
+                        glVertex3f(-blockSize / 2, -blockSize / 2, blockSize / 2);
+                        glEnd();
+                        // Right face
+                        glBegin(GL_QUADS);
+                        glVertex3f(blockSize / 2, -blockSize / 2, -blockSize / 2);
+                        glVertex3f(blockSize / 2, blockSize / 2, -blockSize / 2);
+                        glVertex3f(blockSize / 2, blockSize / 2, blockSize / 2);
+                        glVertex3f(blockSize / 2, -blockSize / 2, blockSize / 2);
+                        glEnd();
+                        // Left face
+                        glBegin(GL_QUADS);
+                        glVertex3f(-blockSize / 2, -blockSize / 2, -blockSize / 2);
+                        glVertex3f(-blockSize / 2, -blockSize / 2, blockSize / 2);
+                        glVertex3f(-blockSize / 2, blockSize / 2, blockSize / 2);
+                        glVertex3f(-blockSize / 2, blockSize / 2, -blockSize / 2);
+                        glEnd();
+                        glPopMatrix();
+                    }
+                }
+            }
+        }
+    }
   }
 
   public void loop() {
     while (!glfwWindowShouldClose(windowHandle)) {
       glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+      renderWorld(); // Call renderWorld here
       glfwSwapBuffers(windowHandle);
       glfwPollEvents();
     }
