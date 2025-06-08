@@ -181,7 +181,7 @@ public class Main implements AutoCloseable, Runnable {
       }
 
       float xoffset = (float) (xpos - lastMouseX);
-      float yoffset = (float) (lastMouseY - ypos); // Reversed since y-coordinates go from top to bottom
+      float yoffset = (float) (ypos - lastMouseY); // Corrected for non-inverted pitch
 
       lastMouseX = xpos;
       lastMouseY = ypos;
