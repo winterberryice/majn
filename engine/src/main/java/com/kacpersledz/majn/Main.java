@@ -58,7 +58,8 @@ import static org.lwjgl.opengl.GL11.glBegin;
 import static org.lwjgl.opengl.GL11.glClear;
 import static org.lwjgl.opengl.GL11.glClearColor;
 // glColor3f is already imported, but explicitly noting for text rendering context
-import static org.lwjgl.opengl.GL11.glColor3f;
+import static org.lwjgl.opengl.GL11.*; // For GL constants and functions
+import static org.lwjgl.opengl.GL12.*; // For GL_CLAMP_TO_EDGE if used
 import static org.lwjgl.opengl.GL11.glEnable;
 import static org.lwjgl.opengl.GL11.glEnd;
 import static org.lwjgl.opengl.GL11.glGetString;
@@ -73,10 +74,12 @@ import static org.lwjgl.opengl.GL11.glTranslatef;
 import static org.lwjgl.opengl.GL11.glVertex3f;
 import static org.lwjgl.system.MemoryStack.stackPush;
 import static org.lwjgl.system.MemoryUtil.NULL;
+import java.nio.ByteBuffer;
 import java.nio.IntBuffer;
 import org.joml.Matrix4f; // Added for JOML
 import org.lwjgl.Version;
 import org.lwjgl.glfw.GLFWVidMode;
+import org.lwjgl.stb.STBImage;
 import org.lwjgl.system.MemoryStack; // Already here but good to note for glLoadMatrixf
 import com.kacpersledz.majn.controller.Camera;
 import com.kacpersledz.majn.world.Block;
@@ -100,6 +103,19 @@ public class Main implements AutoCloseable, Runnable {
   private World world;
   private Camera camera;
   private boolean showDebugInfo = false;
+
+  // Texture ID for the font
+  private static int fontTextureId = -1;
+
+  // Font metric constants
+  private static final int FONT_CHAR_WIDTH = 8;
+  private static final int FONT_CHAR_HEIGHT = 12;
+  private static final int FONT_TEXTURE_COLUMNS = 16; // Chars per row in font.png
+  private static final int FONT_TEXTURE_ROWS = 8;    // Assuming 128 chars (16*8) in font.png for basic ASCII
+  // Assuming font.png itself is FONT_TEXTURE_COLUMNS * FONT_CHAR_WIDTH pixels wide
+  // and FONT_TEXTURE_ROWS * FONT_CHAR_HEIGHT pixels high.
+  private static final float FONT_TEXTURE_CELL_WIDTH = (float)FONT_CHAR_WIDTH / (FONT_TEXTURE_COLUMNS * FONT_CHAR_WIDTH);
+  private static final float FONT_TEXTURE_CELL_HEIGHT = (float)FONT_CHAR_HEIGHT / (FONT_TEXTURE_ROWS * FONT_CHAR_HEIGHT);
 
   // Time tracking for FPS
   private double lastFrameTime = 0.0;
@@ -228,6 +244,47 @@ public class Main implements AutoCloseable, Runnable {
     setupProjection();
     glClearColor(0.0f, 0.0f, 0.2f, 0.0f);
     lastFrameTime = glfwGetTime(); // Initialize lastFrameTime for FPS calculation
+
+    // Load font texture
+    try {
+      fontTextureId = loadFontTexture("engine/src/main/resources/textures/font.png");
+    } catch (Exception e) {
+      System.err.println("Failed to load font texture:");
+      e.printStackTrace();
+      // Handle error appropriately, maybe exit or use a fallback
+    }
+  }
+
+  private static int loadFontTexture(String filePath) throws Exception {
+    try (MemoryStack stack = MemoryStack.stackPush()) {
+      IntBuffer pWidth = stack.mallocInt(1);
+      IntBuffer pHeight = stack.mallocInt(1);
+      IntBuffer pChannels = stack.mallocInt(1);
+
+      ByteBuffer imageData = STBImage.stbi_load(filePath, pWidth, pHeight, pChannels, 4); // Force 4 channels for RGBA
+      if (imageData == null) {
+        throw new RuntimeException("Failed to load font image: " + filePath + " - " + STBImage.stbi_failure_reason());
+      }
+
+      int width = pWidth.get(0);
+      int height = pHeight.get(0);
+      // int channels = pChannels.get(0); // For debugging
+
+      int textureId = glGenTextures();
+      glBindTexture(GL_TEXTURE_2D, textureId);
+
+      // Set texture parameters
+      glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+      glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+      glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+      glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+
+      // Upload texture data
+      glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, imageData);
+
+      STBImage.stbi_image_free(imageData);
+      return textureId;
+    }
   }
 
   private void setupProjection() {
@@ -476,12 +533,20 @@ public class Main implements AutoCloseable, Runnable {
     String rotText = String.format("Yaw: %.1f Pitch: %.1f", camera.getYaw(), camera.getPitch());
     String openGLVersionText = "OpenGL: " + glGetString(GL_VERSION);
 
-    // Render Text using placeholder drawString
-    // TODO: Implement actual text rendering in drawString
-    drawString(10, 20, fpsText);
-    drawString(10, 40, posText);
-    drawString(10, 60, rotText);
-    drawString(10, 80, openGLVersionText);
+    // Set text color to white
+    glColor3f(1.0f, 1.0f, 1.0f);
+
+    // Render Text using drawString with proper line spacing
+    float yPos = 10.0f;
+    float linePadding = 2.0f; // Small padding between lines
+
+    drawString(10, yPos, fpsText);
+    yPos += FONT_CHAR_HEIGHT + linePadding;
+    drawString(10, yPos, posText);
+    yPos += FONT_CHAR_HEIGHT + linePadding;
+    drawString(10, yPos, rotText);
+    yPos += FONT_CHAR_HEIGHT + linePadding;
+    drawString(10, yPos, openGLVersionText);
 
     // Restore Previous Projection and State
     glEnable(GL_DEPTH_TEST);
@@ -492,11 +557,44 @@ public class Main implements AutoCloseable, Runnable {
   }
 
   private void drawString(float x, float y, String text) {
-    // TODO: Implement actual text rendering here.
-    // This could involve loading a font, creating textures for each character,
-    // and then rendering quads textured with these characters.
-    // For now, just print to console to verify it's being called.
-    System.out.println("drawString at (" + x + ", " + y + "): " + text);
+    if (fontTextureId == -1) return; // Don't draw if font failed to load
+
+    glEnable(GL_TEXTURE_2D);
+    glBindTexture(GL_TEXTURE_2D, fontTextureId);
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+    // Assuming color is set by glColor3f before calling drawString
+    // (e.g., in renderDebugInfo, though not explicitly set for text yet)
+    // For white text: glColor3f(1.0f, 1.0f, 1.0f);
+
+    float currentX = x;
+    glBegin(GL_QUADS);
+    for (char character : text.toCharArray()) {
+      if (character < 32 || character > 126) character = '?'; // Replace unsupported chars
+      int asciiValue = character;
+      // Assuming the font texture maps directly to ASCII values 0-127
+      // or at least the range 32-126 is directly mappable.
+
+      int charRow = asciiValue / FONT_TEXTURE_COLUMNS;
+      int charCol = asciiValue % FONT_TEXTURE_COLUMNS;
+
+      float texU1 = (float)charCol * FONT_TEXTURE_CELL_WIDTH;
+      float texV1 = (float)charRow * FONT_TEXTURE_CELL_HEIGHT;
+      float texU2 = texU1 + FONT_TEXTURE_CELL_WIDTH;
+      float texV2 = texV1 + FONT_TEXTURE_CELL_HEIGHT;
+
+      glTexCoord2f(texU1, texV1); glVertex2f(currentX, y);
+      glTexCoord2f(texU2, texV1); glVertex2f(currentX + FONT_CHAR_WIDTH, y);
+      glTexCoord2f(texU2, texV2); glVertex2f(currentX + FONT_CHAR_WIDTH, y + FONT_CHAR_HEIGHT);
+      glTexCoord2f(texU1, texV2); glVertex2f(currentX, y + FONT_CHAR_HEIGHT);
+
+      currentX += FONT_CHAR_WIDTH;
+    }
+    glEnd();
+
+    glDisable(GL_BLEND);
+    glDisable(GL_TEXTURE_2D);
   }
 
   @Override
