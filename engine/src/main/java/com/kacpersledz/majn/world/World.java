@@ -74,17 +74,15 @@ public class World {
 
         Collection<Chunk> nearbyChunks = new ArrayList<>();
 
-        for (int xOffset = -1; xOffset <= 1; xOffset++) {
-            for (int zOffset = -1; zOffset <= 1; zOffset++) {
-                // Y dimension is 1, so no offset for Y
-                int targetChunkX = playerChunkX + xOffset;
-                int targetChunkY = playerChunkY; // Current player chunk Y
-                int targetChunkZ = playerChunkZ + zOffset;
+        // Player's current chunk
+        nearbyChunks.add(getChunk(playerChunkX, playerChunkY, playerChunkZ));
 
-                Chunk chunk = getChunk(targetChunkX, targetChunkY, targetChunkZ);
-                nearbyChunks.add(chunk);
-            }
-        }
+        // Immediate N, S, E, W neighbors
+        nearbyChunks.add(getChunk(playerChunkX + 1, playerChunkY, playerChunkZ)); // East
+        nearbyChunks.add(getChunk(playerChunkX - 1, playerChunkY, playerChunkZ)); // West
+        nearbyChunks.add(getChunk(playerChunkX, playerChunkY, playerChunkZ + 1)); // South
+        nearbyChunks.add(getChunk(playerChunkX, playerChunkY, playerChunkZ - 1)); // North
+
         return nearbyChunks;
     }
 }
