@@ -69,6 +69,7 @@ import static org.lwjgl.opengl.GL11.glVertex3f;
 import static org.lwjgl.system.MemoryStack.stackPush;
 import static org.lwjgl.system.MemoryUtil.NULL;
 import java.nio.IntBuffer;
+import java.util.Collection; // Added for Collection
 import org.joml.Matrix4f; // Added for JOML
 import org.lwjgl.Version;
 import org.lwjgl.glfw.GLFWVidMode;
@@ -243,36 +244,45 @@ public class Main implements AutoCloseable, Runnable {
     // Define block size (assuming 1x1x1 blocks)
     float blockSize = 1.0f;
 
-    // Render a small portion of the world, e.g., one chunk (0,0,0)
-    int chunkToRenderX = 0;
-    int chunkToRenderY = 0;
-    int chunkToRenderZ = 0;
-    Chunk chunkToRender = this.world.getChunk(chunkToRenderX, chunkToRenderY, chunkToRenderZ);
+    // Get player's position
+    int playerX = (int) Math.floor(camera.getX());
+    int playerY = (int) Math.floor(camera.getY());
+    int playerZ = (int) Math.floor(camera.getZ());
 
-    if (chunkToRender != null) {
-      for (int x = 0; x < Chunk.CHUNK_WIDTH; x++) {
-        for (int y = 0; y < Chunk.CHUNK_HEIGHT; y++) {
-          for (int z = 0; z < Chunk.CHUNK_DEPTH; z++) {
-            Block block = chunkToRender.getBlock(x, y, z);
-            if (block != null && block.getType() != Block.BlockType.AIR) {
+    // Get chunks around the player
+    Collection<Chunk> chunksToRender = world.getChunksAroundPlayer(playerX, playerY, playerZ);
 
-              if (block.getType() == Block.BlockType.DIRT) {
-                glColor3f(0.6f, 0.4f, 0.2f); // Brownish color for DIRT
-              } else if (block.getType() == Block.BlockType.GRASS) {
-                glColor3f(0.0f, 0.8f, 0.0f); // Green color for GRASS
-              } else {
-                glColor3f(0.5f, 0.5f, 0.5f); // Default grey for other types (if any)
-              }
+    for (Chunk currentChunk : chunksToRender) {
+        if (currentChunk == null) continue;
 
-              float worldX = (chunkToRenderX * Chunk.CHUNK_WIDTH + x) * blockSize;
-              float worldY = (chunkToRenderY * Chunk.CHUNK_HEIGHT + y) * blockSize;
-              float worldZ = (chunkToRenderZ * Chunk.CHUNK_DEPTH + z) * blockSize;
+        int chunkBaseX = currentChunk.getChunkX();
+        int chunkBaseY = currentChunk.getChunkY();
+        int chunkBaseZ = currentChunk.getChunkZ();
 
-              glPushMatrix();
-              glTranslatef(worldX, worldY, worldZ);
+        for (int localX = 0; localX < Chunk.CHUNK_WIDTH; localX++) {
+            for (int localY = 0; localY < Chunk.CHUNK_HEIGHT; localY++) {
+                for (int localZ = 0; localZ < Chunk.CHUNK_DEPTH; localZ++) {
+                    Block block = currentChunk.getBlock(localX, localY, localZ);
+                    if (block != null && block.getType() != Block.BlockType.AIR) {
 
-              // Draw a cube (same cube drawing code as before)
-              // Front face
+                        if (block.getType() == Block.BlockType.DIRT) {
+                            glColor3f(0.6f, 0.4f, 0.2f); // Brownish color for DIRT
+                        } else if (block.getType() == Block.BlockType.GRASS) {
+                            glColor3f(0.0f, 0.8f, 0.0f); // Green color for GRASS
+                        } else {
+                            glColor3f(0.5f, 0.5f, 0.5f); // Default grey for other types (if any)
+                        }
+
+                        // Calculate absolute world coordinates for this block
+                        float worldX = (chunkBaseX * Chunk.CHUNK_WIDTH + localX) * blockSize;
+                        float worldY = (chunkBaseY * Chunk.CHUNK_HEIGHT + localY) * blockSize;
+                        float worldZ = (chunkBaseZ * Chunk.CHUNK_DEPTH + localZ) * blockSize;
+
+                        glPushMatrix();
+                        glTranslatef(worldX, worldY, worldZ);
+
+                        // Draw a cube (same cube drawing code as before)
+                        // Front face
               glBegin(GL_QUADS);
               glVertex3f(-blockSize / 2, -blockSize / 2, blockSize / 2);
               glVertex3f(blockSize / 2, -blockSize / 2, blockSize / 2);
