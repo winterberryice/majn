@@ -7,8 +7,14 @@ public class Chunk {
     public static final int CHUNK_DEPTH = 16;
 
     private Block[][][] blocks;
+    private final int chunkX;
+    private final int chunkY;
+    private final int chunkZ;
 
-    public Chunk() {
+    public Chunk(int chunkX, int chunkY, int chunkZ) {
+        this.chunkX = chunkX;
+        this.chunkY = chunkY;
+        this.chunkZ = chunkZ;
         blocks = new Block[CHUNK_WIDTH][CHUNK_HEIGHT][CHUNK_DEPTH];
         // Initialize all blocks to AIR by default
         for (int x = 0; x < CHUNK_WIDTH; x++) {
@@ -34,5 +40,17 @@ public class Chunk {
             return;
         }
         blocks[x][y][z] = new Block(type);
+    }
+
+    public int getChunkX() {
+        return chunkX;
+    }
+
+    public int getChunkY() {
+        return chunkY;
+    }
+
+    public int getChunkZ() {
+        return chunkZ;
     }
 }
