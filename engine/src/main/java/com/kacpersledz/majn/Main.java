@@ -8,8 +8,10 @@ import static org.lwjgl.glfw.GLFW.GLFW_KEY_A;
 import static org.lwjgl.glfw.GLFW.GLFW_KEY_D;
 import static org.lwjgl.glfw.GLFW.GLFW_KEY_ESCAPE;
 import static org.lwjgl.glfw.GLFW.GLFW_KEY_F;
+import static org.lwjgl.glfw.GLFW.GLFW_KEY_F3;
 import static org.lwjgl.glfw.GLFW.GLFW_KEY_S;
 import static org.lwjgl.glfw.GLFW.GLFW_KEY_SPACE;
+import static org.lwjgl.glfw.GLFW.glfwGetTime;
 // Added these imports for camera control
 import static org.lwjgl.glfw.GLFW.GLFW_KEY_W;
 import static org.lwjgl.glfw.GLFW.GLFW_PRESS;
@@ -46,6 +48,8 @@ import static org.lwjgl.opengl.GL11.GL_DEPTH_TEST;
 import static org.lwjgl.opengl.GL11.GL_FILL;
 import static org.lwjgl.opengl.GL11.GL_FRONT_AND_BACK;
 import static org.lwjgl.opengl.GL11.GL_LINE;
+import static org.lwjgl.opengl.GL11.glDisable;
+import static org.lwjgl.opengl.GL11.glOrtho;
 import static org.lwjgl.opengl.GL11.GL_MODELVIEW;
 import static org.lwjgl.opengl.GL11.GL_PROJECTION;
 import static org.lwjgl.opengl.GL11.GL_QUADS;
@@ -53,6 +57,7 @@ import static org.lwjgl.opengl.GL11.GL_VERSION;
 import static org.lwjgl.opengl.GL11.glBegin;
 import static org.lwjgl.opengl.GL11.glClear;
 import static org.lwjgl.opengl.GL11.glClearColor;
+// glColor3f is already imported, but explicitly noting for text rendering context
 import static org.lwjgl.opengl.GL11.glColor3f;
 import static org.lwjgl.opengl.GL11.glEnable;
 import static org.lwjgl.opengl.GL11.glEnd;
@@ -94,6 +99,13 @@ public class Main implements AutoCloseable, Runnable {
   private long windowHandle;
   private World world;
   private Camera camera;
+  private boolean showDebugInfo = false;
+
+  // Time tracking for FPS
+  private double lastFrameTime = 0.0;
+  private int frames = 0;
+  private double timeAccumulator = 0.0;
+  private double fps = 0.0;
 
   // Camera movement state
   private boolean moveForward;
@@ -144,6 +156,9 @@ public class Main implements AutoCloseable, Runnable {
     glfwSetKeyCallback(windowHandle, (window, key, scancode, action, mods) -> {
       if (key == GLFW_KEY_ESCAPE && action == GLFW_RELEASE) {
         glfwSetWindowShouldClose(window, true);
+      }
+      if (key == GLFW_KEY_F3 && action == GLFW_RELEASE) {
+        showDebugInfo = !showDebugInfo;
       }
       // Camera movement keys
       if (action == GLFW_PRESS || action == GLFW_RELEASE) {
@@ -212,6 +227,7 @@ public class Main implements AutoCloseable, Runnable {
     glEnable(GL_DEPTH_TEST);
     setupProjection();
     glClearColor(0.0f, 0.0f, 0.2f, 0.0f);
+    lastFrameTime = glfwGetTime(); // Initialize lastFrameTime for FPS calculation
   }
 
   private void setupProjection() {
@@ -416,9 +432,71 @@ public class Main implements AutoCloseable, Runnable {
 
       glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
       renderWorld(); // Call renderWorld here
+
+      if (showDebugInfo) {
+        renderDebugInfo();
+      }
+
       glfwSwapBuffers(windowHandle);
       glfwPollEvents();
     }
+  }
+
+  private void renderDebugInfo() {
+    // Switch to Orthographic Projection
+    int[] w = new int[1], h = new int[1];
+    glfwGetWindowSize(windowHandle, w, h);
+    int width = w[0];
+    int height = h[0];
+
+    glMatrixMode(GL_PROJECTION);
+    glPushMatrix();
+    glLoadIdentity();
+    glOrtho(0.0, width, height, 0.0, -1.0, 1.0); // Top-left origin
+    glMatrixMode(GL_MODELVIEW);
+    glPushMatrix();
+    glLoadIdentity();
+    glDisable(GL_DEPTH_TEST); // Disable depth testing for 2D overlay
+
+    // Calculate FPS
+    double currentTime = glfwGetTime();
+    double deltaTime = currentTime - lastFrameTime;
+    lastFrameTime = currentTime;
+    timeAccumulator += deltaTime;
+    frames++;
+    if (timeAccumulator >= 1.0) {
+      fps = frames / timeAccumulator;
+      frames = 0;
+      timeAccumulator -= 1.0;
+    }
+
+    // Prepare Debug Strings
+    String fpsText = String.format("FPS: %.2f", fps);
+    String posText = String.format("X: %.2f Y: %.2f Z: %.2f", camera.getX(), camera.getY(), camera.getZ());
+    String rotText = String.format("Yaw: %.1f Pitch: %.1f", camera.getYaw(), camera.getPitch());
+    String openGLVersionText = "OpenGL: " + glGetString(GL_VERSION);
+
+    // Render Text using placeholder drawString
+    // TODO: Implement actual text rendering in drawString
+    drawString(10, 20, fpsText);
+    drawString(10, 40, posText);
+    drawString(10, 60, rotText);
+    drawString(10, 80, openGLVersionText);
+
+    // Restore Previous Projection and State
+    glEnable(GL_DEPTH_TEST);
+    glMatrixMode(GL_PROJECTION);
+    glPopMatrix();
+    glMatrixMode(GL_MODELVIEW);
+    glPopMatrix();
+  }
+
+  private void drawString(float x, float y, String text) {
+    // TODO: Implement actual text rendering here.
+    // This could involve loading a font, creating textures for each character,
+    // and then rendering quads textured with these characters.
+    // For now, just print to console to verify it's being called.
+    System.out.println("drawString at (" + x + ", " + y + "): " + text);
   }
 
   @Override
