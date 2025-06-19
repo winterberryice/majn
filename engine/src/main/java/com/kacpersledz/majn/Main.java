@@ -74,13 +74,29 @@ import static org.lwjgl.opengl.GL11.glTranslatef;
 import static org.lwjgl.opengl.GL11.glVertex3f;
 import static org.lwjgl.system.MemoryStack.stackPush;
 import static org.lwjgl.system.MemoryUtil.NULL;
+
+import java.io.File; // For loading from file path (alternative)
+import java.io.FileInputStream; // For loading from file path (alternative)
+import java.io.IOException;
+import java.io.InputStream; // For loading from classpath
 import java.nio.ByteBuffer;
+import java.nio.FloatBuffer;
 import java.nio.IntBuffer;
+import java.nio.channels.Channels;
+import java.nio.channels.FileChannel;
+import java.nio.channels.ReadableByteChannel;
+
 import org.joml.Matrix4f; // Added for JOML
 import org.lwjgl.Version;
 import org.lwjgl.glfw.GLFWVidMode;
 import org.lwjgl.stb.STBImage;
+import org.lwjgl.stb.STBTTAlignedQuad;
+import org.lwjgl.stb.STBTTFontinfo;
+import org.lwjgl.stb.STBTTPackContext;
+import org.lwjgl.stb.STBTTPackedchar;
+import org.lwjgl.stb.STBTruetype; // Provides stbtt_* static methods
 import org.lwjgl.system.MemoryStack; // Already here but good to note for glLoadMatrixf
+import org.lwjgl.system.MemoryUtil; // For MemoryUtil.memAllocFloat, etc. if needed directly
 import com.kacpersledz.majn.controller.Camera;
 import com.kacpersledz.majn.world.Block;
 import com.kacpersledz.majn.world.Chunk;
@@ -104,18 +120,14 @@ public class Main implements AutoCloseable, Runnable {
   private Camera camera;
   private boolean showDebugInfo = false;
 
-  // Texture ID for the font
-  private static int fontTextureId = -1;
-
-  // Font metric constants
-  private static final int FONT_CHAR_WIDTH = 8;
-  private static final int FONT_CHAR_HEIGHT = 12;
-  private static final int FONT_TEXTURE_COLUMNS = 16; // Chars per row in font.png
-  private static final int FONT_TEXTURE_ROWS = 8;    // Assuming 128 chars (16*8) in font.png for basic ASCII
-  // Assuming font.png itself is FONT_TEXTURE_COLUMNS * FONT_CHAR_WIDTH pixels wide
-  // and FONT_TEXTURE_ROWS * FONT_CHAR_HEIGHT pixels high.
-  private static final float FONT_TEXTURE_CELL_WIDTH = (float)FONT_CHAR_WIDTH / (FONT_TEXTURE_COLUMNS * FONT_CHAR_WIDTH);
-  private static final float FONT_TEXTURE_CELL_HEIGHT = (float)FONT_CHAR_HEIGHT / (FONT_TEXTURE_ROWS * FONT_CHAR_HEIGHT);
+  // TrueType Font data
+  private static ByteBuffer ttf;
+  private static STBTTFontinfo fontInfo;
+  private static STBTTPackedchar.Buffer charData;
+  private static int fontAtlasTextureId = -1; // Initialize to -1
+  private static float currentFontSize;
+  private static final int BITMAP_W = 512; // Width of the font atlas texture
+  private static final int BITMAP_H = 512; // Height of the font atlas texture
 
   // Time tracking for FPS
   private double lastFrameTime = 0.0;
@@ -245,46 +257,125 @@ public class Main implements AutoCloseable, Runnable {
     glClearColor(0.0f, 0.0f, 0.2f, 0.0f);
     lastFrameTime = glfwGetTime(); // Initialize lastFrameTime for FPS calculation
 
-    // Load font texture
     try {
-      fontTextureId = loadFontTexture("engine/src/main/resources/textures/font.png");
-    } catch (Exception e) {
-      System.err.println("Failed to load font texture:");
+      // TODO: User needs to replace "path/to/your/font.otf" with the actual
+      // resource path to their OTF file.
+      // For example, if font.otf is in src/main/resources/fonts/font.otf, path
+      // would be "fonts/font.otf"
+      loadTruetypeFont("fonts/your_font_name.otf", 15.0f); // Using 15.0f as a default size
+    } catch (IOException e) {
+      System.err.println("Failed to load TrueType font:");
       e.printStackTrace();
-      // Handle error appropriately, maybe exit or use a fallback
+      // Optionally, set a flag to not attempt rendering text or exit
     }
   }
 
-  private static int loadFontTexture(String filePath) throws Exception {
-    try (MemoryStack stack = MemoryStack.stackPush()) {
-      IntBuffer pWidth = stack.mallocInt(1);
-      IntBuffer pHeight = stack.mallocInt(1);
-      IntBuffer pChannels = stack.mallocInt(1);
-
-      ByteBuffer imageData = STBImage.stbi_load(filePath, pWidth, pHeight, pChannels, 4); // Force 4 channels for RGBA
-      if (imageData == null) {
-        throw new RuntimeException("Failed to load font image: " + filePath + " - " + STBImage.stbi_failure_reason());
+  private static ByteBuffer ioResourceToByteBuffer(String resource, int bufferSize) throws IOException {
+    ByteBuffer buffer;
+    File file = new File(resource);
+    if (file.isFile()) {
+      try (FileInputStream fis = new FileInputStream(file);
+          FileChannel fc = fis.getChannel()) {
+        buffer = MemoryUtil.memAlloc((int) fc.size() + 1); // Use MemoryUtil for direct buffer
+        while (fc.read(buffer) != -1) {
+          ;
+        }
       }
-
-      int width = pWidth.get(0);
-      int height = pHeight.get(0);
-      // int channels = pChannels.get(0); // For debugging
-
-      int textureId = glGenTextures();
-      glBindTexture(GL_TEXTURE_2D, textureId);
-
-      // Set texture parameters
-      glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-      glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-      glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-      glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-
-      // Upload texture data
-      glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, imageData);
-
-      STBImage.stbi_image_free(imageData);
-      return textureId;
+    } else {
+      // Try loading from classpath
+      try (InputStream source = Main.class.getClassLoader().getResourceAsStream(resource);
+          ReadableByteChannel rbc = Channels.newChannel(source)) {
+        buffer = MemoryUtil.memAlloc(bufferSize); // Allocate bufferSize
+        if (source == null) {
+            throw new IOException("Resource not found: " + resource);
+        }
+        while (true) {
+          int bytes = rbc.read(buffer);
+          if (bytes == -1) {
+            break;
+          }
+          if (buffer.remaining() == 0) {
+            // Option to reallocate a larger buffer if needed, or ensure bufferSize is
+            // adequate
+            // For simplicity, assume bufferSize is large enough or handle error
+            ByteBuffer newBuffer = MemoryUtil.memRealloc(buffer, buffer.capacity() * 2);
+            if (newBuffer == null) {
+              throw new OutOfMemoryError();
+            }
+            buffer = newBuffer;
+          }
+        }
+      }
     }
+    buffer.flip();
+    return buffer;
+  }
+
+  private static void loadTruetypeFont(String otfResourcePath, float fontSize) throws IOException {
+    fontInfo = STBTTFontinfo.create();
+    // Assuming charData will be created and populated in the next step (glyph
+    // packing)
+    // charData = STBTTPackedchar.create(96); // For ASCII 32-126 (95 chars + 1
+    // for safety/indexing)
+
+    // Load the font file.
+    // Using a buffer size of 150KB for the font, adjust if necessary.
+    // Common .otf files are often < 150KB.
+    ttf = ioResourceToByteBuffer(otfResourcePath, 150 * 1024);
+
+    if (!STBTruetype.stbtt_InitFont(fontInfo, ttf)) {
+      throw new IllegalStateException("Failed to initialize font information.");
+    }
+
+    currentFontSize = fontSize;
+
+    // Initialize charData buffer for 96 characters (ASCII 32-126)
+    charData = STBTTPackedchar.create(96);
+
+    // Create a bitmap for the font atlas
+    ByteBuffer bitmap = MemoryUtil.memAlloc(BITMAP_W * BITMAP_H); // Grayscale bitmap
+
+    STBTTPackContext pc = STBTTPackContext.create();
+    try {
+      STBTruetype.stbtt_PackBegin(pc, bitmap, BITMAP_W, BITMAP_H, 0, 1, MemoryUtil.NULL);
+      // Pack characters from ASCII 32 (space) to 126 (~)
+      // The null for stbtt_PackSetOversampling indicates no oversampling.
+      // You could use stbtt_PackSetOversampling(pc, H_OVERSAMPLE, V_OVERSAMPLE)
+      // before stbtt_PackFontRange for antialiasing.
+      // For simplicity, no oversampling first.
+      if (!STBTruetype.stbtt_PackFontRange(pc, ttf, 0, currentFontSize, 32, charData)) {
+        throw new IllegalStateException("Failed to pack font characters.");
+      }
+    } finally {
+      STBTruetype.stbtt_PackEnd(pc);
+      pc.free(); // Free the pack context
+    }
+
+    // Create OpenGL texture for the font atlas
+    fontAtlasTextureId = glGenTextures();
+    glBindTexture(GL_TEXTURE_2D, fontAtlasTextureId);
+
+    // We are creating a grayscale (alpha) texture
+    // GL_ALPHA or GL_RED are common choices for single-channel textures.
+    // If using GL_RED, shaders might need to swizzle .r to .a (e.g., color.a =
+    // texture(tex, uv).r)
+    // For fixed-function pipeline compatibility with glColor, GL_ALPHA is often
+    // easier.
+    // However, GL_ALPHA textures are sometimes deprecated or less performant in
+    // modern GL.
+    // Let's try GL_RED first, as it's common for single channel data in modern GL.
+    // If issues arise, GL_ALPHA could be an alternative, or converting bitmap to
+    // RGBA.
+    glPixelStorei(GL_UNPACK_ALIGNMENT, 1); // Important for single-channel textures
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RED, BITMAP_W, BITMAP_H, 0, GL_RED, GL_UNSIGNED_BYTE, bitmap);
+
+    // Set texture parameters
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+
+    MemoryUtil.memFree(bitmap); // Free the CPU-side bitmap now that it's on the GPU
   }
 
   private void setupProjection() {
@@ -533,20 +624,24 @@ public class Main implements AutoCloseable, Runnable {
     String rotText = String.format("Yaw: %.1f Pitch: %.1f", camera.getYaw(), camera.getPitch());
     String openGLVersionText = "OpenGL: " + glGetString(GL_VERSION);
 
-    // Set text color to white
-    glColor3f(1.0f, 1.0f, 1.0f);
+    // Set text color to white, fully opaque
+    glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
 
     // Render Text using drawString with proper line spacing
-    float yPos = 10.0f;
-    float linePadding = 2.0f; // Small padding between lines
+    float xPos = 10.0f; // Starting X position for all lines
+    float yPos = 10.0f; // Starting Y position for the first line
+    // Use currentFontSize as an approximate line height.
+    // Add a small factor for padding, e.g., currentFontSize * 1.2f or
+    // currentFontSize + 4
+    float lineHeight = currentFontSize + 4.0f;
 
-    drawString(10, yPos, fpsText);
-    yPos += FONT_CHAR_HEIGHT + linePadding;
-    drawString(10, yPos, posText);
-    yPos += FONT_CHAR_HEIGHT + linePadding;
-    drawString(10, yPos, rotText);
-    yPos += FONT_CHAR_HEIGHT + linePadding;
-    drawString(10, yPos, openGLVersionText);
+    drawString(xPos, yPos, fpsText);
+    yPos += lineHeight;
+    drawString(xPos, yPos, posText);
+    yPos += lineHeight;
+    drawString(xPos, yPos, rotText);
+    yPos += lineHeight;
+    drawString(xPos, yPos, openGLVersionText);
 
     // Restore Previous Projection and State
     glEnable(GL_DEPTH_TEST);
@@ -557,41 +652,49 @@ public class Main implements AutoCloseable, Runnable {
   }
 
   private void drawString(float x, float y, String text) {
-    if (fontTextureId == -1) return; // Don't draw if font failed to load
+    if (fontAtlasTextureId == -1 || charData == null) {
+      System.err.println("Font not loaded, cannot drawString.");
+      return; // Font not loaded
+    }
 
     glEnable(GL_TEXTURE_2D);
-    glBindTexture(GL_TEXTURE_2D, fontTextureId);
+    glBindTexture(GL_TEXTURE_2D, fontAtlasTextureId);
+
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    // Note: glColor4f should be called before drawString to set text color and
+    // alpha.
+    // The GL_RED texture will be treated as alpha by the blending function
+    // when used with glColor's components.
 
-    // Assuming color is set by glColor3f before calling drawString
-    // (e.g., in renderDebugInfo, though not explicitly set for text yet)
-    // For white text: glColor3f(1.0f, 1.0f, 1.0f);
+    try (MemoryStack stack = MemoryStack.stackPush()) {
+      FloatBuffer xPos = stack.floats(x);
+      FloatBuffer yPos = stack.floats(y);
+      STBTTAlignedQuad q = STBTTAlignedQuad.mallocStack(stack);
 
-    float currentX = x;
-    glBegin(GL_QUADS);
-    for (char character : text.toCharArray()) {
-      if (character < 32 || character > 126) character = '?'; // Replace unsupported chars
-      int asciiValue = character;
-      // Assuming the font texture maps directly to ASCII values 0-127
-      // or at least the range 32-126 is directly mappable.
+      glBegin(GL_QUADS);
+      for (int i = 0; i < text.length(); i++) {
+        char character = text.charAt(i);
+        if (character < 32 || character >= 127) { // charData has 95 entries (32 to 126)
+          // Replace unsupported characters with a default, e.g., '?' (ASCII 63)
+          // Ensure '?' is within your packed range. ASCII 63 is index 63-32 = 31.
+          character = '?';
+        }
 
-      int charRow = asciiValue / FONT_TEXTURE_COLUMNS;
-      int charCol = asciiValue % FONT_TEXTURE_COLUMNS;
+        // stbtt_GetPackedQuad advances xPos and yPos according to font metrics
+        STBTruetype.stbtt_GetPackedQuad(charData, BITMAP_W, BITMAP_H, character - 32, xPos, yPos, q, false);
 
-      float texU1 = (float)charCol * FONT_TEXTURE_CELL_WIDTH;
-      float texV1 = (float)charRow * FONT_TEXTURE_CELL_HEIGHT;
-      float texU2 = texU1 + FONT_TEXTURE_CELL_WIDTH;
-      float texV2 = texV1 + FONT_TEXTURE_CELL_HEIGHT;
-
-      glTexCoord2f(texU1, texV1); glVertex2f(currentX, y);
-      glTexCoord2f(texU2, texV1); glVertex2f(currentX + FONT_CHAR_WIDTH, y);
-      glTexCoord2f(texU2, texV2); glVertex2f(currentX + FONT_CHAR_WIDTH, y + FONT_CHAR_HEIGHT);
-      glTexCoord2f(texU1, texV2); glVertex2f(currentX, y + FONT_CHAR_HEIGHT);
-
-      currentX += FONT_CHAR_WIDTH;
+        glTexCoord2f(q.s0(), q.t0());
+        glVertex2f(q.x0(), q.y0());
+        glTexCoord2f(q.s1(), q.t0());
+        glVertex2f(q.x1(), q.y0());
+        glTexCoord2f(q.s1(), q.t1());
+        glVertex2f(q.x1(), q.y1());
+        glTexCoord2f(q.s0(), q.t1());
+        glVertex2f(q.x0(), q.y1());
+      }
+      glEnd();
     }
-    glEnd();
 
     glDisable(GL_BLEND);
     glDisable(GL_TEXTURE_2D);
