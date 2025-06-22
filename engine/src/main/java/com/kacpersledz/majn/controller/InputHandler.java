@@ -70,27 +70,27 @@ public class InputHandler {
             switch (key) {
                 case GLFW_KEY_W:
                     moveForward = pressed;
-                    mainApp.setMoveForward(pressed); // Update Main
+                    // mainApp.setMoveForward(pressed); // Removed
                     break;
                 case GLFW_KEY_S:
                     moveBackward = pressed;
-                    mainApp.setMoveBackward(pressed); // Update Main
+                    // mainApp.setMoveBackward(pressed); // Removed
                     break;
                 case GLFW_KEY_A:
                     moveLeft = pressed;
-                    mainApp.setMoveLeft(pressed); // Update Main
+                    // mainApp.setMoveLeft(pressed); // Removed
                     break;
                 case GLFW_KEY_D:
                     moveRight = pressed;
-                    mainApp.setMoveRight(pressed); // Update Main
+                    // mainApp.setMoveRight(pressed); // Removed
                     break;
                 case GLFW_KEY_SPACE:
                     moveUp = pressed;
-                    mainApp.setMoveUp(pressed); // Update Main
+                    // mainApp.setMoveUp(pressed); // Removed
                     break;
                 case GLFW_KEY_F: // Assuming F is for down
                     moveDown = pressed;
-                    mainApp.setMoveDown(pressed); // Update Main
+                    // mainApp.setMoveDown(pressed); // Removed
                     break;
             }
         }
@@ -123,10 +123,10 @@ public class InputHandler {
         // e.g., re-centering mouse or adjusting sensitivity, do it here.
         // For now, this is a placeholder.
         // The Renderer will primarily handle this for projection matrix updates.
-        if (camera != null && mainApp != null) { // mainApp for setupProjection, will move to Renderer
+        // if (camera != null && mainApp != null) { // Commented out mainApp reference
             // This call to setupProjection will be moved to Renderer
             // mainApp.setupProjection(); // This is incorrect here, Main will call Renderer
-        }
+        // }
     }
 
     // Getters for game state (Main/Game class will query these)

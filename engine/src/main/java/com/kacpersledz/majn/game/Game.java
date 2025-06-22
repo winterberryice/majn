@@ -3,6 +3,7 @@ package com.kacpersledz.majn.game; // Corrected package
 // Static imports for GLFW and OpenGL are now mostly within Window, Renderer, FontRenderer
 import static org.lwjgl.glfw.GLFW.glfwGetTime; // Retained for main loop timing if needed, though Renderer handles FPS
 import static org.lwjgl.opengl.GL11.glGetString; // For OpenGL version logging
+import static org.lwjgl.opengl.GL11.GL_VERSION;  // Added import for GL_VERSION
 // GL11 imports are no longer needed here, Renderer handles all GL calls.
 // GL12 imports (GL_CLAMP_TO_EDGE) are in FontRenderer.
 // MemoryStack.stackPush might be used if Main does any direct JOM/LWJGL struct work, but unlikely now.
