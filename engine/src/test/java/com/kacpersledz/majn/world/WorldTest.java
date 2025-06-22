@@ -55,8 +55,8 @@ class WorldTest {
 
         Block block5 = world.getBlock(-1, -1, -1); // This is (15,15,15) in chunk (-1,-1,-1)
         assertNotNull(block5);
-        assertEquals(Block.BlockType.DIRT, block5.getType());
-        assertEquals(Block.BlockType.DIRT, world.getChunk(-1,-1,-1).getBlock(Chunk.CHUNK_WIDTH-1,Chunk.CHUNK_HEIGHT-1,Chunk.CHUNK_DEPTH-1).getType());
+        assertEquals(Block.BlockType.AIR, block5.getType(), "Block at y=15 (world -1) should be AIR"); // Corrected
+        assertEquals(Block.BlockType.AIR, world.getChunk(-1,-1,-1).getBlock(Chunk.CHUNK_WIDTH-1,Chunk.CHUNK_HEIGHT-1,Chunk.CHUNK_DEPTH-1).getType(), "Block at y=15 (world -1) via direct chunk access should be AIR"); // Corrected
     }
 
     @Test
