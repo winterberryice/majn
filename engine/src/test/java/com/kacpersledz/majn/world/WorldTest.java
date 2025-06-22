@@ -32,13 +32,17 @@ class WorldTest {
         assertEquals(Block.BlockType.DIRT, block1.getType(), "Block at 5,5,5 should be DIRT");
 
         // Test block at the edge of the first chunk
+        // This block is at local y = CHUNK_HEIGHT - 1 (e.g., 15), which is above grassLevel (7).
+        // So it should be AIR.
         Block block2 = world.getBlock(Chunk.CHUNK_WIDTH - 1, Chunk.CHUNK_HEIGHT - 1, Chunk.CHUNK_DEPTH - 1);
         assertNotNull(block2);
-        assertEquals(Block.BlockType.DIRT, block2.getType());
+        assertEquals(Block.BlockType.AIR, block2.getType(), "Block at top edge should be AIR"); // Corrected expected type to AIR
 
         // Test block that should be in a different, newly generated chunk
         Block block3 = world.getBlock(Chunk.CHUNK_WIDTH, 0, 0); // This is (0,0,0) in chunk (1,0,0)
         assertNotNull(block3);
+        // Diagnostic prints removed as the immediate issue for block2 is addressed.
+        // If block3 related tests fail later, diagnostics can be re-added.
         assertEquals(Block.BlockType.DIRT, block3.getType());
         assertEquals(Block.BlockType.DIRT, world.getChunk(1,0,0).getBlock(0,0,0).getType());
 
