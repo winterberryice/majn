@@ -11,6 +11,7 @@ import static org.lwjgl.glfw.GLFW.GLFW_KEY_F;
 import static org.lwjgl.glfw.GLFW.GLFW_KEY_F3;
 import static org.lwjgl.glfw.GLFW.GLFW_KEY_S;
 import static org.lwjgl.glfw.GLFW.GLFW_KEY_SPACE;
+import static org.lwjgl.glfw.GLFW.GLFW_CURSOR_NORMAL; // Added this import
 // Added these imports for camera control
 import static org.lwjgl.glfw.GLFW.GLFW_KEY_W;
 import static org.lwjgl.glfw.GLFW.GLFW_PRESS;
@@ -30,6 +31,7 @@ import static org.lwjgl.glfw.GLFW.glfwMakeContextCurrent;
 import static org.lwjgl.glfw.GLFW.glfwPollEvents;
 import static org.lwjgl.glfw.GLFW.glfwSetCursorPosCallback;
 import static org.lwjgl.glfw.GLFW.glfwSetErrorCallback;
+import static org.lwjgl.glfw.GLFW.glfwSetFramebufferSizeCallback; // Added this import
 import static org.lwjgl.glfw.GLFW.glfwSetInputMode;
 import static org.lwjgl.glfw.GLFW.glfwSetKeyCallback;
 import static org.lwjgl.glfw.GLFW.glfwSetWindowPos;
@@ -87,6 +89,7 @@ import static org.lwjgl.opengl.GL11.glPixelStorei;
 import static org.lwjgl.opengl.GL11.glPolygonMode;
 import static org.lwjgl.opengl.GL11.glPopMatrix;
 import static org.lwjgl.opengl.GL11.glPushMatrix;
+import static org.lwjgl.opengl.GL11.glScalef; // Added this import
 import static org.lwjgl.opengl.GL11.glTexCoord2f;
 import static org.lwjgl.opengl.GL11.glTexImage2D;
 import static org.lwjgl.opengl.GL11.glTexParameteri;
@@ -134,12 +137,13 @@ import com.kacpersledz.majn.world.World;
 public class Main implements AutoCloseable, Runnable {
 
   private static final String windowTitle = "Hello, World!";
-  private static final int windowWidth = 300;
-  private static final int windowHeight = 300;
+  private int windowWidth = 854; // Increased initial width
+  private int windowHeight = 480; // Increased initial height
   private long windowHandle;
   private World world;
   private Camera camera;
   private boolean showDebugInfo = false;
+  private boolean isPaused = false; // Added for pause state
 
   // TrueType Font data
   private static ByteBuffer ttf;
@@ -204,10 +208,18 @@ public class Main implements AutoCloseable, Runnable {
     }
     glfwSetKeyCallback(windowHandle, (window, key, scancode, action, mods) -> {
       if (key == GLFW_KEY_ESCAPE && action == GLFW_RELEASE) {
-        glfwSetWindowShouldClose(window, true);
+        // glfwSetWindowShouldClose(window, true); // Original escape behavior
+        isPaused = !isPaused; // Toggle pause state
+        if (isPaused) {
+          glfwSetInputMode(windowHandle, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+        } else {
+          glfwSetInputMode(windowHandle, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+          firstMouse = true; // Reset for smooth mouse capture
+        }
       }
       if (key == GLFW_KEY_F3 && action == GLFW_RELEASE) {
         showDebugInfo = !showDebugInfo;
+        // Mouse behavior change removed, F3 only toggles debug info
       }
       // Camera movement keys
       if (action == GLFW_PRESS || action == GLFW_RELEASE) {
@@ -248,7 +260,7 @@ public class Main implements AutoCloseable, Runnable {
       lastMouseX = xpos;
       lastMouseY = ypos;
 
-      if (camera != null) { // Ensure camera is initialized
+      if (camera != null && !isPaused) { // Ensure camera is initialized and game is not paused
         // Pass dyaw (xoffset) and dpitch (yoffset)
         camera.rotate(yoffset, xoffset);
       }
@@ -268,12 +280,25 @@ public class Main implements AutoCloseable, Runnable {
     glfwSwapInterval(1);
     glfwShowWindow(windowHandle);
 
+    // Framebuffer size callback for window resizing
+    glfwSetFramebufferSizeCallback(windowHandle, (window, width, height) -> {
+        this.windowWidth = width;
+        this.windowHeight = height;
+        org.lwjgl.opengl.GL11.glViewport(0, 0, width, height); // Explicitly call glViewport
+        setupProjection(); // Recalculate projection matrix with new aspect ratio
+    });
+
     // Set cursor mode for FPS-like camera
     glfwSetInputMode(windowHandle, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
 
     createCapabilities();
     System.out.println("OpenGL: " + glGetString(GL_VERSION));
     glEnable(GL_DEPTH_TEST);
+    // Initial setup of projection matrix
+    // We need to ensure windowWidth and windowHeight are correctly initialized before this call
+    // They are initialized with default values (300x300), so this should be fine.
+    // If the window size is obtained from glfwGetWindowSize before this, it would be even better.
+    // For now, relying on the initial values.
     setupProjection();
     glClearColor(0.0f, 0.0f, 0.2f, 0.0f);
     lastFrameTime = glfwGetTime(); // Initialize lastFrameTime for FPS calculation
@@ -400,7 +425,8 @@ public class Main implements AutoCloseable, Runnable {
     glMatrixMode(GL_PROJECTION);
     glLoadIdentity();
     Matrix4f projectionMatrix = new Matrix4f();
-    float aspectRatio = (float) windowWidth / windowHeight;
+    // Ensure height is not zero to avoid division by zero, though practically GLFW won't allow it.
+    float aspectRatio = (windowHeight > 0) ? (float) windowWidth / windowHeight : 1.0f;
     projectionMatrix.perspective((float) Math.toRadians(60.0f), aspectRatio, 0.1f, 500.0f);
 
     try (MemoryStack stack = MemoryStack.stackPush()) {
@@ -603,19 +629,87 @@ public class Main implements AutoCloseable, Runnable {
 
   public void loop() {
     while (!glfwWindowShouldClose(windowHandle)) {
-      // Process input and update camera (before clearing screen and rendering)
-      processInputAndUpdateCamera();
+      if (!isPaused) {
+        // Process input and update camera (before clearing screen and rendering)
+        processInputAndUpdateCamera();
+      }
 
       glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-      renderWorld(); // Call renderWorld here
+      renderWorld(); // Call renderWorld here, even if paused, to show the world behind pause screen
 
-      if (showDebugInfo) {
+      if (isPaused) {
+        renderPauseScreen();
+      } else if (showDebugInfo) { // Show debug info only if not paused and F3 is active
         renderDebugInfo();
       }
 
       glfwSwapBuffers(windowHandle);
       glfwPollEvents();
     }
+  }
+
+  private void renderPauseScreen() {
+    // Switch to Orthographic Projection
+    int[] w = new int[1], h = new int[1];
+    glfwGetWindowSize(windowHandle, w, h);
+    int width = w[0];
+    int height = h[0];
+
+    glMatrixMode(GL_PROJECTION);
+    glPushMatrix();
+    glLoadIdentity();
+    glOrtho(0.0, width, height, 0.0, -1.0, 1.0); // Top-left origin
+    glMatrixMode(GL_MODELVIEW);
+    glPushMatrix();
+    glLoadIdentity();
+    glDisable(GL_DEPTH_TEST); // Disable depth testing for 2D overlay
+
+    String pauseText = "PAUSE";
+    float textScale = 3.0f; // Scale factor for the "PAUSE" text
+
+    // Approximate width and height of the text
+    // For width, using a rough estimate: average char width is ~0.6 * fontSize
+    float approxCharWidth = currentFontSize * 0.6f;
+    float textWidthUnscaled = pauseText.length() * approxCharWidth;
+    float textHeightUnscaled = currentFontSize; // STBTTPackedchar gives glyphs aligned to baseline
+
+    float textWidthScaled = textWidthUnscaled * textScale;
+    float textHeightScaled = textHeightUnscaled * textScale;
+
+    // Calculate top-left position for the scaled text to be centered
+    float drawX = (width - textWidthScaled) / 2.0f;
+    float drawY = (height - textHeightScaled) / 2.0f;
+
+    glPushMatrix(); // Save current matrix state
+
+    // Translate to the top-left position where scaled text should start, then scale
+    glTranslatef(drawX, drawY, 0);
+    glScalef(textScale, textScale, 1.0f);
+
+    // Set color for the text
+    glColor4f(1.0f, 1.0f, 1.0f, 1.0f); // White text
+
+    // Draw the string at (0,0) in the new scaled and translated coordinate system
+    // The y-coordinate for drawString is typically the baseline.
+    // Since our drawY is top-left, and STBTT renders from baseline,
+    // drawing at (0,0) here will place the baseline of the text at drawY.
+    // If we want drawY to be the very top of the text, we'd need to adjust.
+    // For simplicity, let's assume current drawString behavior works well with (0,0) as top-left after translate.
+    // If text appears too low, it means drawString's y is baseline.
+    // Then y for drawString should be `textHeightUnscaled` or similar to render it "upwards" from baseline.
+    // Let's test with drawString(0, 0, pauseText) first assuming it handles y as top.
+    // If not, we will use drawString(0, textHeightUnscaled, pauseText)
+    // The `drawString` method itself handles `y` as the top of the quad for the first char.
+    drawString(0, 0, pauseText);
+
+    glPopMatrix(); // Restore matrix state
+
+    // Restore Previous Projection and State
+    glEnable(GL_DEPTH_TEST);
+    glMatrixMode(GL_PROJECTION);
+    glPopMatrix();
+    glMatrixMode(GL_MODELVIEW);
+    glPopMatrix();
   }
 
   private void renderDebugInfo() {
