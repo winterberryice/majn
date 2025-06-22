@@ -1,5 +1,7 @@
 package com.kacpersledz.majn.world;
 
+import java.util.ArrayList;
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -26,7 +28,7 @@ public class World {
 
     private void generateChunk(int chunkX, int chunkY, int chunkZ) {
         String key = getChunkKey(chunkX, chunkY, chunkZ);
-        Chunk chunk = new Chunk();
+        Chunk chunk = new Chunk(chunkX, chunkY, chunkZ);
         int grassLevel = Chunk.CHUNK_HEIGHT / 2 - 1; // e.g., 16 / 2 - 1 = 7
 
         // For now, generate a flat world with a layer of grass on top of dirt
@@ -63,5 +65,24 @@ public class World {
         int localZ = Math.floorMod(worldZ, Chunk.CHUNK_DEPTH);
 
         return chunk.getBlock(localX, localY, localZ);
+    }
+
+    public Collection<Chunk> getChunksAroundPlayer(int playerX, int playerY, int playerZ) {
+        int playerChunkX = Math.floorDiv(playerX, Chunk.CHUNK_WIDTH);
+        int playerChunkY = Math.floorDiv(playerY, Chunk.CHUNK_HEIGHT);
+        int playerChunkZ = Math.floorDiv(playerZ, Chunk.CHUNK_DEPTH);
+
+        Collection<Chunk> nearbyChunks = new ArrayList<>();
+
+        // Player's current chunk
+        nearbyChunks.add(getChunk(playerChunkX, playerChunkY, playerChunkZ));
+
+        // Immediate N, S, E, W neighbors
+        nearbyChunks.add(getChunk(playerChunkX + 1, playerChunkY, playerChunkZ)); // East
+        nearbyChunks.add(getChunk(playerChunkX - 1, playerChunkY, playerChunkZ)); // West
+        nearbyChunks.add(getChunk(playerChunkX, playerChunkY, playerChunkZ + 1)); // South
+        nearbyChunks.add(getChunk(playerChunkX, playerChunkY, playerChunkZ - 1)); // North
+
+        return nearbyChunks;
     }
 }

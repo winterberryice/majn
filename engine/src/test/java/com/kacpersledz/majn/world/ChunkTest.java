@@ -7,7 +7,7 @@ class ChunkTest {
 
     @Test
     void testChunkInitialization() {
-        Chunk chunk = new Chunk();
+        Chunk chunk = new Chunk(0, 0, 0);
         for (int x = 0; x < Chunk.CHUNK_WIDTH; x++) {
             for (int y = 0; y < Chunk.CHUNK_HEIGHT; y++) {
                 for (int z = 0; z < Chunk.CHUNK_DEPTH; z++) {
@@ -20,7 +20,7 @@ class ChunkTest {
 
     @Test
     void testSetAndGetBlock() {
-        Chunk chunk = new Chunk();
+        Chunk chunk = new Chunk(0, 0, 0);
         chunk.setBlock(0, 0, 0, Block.BlockType.DIRT);
         assertEquals(Block.BlockType.DIRT, chunk.getBlock(0, 0, 0).getType(), "Block type should be DIRT after setBlock");
 
@@ -34,7 +34,7 @@ class ChunkTest {
 
     @Test
     void testGetBlockOutOfBounds() {
-        Chunk chunk = new Chunk();
+        Chunk chunk = new Chunk(0, 0, 0);
         assertNull(chunk.getBlock(-1, 0, 0), "Getting block out of bounds (x-negative) should return null");
         assertNull(chunk.getBlock(Chunk.CHUNK_WIDTH, 0, 0), "Getting block out of bounds (x-positive) should return null");
         assertNull(chunk.getBlock(0, -1, 0), "Getting block out of bounds (y-negative) should return null");
@@ -45,7 +45,7 @@ class ChunkTest {
 
     @Test
     void testSetBlockOutOfBounds() {
-        Chunk chunk = new Chunk();
+        Chunk chunk = new Chunk(0, 0, 0);
         // These calls should not throw exceptions and the chunk should remain intact
         chunk.setBlock(-1, 0, 0, Block.BlockType.DIRT);
         chunk.setBlock(Chunk.CHUNK_WIDTH, 0, 0, Block.BlockType.DIRT);
