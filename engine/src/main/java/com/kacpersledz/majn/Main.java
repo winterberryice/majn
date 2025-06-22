@@ -136,12 +136,13 @@ import com.kacpersledz.majn.world.World;
 public class Main implements AutoCloseable, Runnable {
 
   private static final String windowTitle = "Hello, World!";
-  private int windowWidth = 300; // Made non-final
-  private int windowHeight = 300; // Made non-final
+  private int windowWidth = 854; // Increased initial width
+  private int windowHeight = 480; // Increased initial height
   private long windowHandle;
   private World world;
   private Camera camera;
   private boolean showDebugInfo = false;
+  private boolean isPaused = false; // Added for pause state
 
   // TrueType Font data
   private static ByteBuffer ttf;
@@ -206,16 +207,18 @@ public class Main implements AutoCloseable, Runnable {
     }
     glfwSetKeyCallback(windowHandle, (window, key, scancode, action, mods) -> {
       if (key == GLFW_KEY_ESCAPE && action == GLFW_RELEASE) {
-        glfwSetWindowShouldClose(window, true);
-      }
-      if (key == GLFW_KEY_F3 && action == GLFW_RELEASE) {
-        showDebugInfo = !showDebugInfo;
-        if (showDebugInfo) {
+        // glfwSetWindowShouldClose(window, true); // Original escape behavior
+        isPaused = !isPaused; // Toggle pause state
+        if (isPaused) {
           glfwSetInputMode(windowHandle, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
         } else {
           glfwSetInputMode(windowHandle, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
           firstMouse = true; // Reset for smooth mouse capture
         }
+      }
+      if (key == GLFW_KEY_F3 && action == GLFW_RELEASE) {
+        showDebugInfo = !showDebugInfo;
+        // Mouse behavior change removed, F3 only toggles debug info
       }
       // Camera movement keys
       if (action == GLFW_PRESS || action == GLFW_RELEASE) {
@@ -256,7 +259,7 @@ public class Main implements AutoCloseable, Runnable {
       lastMouseX = xpos;
       lastMouseY = ypos;
 
-      if (camera != null && !showDebugInfo) { // Ensure camera is initialized and debug info is not shown
+      if (camera != null && !isPaused) { // Ensure camera is initialized and game is not paused
         // Pass dyaw (xoffset) and dpitch (yoffset)
         camera.rotate(yoffset, xoffset);
       }
@@ -625,19 +628,68 @@ public class Main implements AutoCloseable, Runnable {
 
   public void loop() {
     while (!glfwWindowShouldClose(windowHandle)) {
-      // Process input and update camera (before clearing screen and rendering)
-      processInputAndUpdateCamera();
+      if (!isPaused) {
+        // Process input and update camera (before clearing screen and rendering)
+        processInputAndUpdateCamera();
+      }
 
       glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-      renderWorld(); // Call renderWorld here
+      renderWorld(); // Call renderWorld here, even if paused, to show the world behind pause screen
 
-      if (showDebugInfo) {
+      if (isPaused) {
+        renderPauseScreen();
+      } else if (showDebugInfo) { // Show debug info only if not paused and F3 is active
         renderDebugInfo();
       }
 
       glfwSwapBuffers(windowHandle);
       glfwPollEvents();
     }
+  }
+
+  private void renderPauseScreen() {
+    // Switch to Orthographic Projection
+    int[] w = new int[1], h = new int[1];
+    glfwGetWindowSize(windowHandle, w, h);
+    int width = w[0];
+    int height = h[0];
+
+    glMatrixMode(GL_PROJECTION);
+    glPushMatrix();
+    glLoadIdentity();
+    glOrtho(0.0, width, height, 0.0, -1.0, 1.0); // Top-left origin
+    glMatrixMode(GL_MODELVIEW);
+    glPushMatrix();
+    glLoadIdentity();
+    glDisable(GL_DEPTH_TEST); // Disable depth testing for 2D overlay
+
+    String pauseText = "PAUSE";
+    // For centering, we'd ideally need to measure text width.
+    // STB Truetype can provide this, but it's more involved.
+    // For a simple approach, estimate or use a fixed offset.
+    // Let's try to use a larger font size for "PAUSE"
+    // We might need a separate font loading for different sizes or scale existing one.
+    // For now, use existing font settings.
+    // To make it "noticeable", we can draw it larger if we had easy text scaling or a larger font.
+    // A simple way is to just draw it with current font settings.
+    // Centering text: (width - textWidth) / 2, (height - textHeight) / 2
+    // Text width estimation is tricky without stb_truetype calls like stbtt_GetCodepointHMetrics and summing them up.
+    // Let's just place it somewhat centrally.
+    float textWidthApproximation = pauseText.length() * currentFontSize * 0.6f; // Very rough estimate
+    float xPos = (width - textWidthApproximation) / 2;
+    float yPos = height / 2 - currentFontSize / 2;
+
+
+    glColor4f(1.0f, 1.0f, 1.0f, 1.0f); // White text
+    drawString(xPos, yPos, pauseText);
+
+
+    // Restore Previous Projection and State
+    glEnable(GL_DEPTH_TEST);
+    glMatrixMode(GL_PROJECTION);
+    glPopMatrix();
+    glMatrixMode(GL_MODELVIEW);
+    glPopMatrix();
   }
 
   private void renderDebugInfo() {
