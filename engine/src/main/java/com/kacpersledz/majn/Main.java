@@ -11,7 +11,6 @@ import static org.lwjgl.glfw.GLFW.GLFW_KEY_F;
 import static org.lwjgl.glfw.GLFW.GLFW_KEY_F3;
 import static org.lwjgl.glfw.GLFW.GLFW_KEY_S;
 import static org.lwjgl.glfw.GLFW.GLFW_KEY_SPACE;
-import static org.lwjgl.glfw.GLFW.glfwGetTime;
 // Added these imports for camera control
 import static org.lwjgl.glfw.GLFW.GLFW_KEY_W;
 import static org.lwjgl.glfw.GLFW.GLFW_PRESS;
@@ -23,6 +22,7 @@ import static org.lwjgl.glfw.GLFW.glfwCreateWindow;
 import static org.lwjgl.glfw.GLFW.glfwDefaultWindowHints;
 import static org.lwjgl.glfw.GLFW.glfwDestroyWindow;
 import static org.lwjgl.glfw.GLFW.glfwGetPrimaryMonitor;
+import static org.lwjgl.glfw.GLFW.glfwGetTime;
 import static org.lwjgl.glfw.GLFW.glfwGetVideoMode;
 import static org.lwjgl.glfw.GLFW.glfwGetWindowSize;
 import static org.lwjgl.glfw.GLFW.glfwInit;
@@ -42,39 +42,61 @@ import static org.lwjgl.glfw.GLFW.glfwWindowHint;
 import static org.lwjgl.glfw.GLFW.glfwWindowShouldClose;
 import static org.lwjgl.glfw.GLFWErrorCallback.createPrint;
 import static org.lwjgl.opengl.GL.createCapabilities;
+// glColor3f is already imported, but explicitly noting for text rendering context
+// For GL constants and functions
+import static org.lwjgl.opengl.GL11.GL_BLEND;
 import static org.lwjgl.opengl.GL11.GL_COLOR_BUFFER_BIT;
 import static org.lwjgl.opengl.GL11.GL_DEPTH_BUFFER_BIT;
 import static org.lwjgl.opengl.GL11.GL_DEPTH_TEST;
 import static org.lwjgl.opengl.GL11.GL_FILL;
 import static org.lwjgl.opengl.GL11.GL_FRONT_AND_BACK;
 import static org.lwjgl.opengl.GL11.GL_LINE;
-import static org.lwjgl.opengl.GL11.glDisable;
-import static org.lwjgl.opengl.GL11.glOrtho;
+import static org.lwjgl.opengl.GL11.GL_LINEAR;
 import static org.lwjgl.opengl.GL11.GL_MODELVIEW;
+import static org.lwjgl.opengl.GL11.GL_ONE_MINUS_SRC_ALPHA;
 import static org.lwjgl.opengl.GL11.GL_PROJECTION;
 import static org.lwjgl.opengl.GL11.GL_QUADS;
+import static org.lwjgl.opengl.GL11.GL_RED;
+import static org.lwjgl.opengl.GL11.GL_SRC_ALPHA;
+import static org.lwjgl.opengl.GL11.GL_TEXTURE_2D;
+import static org.lwjgl.opengl.GL11.GL_TEXTURE_MAG_FILTER;
+import static org.lwjgl.opengl.GL11.GL_TEXTURE_MIN_FILTER;
+import static org.lwjgl.opengl.GL11.GL_TEXTURE_WRAP_S;
+import static org.lwjgl.opengl.GL11.GL_TEXTURE_WRAP_T;
+import static org.lwjgl.opengl.GL11.GL_UNPACK_ALIGNMENT;
+import static org.lwjgl.opengl.GL11.GL_UNSIGNED_BYTE;
 import static org.lwjgl.opengl.GL11.GL_VERSION;
 import static org.lwjgl.opengl.GL11.glBegin;
+import static org.lwjgl.opengl.GL11.glBindTexture;
+import static org.lwjgl.opengl.GL11.glBlendFunc;
 import static org.lwjgl.opengl.GL11.glClear;
 import static org.lwjgl.opengl.GL11.glClearColor;
-// glColor3f is already imported, but explicitly noting for text rendering context
-import static org.lwjgl.opengl.GL11.*; // For GL constants and functions
-import static org.lwjgl.opengl.GL12.*; // For GL_CLAMP_TO_EDGE if used
+import static org.lwjgl.opengl.GL11.glColor3f;
+import static org.lwjgl.opengl.GL11.glColor4f;
+import static org.lwjgl.opengl.GL11.glDisable;
 import static org.lwjgl.opengl.GL11.glEnable;
 import static org.lwjgl.opengl.GL11.glEnd;
+import static org.lwjgl.opengl.GL11.glGenTextures;
 import static org.lwjgl.opengl.GL11.glGetString;
 import static org.lwjgl.opengl.GL11.glLineWidth;
 import static org.lwjgl.opengl.GL11.glLoadIdentity;
 import static org.lwjgl.opengl.GL11.glLoadMatrixf; // Added this line
 import static org.lwjgl.opengl.GL11.glMatrixMode;
+import static org.lwjgl.opengl.GL11.glOrtho;
+import static org.lwjgl.opengl.GL11.glPixelStorei;
 import static org.lwjgl.opengl.GL11.glPolygonMode;
 import static org.lwjgl.opengl.GL11.glPopMatrix;
 import static org.lwjgl.opengl.GL11.glPushMatrix;
+import static org.lwjgl.opengl.GL11.glTexCoord2f;
+import static org.lwjgl.opengl.GL11.glTexImage2D;
+import static org.lwjgl.opengl.GL11.glTexParameteri;
 import static org.lwjgl.opengl.GL11.glTranslatef;
+import static org.lwjgl.opengl.GL11.glVertex2f;
 import static org.lwjgl.opengl.GL11.glVertex3f;
+// For GL_CLAMP_TO_EDGE if used
+import static org.lwjgl.opengl.GL12.GL_CLAMP_TO_EDGE;
 import static org.lwjgl.system.MemoryStack.stackPush;
 import static org.lwjgl.system.MemoryUtil.NULL;
-
 import java.io.File; // For loading from file path (alternative)
 import java.io.FileInputStream; // For loading from file path (alternative)
 import java.io.IOException;
@@ -85,11 +107,9 @@ import java.nio.IntBuffer;
 import java.nio.channels.Channels;
 import java.nio.channels.FileChannel;
 import java.nio.channels.ReadableByteChannel;
-
 import org.joml.Matrix4f; // Added for JOML
 import org.lwjgl.Version;
 import org.lwjgl.glfw.GLFWVidMode;
-import org.lwjgl.stb.STBImage;
 import org.lwjgl.stb.STBTTAlignedQuad;
 import org.lwjgl.stb.STBTTFontinfo;
 import org.lwjgl.stb.STBTTPackContext;
@@ -258,11 +278,7 @@ public class Main implements AutoCloseable, Runnable {
     lastFrameTime = glfwGetTime(); // Initialize lastFrameTime for FPS calculation
 
     try {
-      // TODO: User needs to replace "path/to/your/font.otf" with the actual
-      // resource path to their OTF file.
-      // For example, if font.otf is in src/main/resources/fonts/font.otf, path
-      // would be "fonts/font.otf"
-      loadTruetypeFont("fonts/your_font_name.otf", 15.0f); // Using 15.0f as a default size
+      loadTruetypeFont("fonts/MajnFont.otf", 15.0f); // Using 15.0f as a default size
     } catch (IOException e) {
       System.err.println("Failed to load TrueType font:");
       e.printStackTrace();
@@ -270,7 +286,8 @@ public class Main implements AutoCloseable, Runnable {
     }
   }
 
-  private static ByteBuffer ioResourceToByteBuffer(String resource, int bufferSize) throws IOException {
+  private static ByteBuffer ioResourceToByteBuffer(String resource, int bufferSize)
+      throws IOException {
     ByteBuffer buffer;
     File file = new File(resource);
     if (file.isFile()) {
@@ -287,7 +304,7 @@ public class Main implements AutoCloseable, Runnable {
           ReadableByteChannel rbc = Channels.newChannel(source)) {
         buffer = MemoryUtil.memAlloc(bufferSize); // Allocate bufferSize
         if (source == null) {
-            throw new IOException("Resource not found: " + resource);
+          throw new IOException("Resource not found: " + resource);
         }
         while (true) {
           int bytes = rbc.read(buffer);
@@ -620,7 +637,8 @@ public class Main implements AutoCloseable, Runnable {
 
     // Prepare Debug Strings
     String fpsText = String.format("FPS: %.2f", fps);
-    String posText = String.format("X: %.2f Y: %.2f Z: %.2f", camera.getX(), camera.getY(), camera.getZ());
+    String posText =
+        String.format("X: %.2f Y: %.2f Z: %.2f", camera.getX(), camera.getY(), camera.getZ());
     String rotText = String.format("Yaw: %.1f Pitch: %.1f", camera.getYaw(), camera.getPitch());
     String openGLVersionText = "OpenGL: " + glGetString(GL_VERSION);
 
@@ -682,7 +700,8 @@ public class Main implements AutoCloseable, Runnable {
         }
 
         // stbtt_GetPackedQuad advances xPos and yPos according to font metrics
-        STBTruetype.stbtt_GetPackedQuad(charData, BITMAP_W, BITMAP_H, character - 32, xPos, yPos, q, false);
+        STBTruetype.stbtt_GetPackedQuad(charData, BITMAP_W, BITMAP_H, character - 32, xPos, yPos, q,
+            false);
 
         glTexCoord2f(q.s0(), q.t0());
         glVertex2f(q.x0(), q.y0());
