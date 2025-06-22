@@ -134,8 +134,8 @@ import com.kacpersledz.majn.world.World;
 public class Main implements AutoCloseable, Runnable {
 
   private static final String windowTitle = "Hello, World!";
-  private static final int windowWidth = 300;
-  private static final int windowHeight = 300;
+  private int windowWidth = 300; // Made non-final
+  private int windowHeight = 300; // Made non-final
   private long windowHandle;
   private World world;
   private Camera camera;
@@ -208,6 +208,12 @@ public class Main implements AutoCloseable, Runnable {
       }
       if (key == GLFW_KEY_F3 && action == GLFW_RELEASE) {
         showDebugInfo = !showDebugInfo;
+        if (showDebugInfo) {
+          glfwSetInputMode(windowHandle, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+        } else {
+          glfwSetInputMode(windowHandle, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+          firstMouse = true; // Reset for smooth mouse capture
+        }
       }
       // Camera movement keys
       if (action == GLFW_PRESS || action == GLFW_RELEASE) {
@@ -248,7 +254,7 @@ public class Main implements AutoCloseable, Runnable {
       lastMouseX = xpos;
       lastMouseY = ypos;
 
-      if (camera != null) { // Ensure camera is initialized
+      if (camera != null && !showDebugInfo) { // Ensure camera is initialized and debug info is not shown
         // Pass dyaw (xoffset) and dpitch (yoffset)
         camera.rotate(yoffset, xoffset);
       }
@@ -268,12 +274,25 @@ public class Main implements AutoCloseable, Runnable {
     glfwSwapInterval(1);
     glfwShowWindow(windowHandle);
 
+    // Framebuffer size callback for window resizing
+    glfwSetFramebufferSizeCallback(windowHandle, (window, width, height) -> {
+        this.windowWidth = width;
+        this.windowHeight = height;
+        org.lwjgl.opengl.GL11.glViewport(0, 0, width, height); // Explicitly call glViewport
+        setupProjection(); // Recalculate projection matrix with new aspect ratio
+    });
+
     // Set cursor mode for FPS-like camera
     glfwSetInputMode(windowHandle, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
 
     createCapabilities();
     System.out.println("OpenGL: " + glGetString(GL_VERSION));
     glEnable(GL_DEPTH_TEST);
+    // Initial setup of projection matrix
+    // We need to ensure windowWidth and windowHeight are correctly initialized before this call
+    // They are initialized with default values (300x300), so this should be fine.
+    // If the window size is obtained from glfwGetWindowSize before this, it would be even better.
+    // For now, relying on the initial values.
     setupProjection();
     glClearColor(0.0f, 0.0f, 0.2f, 0.0f);
     lastFrameTime = glfwGetTime(); // Initialize lastFrameTime for FPS calculation
@@ -400,7 +419,8 @@ public class Main implements AutoCloseable, Runnable {
     glMatrixMode(GL_PROJECTION);
     glLoadIdentity();
     Matrix4f projectionMatrix = new Matrix4f();
-    float aspectRatio = (float) windowWidth / windowHeight;
+    // Ensure height is not zero to avoid division by zero, though practically GLFW won't allow it.
+    float aspectRatio = (windowHeight > 0) ? (float) windowWidth / windowHeight : 1.0f;
     projectionMatrix.perspective((float) Math.toRadians(60.0f), aspectRatio, 0.1f, 500.0f);
 
     try (MemoryStack stack = MemoryStack.stackPush()) {
