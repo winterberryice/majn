@@ -1,5 +1,6 @@
 package com.kacpersledz.majn;
 
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
 import org.junit.jupiter.api.Test;
 import com.kacpersledz.majn.game.Game; // Import the new Game class
@@ -15,7 +16,8 @@ public class GameTest { // Renamed class from MainTest to GameTest
     Game game = new Game();
     try {
       game.init(); // This will initialize window, renderer etc.
-      // game.run(); // Running the loop in a test is usually not done unless it's an integration test with a timeout.
+      // game.run(); // Running the loop in a test is usually not done unless it's an integration
+      // test with a timeout.
     } catch (Exception e) {
       fail("Game initialization failed: " + e.getMessage());
     } finally {
@@ -31,7 +33,8 @@ public class GameTest { // Renamed class from MainTest to GameTest
       // If game.init() itself throws, the test fails, which is good.
       // If it succeeds, we might want to ensure cleanup runs.
       // Consider what this test is truly trying to achieve.
-      // If it's just "can Game be instantiated and init called without immediate crash", this is okay.
+      // If it's just "can Game be instantiated and init called without immediate crash", this is
+      // okay.
       // game.init() already does a lot, including window creation.
       // For now, the original intent was likely just to see if it loads.
       // The `try (Main main = new Main())` implied that Main was AutoCloseable.
