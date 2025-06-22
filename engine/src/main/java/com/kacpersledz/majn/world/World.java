@@ -39,13 +39,9 @@ public class World {
             chunk.setBlock(x, y, z, Block.BlockType.DIRT);
           } else if (y == grassLevel) {
             chunk.setBlock(x, y, z, Block.BlockType.GRASS);
-          } else {
-            // This is important: ensure blocks above grass are AIR
-            // The Chunk constructor already initializes to AIR,
-            // so explicitly setting to AIR here is for clarity
-            // or if the default Chunk initialization changes.
-            chunk.setBlock(x, y, z, Block.BlockType.AIR);
           }
+          // No need for 'else { chunk.setBlock(x,y,z, Block.BlockType.AIR); }'
+          // because the chunk is already initialized to AIR.
         }
       }
     }
