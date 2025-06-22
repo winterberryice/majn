@@ -664,25 +664,44 @@ public class Main implements AutoCloseable, Runnable {
     glDisable(GL_DEPTH_TEST); // Disable depth testing for 2D overlay
 
     String pauseText = "PAUSE";
-    // For centering, we'd ideally need to measure text width.
-    // STB Truetype can provide this, but it's more involved.
-    // For a simple approach, estimate or use a fixed offset.
-    // Let's try to use a larger font size for "PAUSE"
-    // We might need a separate font loading for different sizes or scale existing one.
-    // For now, use existing font settings.
-    // To make it "noticeable", we can draw it larger if we had easy text scaling or a larger font.
-    // A simple way is to just draw it with current font settings.
-    // Centering text: (width - textWidth) / 2, (height - textHeight) / 2
-    // Text width estimation is tricky without stb_truetype calls like stbtt_GetCodepointHMetrics and summing them up.
-    // Let's just place it somewhat centrally.
-    float textWidthApproximation = pauseText.length() * currentFontSize * 0.6f; // Very rough estimate
-    float xPos = (width - textWidthApproximation) / 2;
-    float yPos = height / 2 - currentFontSize / 2;
+    float textScale = 3.0f; // Scale factor for the "PAUSE" text
 
+    // Approximate width and height of the text
+    // For width, using a rough estimate: average char width is ~0.6 * fontSize
+    float approxCharWidth = currentFontSize * 0.6f;
+    float textWidthUnscaled = pauseText.length() * approxCharWidth;
+    float textHeightUnscaled = currentFontSize; // STBTTPackedchar gives glyphs aligned to baseline
 
+    float textWidthScaled = textWidthUnscaled * textScale;
+    float textHeightScaled = textHeightUnscaled * textScale;
+
+    // Calculate top-left position for the scaled text to be centered
+    float drawX = (width - textWidthScaled) / 2.0f;
+    float drawY = (height - textHeightScaled) / 2.0f;
+
+    glPushMatrix(); // Save current matrix state
+
+    // Translate to the top-left position where scaled text should start, then scale
+    glTranslatef(drawX, drawY, 0);
+    glScalef(textScale, textScale, 1.0f);
+
+    // Set color for the text
     glColor4f(1.0f, 1.0f, 1.0f, 1.0f); // White text
-    drawString(xPos, yPos, pauseText);
 
+    // Draw the string at (0,0) in the new scaled and translated coordinate system
+    // The y-coordinate for drawString is typically the baseline.
+    // Since our drawY is top-left, and STBTT renders from baseline,
+    // drawing at (0,0) here will place the baseline of the text at drawY.
+    // If we want drawY to be the very top of the text, we'd need to adjust.
+    // For simplicity, let's assume current drawString behavior works well with (0,0) as top-left after translate.
+    // If text appears too low, it means drawString's y is baseline.
+    // Then y for drawString should be `textHeightUnscaled` or similar to render it "upwards" from baseline.
+    // Let's test with drawString(0, 0, pauseText) first assuming it handles y as top.
+    // If not, we will use drawString(0, textHeightUnscaled, pauseText)
+    // The `drawString` method itself handles `y` as the top of the quad for the first char.
+    drawString(0, 0, pauseText);
+
+    glPopMatrix(); // Restore matrix state
 
     // Restore Previous Projection and State
     glEnable(GL_DEPTH_TEST);
