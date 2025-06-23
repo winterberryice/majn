@@ -22,7 +22,7 @@ jobs:
         distribution: 'temurin'
 
     - name: Build with Maven
-      run: mvn -B package -DskipTests --file engine/pom.xml
+      run: mvn -B package -DskipTests -DskipExec=true --file engine/pom.xml
 
     - name: Upload JAR artifact
       uses: actions/upload-artifact@v4
