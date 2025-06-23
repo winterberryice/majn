@@ -168,15 +168,6 @@
                             </transformers>
                             <filters>
                                 <filter>
-                                    <artifact>org.lwjgl:lwjgl-*:*</artifact>
-                                    <includes>
-                                        <include>*.dll</include>
-                                        <include>*.so</include>
-                                        <include>*.dylib</include>
-                                        <include>*.json</include> <!-- For LWJGL 3.3+ natives manifest -->
-                                    </includes>
-                                </filter>
-                                <filter>
                                     <artifact>*:*</artifact>
                                     <excludes>
                                         <exclude>META-INF/*.SF</exclude>
