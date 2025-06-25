@@ -18,6 +18,8 @@ use winit::{
 struct App { // Removed lifetime 'a
     window: Option<Arc<Window>>, // Changed to Option<Arc<Window>>
     state: Option<State>,      // Changed to Option<State> (State will also not have 'a)
+    mouse_grabbed: bool,       // Added to track mouse grab state
+    last_mouse_position: Option<winit::dpi::PhysicalPosition<f64>>, // Added to track last mouse position
 }
 
 impl App { // Removed lifetime 'a
@@ -25,6 +27,32 @@ impl App { // Removed lifetime 'a
         Self {
             window: None,
             state: None,
+            mouse_grabbed: false,
+            last_mouse_position: None,
+        }
+    }
+
+    // New method to specifically handle mouse motion
+    fn process_mouse_motion(&mut self, delta_x: f64, delta_y: f64) {
+        if self.camera_controller.movement.mouse_sensitivity > 0.0 { // Check if mouse sensitivity is set
+            self.camera_controller.process_mouse_movement(delta_x, delta_y);
+        }
+    }
+
+    // Helper method to manage mouse grab and cursor visibility
+    fn set_mouse_grab(&mut self, grab: bool) {
+        if let Some(window) = self.window.as_ref() {
+            if grab {
+                window.set_cursor_grab(winit::window::CursorGrabMode::Confined)
+                    .or_else(|_e| window.set_cursor_grab(winit::window::CursorGrabMode::Locked))
+                    .unwrap_or_else(|e| eprintln!("Failed to grab cursor: {:?}", e));
+                window.set_cursor_visible(false);
+            } else {
+                window.set_cursor_grab(winit::window::CursorGrabMode::None)
+                    .unwrap_or_else(|e| eprintln!("Failed to release cursor: {:?}", e));
+                window.set_cursor_visible(true);
+            }
+            self.mouse_grabbed = grab;
         }
     }
 }
@@ -41,6 +69,9 @@ impl ApplicationHandler for App {
             // ApplicationHandler methods are not async, so use pollster::block_on.
             let state = pollster::block_on(State::new(Arc::clone(&window_arc), initial_size));
             self.state = Some(state);
+
+            // Grab mouse on startup
+            self.set_mouse_grab(true);
         }
     }
 
@@ -54,20 +85,39 @@ impl ApplicationHandler for App {
         if self.window.as_ref().map_or(false, |w| w.id() == window_id) {
             let state = self.state.as_mut().unwrap(); // Should be Some if window is Some
 
-            if !state.input(&event) {
-                match event {
-                    WindowEvent::CloseRequested
-                    | WindowEvent::KeyboardInput {
-                        event:
-                            KeyEvent {
-                                physical_key: PhysicalKey::Code(KeyCode::Escape),
-                                state: ElementState::Pressed,
-                                ..
-                            },
+            // Handle mouse grab toggle first
+            if let WindowEvent::KeyboardInput {
+                event:
+                    KeyEvent {
+                        physical_key: PhysicalKey::Code(KeyCode::Escape),
+                        state: ElementState::Pressed,
                         ..
-                    } => {
+                    },
+                ..
+            } = event
+            {
+                if self.mouse_grabbed {
+                    self.set_mouse_grab(false);
+                } else {
+                    // If Esc is pressed and mouse is not grabbed, exit.
+                    event_loop.exit();
+                    return; // Avoid further processing if exiting
+                }
+                // Don't let the Escape key event propagate further if we handled it for mouse grab
+            } else if let WindowEvent::MouseInput { state: ElementState::Pressed, .. } = event {
+                // Grab mouse on click if not already grabbed
+                if !self.mouse_grabbed {
+                    self.set_mouse_grab(true);
+                }
+            }
+
+
+            if !state.input(&event) || !self.mouse_grabbed { // Only pass input to state if mouse is grabbed (for camera) or if state handles it regardless
+                match event {
+                    WindowEvent::CloseRequested => {
                         event_loop.exit();
                     }
+                    // Escape key for exiting is handled above if mouse is not grabbed
                     WindowEvent::Resized(physical_size) => {
                         state.resize(physical_size);
                     }
@@ -81,6 +131,24 @@ impl ApplicationHandler for App {
                         }
                     }
                     _ => {}
+                }
+            }
+            // Special handling for mouse motion: always pass to state if mouse is grabbed
+            if self.mouse_grabbed {
+                if let WindowEvent::CursorMoved { position, .. } = event {
+                    let mut mouse_delta = (0.0, 0.0);
+                    if let Some(last_pos) = self.last_mouse_position {
+                        mouse_delta.0 = position.x - last_pos.x;
+                        mouse_delta.1 = position.y - last_pos.y;
+                    }
+                    self.last_mouse_position = Some(*position);
+                    // Pass the delta to state.input.
+                    // We need a way to pass this data, current state.input takes &WindowEvent.
+                    // For now, let's modify state.input or call a specific method.
+                    // Let's assume state.input is modified to handle this.
+                    // This is a conceptual change, actual implementation in state.input will follow.
+                    // Corrected: Call process_mouse_motion on the state object.
+                    state.process_mouse_motion(mouse_delta.0, mouse_delta.1);
                 }
             }
         }
@@ -133,7 +201,7 @@ impl Vertex {
 //     Vertex { position: [0.5, -0.5, 0.0], color: [0.0, 0.0, 1.0] },  // Bottom-right (Blue)
 // ];
 // use crate::cube_geometry; // Removed: `mod cube_geometry;` makes it available.
-use crate::camera::{Camera, CameraUniform}; // Import Camera and CameraUniform
+use crate::camera::{Camera, CameraController, CameraUniform}; // Import Camera, CameraController, and CameraUniform
 use crate::chunk::Chunk; // Import Chunk
 use crate::instance::InstanceRaw; // Import InstanceRaw
 
@@ -156,6 +224,7 @@ struct State { // Removed lifetime 'a
     camera_uniform: CameraUniform,
     camera_buffer: wgpu::Buffer,
     camera_bind_group: wgpu::BindGroup,
+    camera_controller: CameraController, // Add CameraController
 
     chunk: Chunk, // Add a chunk
     instance_data: Vec<InstanceRaw>,
@@ -332,6 +401,8 @@ impl State { // Removed lifetime 'a
         let mut camera_uniform = CameraUniform::new();
         camera_uniform.update_view_proj(&camera);
 
+        let camera_controller = CameraController::new(10.0, 0.1); // Adjust speed and sensitivity as needed
+
         let camera_buffer = device.create_buffer_init(
             &wgpu::util::BufferInitDescriptor {
                 label: Some("Camera Buffer"),
@@ -418,6 +489,7 @@ impl State { // Removed lifetime 'a
             camera_uniform,
             camera_buffer,
             camera_bind_group,
+            camera_controller,
             chunk,
             instance_data,
             instance_buffer,
@@ -459,20 +531,68 @@ impl State { // Removed lifetime 'a
         }
     }
 
-    fn input(&mut self, _event: &WindowEvent) -> bool {
-        // Basic camera controls could be added here later
-        // For now, returning false to allow default event handling (exit, resize)
-        false
+    fn input(&mut self, event: &WindowEvent) -> bool {
+        match event {
+            WindowEvent::KeyboardInput {
+                event:
+                    KeyEvent {
+                        physical_key: PhysicalKey::Code(key_code),
+                        state,
+                        ..
+                    },
+                ..
+            } => {
+                let is_pressed = *state == ElementState::Pressed;
+                match key_code {
+                    KeyCode::KeyW | KeyCode::ArrowUp => {
+                        self.camera_controller.movement.is_forward_pressed = is_pressed;
+                        true // Event handled
+                    }
+                    KeyCode::KeyS | KeyCode::ArrowDown => {
+                        self.camera_controller.movement.is_backward_pressed = is_pressed;
+                        true // Event handled
+                    }
+                    KeyCode::KeyA | KeyCode::ArrowLeft => {
+                        self.camera_controller.movement.is_left_pressed = is_pressed;
+                        true // Event handled
+                    }
+                    KeyCode::KeyD | KeyCode::ArrowRight => {
+                        self.camera_controller.movement.is_right_pressed = is_pressed;
+                        true // Event handled
+                    }
+                    KeyCode::Space => {
+                        self.camera_controller.movement.is_up_pressed = is_pressed;
+                        true // Event handled
+                    }
+                    KeyCode::ShiftLeft | KeyCode::ShiftRight => {
+                        self.camera_controller.movement.is_down_pressed = is_pressed;
+                        true // Event handled
+                    }
+                    // Let App handle Escape for mouse grab toggle / exit
+                    KeyCode::Escape => false, // Event not handled by State, let App handle it
+                    _ => false, // Event not handled
+                }
+            }
+            // CursorMoved is now handled by App, which calls state.process_mouse_motion directly.
+            // So, we don't need to handle CursorMoved here in state.input for camera purposes.
+            // WindowEvent::CursorMoved { .. } => {
+            //     true // Indicate event was seen, even if handled by App calling process_mouse_motion
+            // }
+            _ => false, // Event not handled by State's general input processing
+        }
     }
 
     fn update(&mut self) {
-        // Update camera UBO
-        // Simple camera rotation for demonstration:
-        // let now = std::time::Instant::now();
-        // let time_secs = now.duration_since(self.start_time).as_secs_f32(); // Assuming you add start_time to State
-        // self.camera.eye.x = time_secs.sin() * 5.0;
-        // self.camera.eye.z = time_secs.cos() * 5.0;
+        // Update camera based on controller
+        // For dt, we'd ideally pass the actual delta time from the game loop.
+        // For now, let's use a fixed placeholder or calculate it if possible.
+        // If App::about_to_wait is called regularly (e.g., for each frame),
+        // we could store a `last_update_time` in `State` and calculate `dt`.
+        // For simplicity here, let's assume a fixed `dt` for now, e.g., 1/60th of a second.
+        let dt = std::time::Duration::from_secs_f32(1.0 / 60.0); // Placeholder
+        self.camera_controller.update_camera(&mut self.camera, dt);
 
+        // Update camera UBO
         self.camera_uniform.update_view_proj(&self.camera);
         self.queue.write_buffer(&self.camera_buffer, 0, bytemuck::cast_slice(&[self.camera_uniform]));
 
