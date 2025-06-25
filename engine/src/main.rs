@@ -1,3 +1,9 @@
+mod block;
+mod chunk;
+mod cube_geometry;
+mod camera;
+mod instance;
+
 use std::sync::Arc; // Added for Arc<Window>
 use wgpu::Trace;
 use winit::{
@@ -93,14 +99,14 @@ impl ApplicationHandler for App {
 // bytemuck is used to safely cast our struct into a slice of bytes that the GPU can understand.
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
-struct Vertex {
-    position: [f32; 3],
-    color: [f32; 3],
+pub struct Vertex { // Made public
+    pub position: [f32; 3], // Made public
+    pub color: [f32; 3],    // Made public
 }
 
 impl Vertex {
     // This describes the memory layout of a single vertex to the shader.
-    fn desc() -> wgpu::VertexBufferLayout<'static> {
+    pub fn desc() -> wgpu::VertexBufferLayout<'static> { // Made public
         wgpu::VertexBufferLayout {
             array_stride: std::mem::size_of::<Vertex>() as wgpu::BufferAddress,
             step_mode: wgpu::VertexStepMode::Vertex,
@@ -121,11 +127,15 @@ impl Vertex {
 }
 
 // Our vertices for a triangle with colored corners.
-const VERTICES: &[Vertex] = &[
-    Vertex { position: [0.0, 0.5, 0.0], color: [1.0, 0.0, 0.0] },    // Top (Red)
-    Vertex { position: [-0.5, -0.5, 0.0], color: [0.0, 1.0, 0.0] }, // Bottom-left (Green)
-    Vertex { position: [0.5, -0.5, 0.0], color: [0.0, 0.0, 1.0] },  // Bottom-right (Blue)
-];
+// const VERTICES: &[Vertex] = &[
+//     Vertex { position: [0.0, 0.5, 0.0], color: [1.0, 0.0, 0.0] },    // Top (Red)
+//     Vertex { position: [-0.5, -0.5, 0.0], color: [0.0, 1.0, 0.0] }, // Bottom-left (Green)
+//     Vertex { position: [0.5, -0.5, 0.0], color: [0.0, 0.0, 1.0] },  // Bottom-right (Blue)
+// ];
+// use crate::cube_geometry; // Removed: `mod cube_geometry;` makes it available.
+use crate::camera::{Camera, CameraUniform}; // Import Camera and CameraUniform
+use crate::chunk::Chunk; // Import Chunk
+use crate::instance::InstanceRaw; // Import InstanceRaw
 
 // The State struct holds all of our wgpu-related objects.
 struct State { // Removed lifetime 'a
@@ -135,8 +145,24 @@ struct State { // Removed lifetime 'a
     config: wgpu::SurfaceConfiguration,
     size: winit::dpi::PhysicalSize<u32>,
     render_pipeline: wgpu::RenderPipeline,
-    vertex_buffer: wgpu::Buffer,
-    num_vertices: u32,
+    // vertex_buffer: wgpu::Buffer, // Old triangle vertex buffer
+    // num_vertices: u32,           // Old number of triangle vertices
+
+    cube_vertex_buffer: wgpu::Buffer,
+    cube_index_buffer: wgpu::Buffer,
+    num_cube_indices: u32,
+
+    camera: Camera,
+    camera_uniform: CameraUniform,
+    camera_buffer: wgpu::Buffer,
+    camera_bind_group: wgpu::BindGroup,
+
+    chunk: Chunk, // Add a chunk
+    instance_data: Vec<InstanceRaw>,
+    instance_buffer: wgpu::Buffer,
+
+    depth_texture: wgpu::Texture,
+    depth_texture_view: wgpu::TextureView,
     // window: Arc<Window>, // Removed: No longer needed in State
 }
 
@@ -197,20 +223,37 @@ impl State { // Removed lifetime 'a
             source: wgpu::ShaderSource::Wgsl(include_str!("shader.wgsl").into()),
         });
 
+        // Create camera bind group layout FIRST
+        let camera_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::VERTEX,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                }
+            ],
+            label: Some("camera_bind_group_layout"),
+        });
+
         let render_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("Render Pipeline Layout"),
-                bind_group_layouts: &[],
+                bind_group_layouts: &[&camera_bind_group_layout], // USE THE CAMERA BIND GROUP LAYOUT
                 push_constant_ranges: &[],
             });
 
         let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("Render Pipeline"),
-            layout: Some(&render_pipeline_layout),
+            layout: Some(&render_pipeline_layout), // This now uses the layout with the camera BGL
             vertex: wgpu::VertexState {
                 module: &shader,
                 entry_point: Some("vs_main"),
-                buffers: &[Vertex::desc()],
+                buffers: &[Vertex::desc(), InstanceRaw::desc()], // Add InstanceRaw desc
                 // API Change: This new field is required
                 compilation_options: wgpu::PipelineCompilationOptions::default(),
             },
@@ -225,8 +268,25 @@ impl State { // Removed lifetime 'a
                 // API Change: This new field is required
                 compilation_options: wgpu::PipelineCompilationOptions::default(),
             }),
-            primitive: wgpu::PrimitiveState::default(),
-            depth_stencil: None,
+            primitive: wgpu::PrimitiveState {
+                topology: wgpu::PrimitiveTopology::TriangleList,
+                strip_index_format: None,
+                front_face: wgpu::FrontFace::Ccw, // Counter-clockwise triangles are front-facing
+                cull_mode: Some(wgpu::Face::Back), // Cull back-facing triangles
+                // Setting this to None requires Features::POLYGON_MODE_LINE or Features::POLYGON_MODE_POINT
+                polygon_mode: wgpu::PolygonMode::Fill,
+                // Requires Features::DEPTH_CLIP_CONTROL
+                unclipped_depth: false,
+                // Requires Features::CONSERVATIVE_RASTERIZATION
+                conservative: false,
+            },
+            depth_stencil: Some(wgpu::DepthStencilState {
+                format: wgpu::TextureFormat::Depth32Float, // Must match depth_texture format
+                depth_write_enabled: true,
+                depth_compare: wgpu::CompareFunction::Less, // Standard depth comparison
+                stencil: wgpu::StencilState::default(), // No stencil for now
+                bias: wgpu::DepthBiasState::default(),
+            }),
             multisample: wgpu::MultisampleState::default(),
             multiview: None,
             // API Change: This new field is required
@@ -234,12 +294,113 @@ impl State { // Removed lifetime 'a
         });
 
         use wgpu::util::DeviceExt;
-        let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Vertex Buffer"),
-            contents: bytemuck::cast_slice(VERTICES),
+        // let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        //     label: Some("Vertex Buffer"),
+        //     contents: bytemuck::cast_slice(VERTICES), // VERTICES is commented out
+        //     usage: wgpu::BufferUsages::VERTEX,
+        // });
+        // let num_vertices = VERTICES.len() as u32; // VERTICES is commented out
+
+        let cube_vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Cube Vertex Buffer"),
+            contents: bytemuck::cast_slice(cube_geometry::cube_vertices()),
             usage: wgpu::BufferUsages::VERTEX,
         });
-        let num_vertices = VERTICES.len() as u32;
+
+        let cube_index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Cube Index Buffer"),
+            contents: bytemuck::cast_slice(cube_geometry::cube_indices()),
+            usage: wgpu::BufferUsages::INDEX,
+        });
+        let num_cube_indices = cube_geometry::cube_indices().len() as u32;
+
+        let camera = Camera::new(
+            // Adjust camera position for better view of the 16x32x16 chunk
+            glam::Vec3::new(
+                0.0,
+                crate::chunk::CHUNK_HEIGHT as f32 / 1.5, // Higher up
+                crate::chunk::CHUNK_DEPTH as f32 * 2.0 // Further back
+            ),
+            glam::Vec3::new(0.0, crate::chunk::CHUNK_HEIGHT as f32 / 2.0 - 5.0 , 0.0), // Target: look towards the center of the chunk mass
+            glam::Vec3::Y,                  // up: standard Y up
+            config.width as f32 / config.height as f32,
+            45.0, // fovy_degrees
+            0.1,  // znear
+            100.0, // zfar
+        );
+
+        let mut camera_uniform = CameraUniform::new();
+        camera_uniform.update_view_proj(&camera);
+
+        let camera_buffer = device.create_buffer_init(
+            &wgpu::util::BufferInitDescriptor {
+                label: Some("Camera Buffer"),
+                contents: bytemuck::cast_slice(&[camera_uniform]),
+                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            }
+        );
+
+        // camera_bind_group_layout is now created earlier, before render_pipeline_layout
+        // let camera_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+        //     entries: &[
+        //         wgpu::BindGroupLayoutEntry {
+        //             binding: 0,
+        //             visibility: wgpu::ShaderStages::VERTEX,
+        //             ty: wgpu::BindingType::Buffer {
+        //                 ty: wgpu::BufferBindingType::Uniform,
+        //                 has_dynamic_offset: false,
+        //                 min_binding_size: None,
+        //             },
+        //             count: None,
+        //         }
+        //     ],
+        //     label: Some("camera_bind_group_layout"),
+        // });
+
+        let camera_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            layout: &camera_bind_group_layout, // This refers to the earlier created layout
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: camera_buffer.as_entire_binding(),
+                }
+            ],
+            label: Some("camera_bind_group"),
+        });
+
+        let mut chunk = Chunk::new();
+        chunk.generate_terrain(); // Populate with dirt and grass
+
+        // Initial instance data and buffer
+        // Max instances = CHUNK_WIDTH * CHUNK_HEIGHT * CHUNK_DEPTH
+        let max_instances = crate::chunk::CHUNK_WIDTH * crate::chunk::CHUNK_HEIGHT * crate::chunk::CHUNK_DEPTH;
+        // Ensure instance_data Vec has enough capacity
+        let instance_data: Vec<InstanceRaw> = Vec::with_capacity(max_instances);
+
+        let instance_buffer_size = (max_instances * std::mem::size_of::<InstanceRaw>()) as wgpu::BufferAddress;
+        let instance_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("Instance Buffer"),
+            size: instance_buffer_size, // Initial size, can be larger if needed or resized
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false, // Data will be copied via queue.write_buffer
+        });
+
+        let depth_texture_desc = wgpu::TextureDescriptor {
+            size: wgpu::Extent3d {
+                width: config.width,
+                height: config.height,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Depth32Float, // Or Depth24PlusStencil8, etc.
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT, // Removed | wgpu::TextureUsages::TEXTURE_BINDING as not currently sampled
+            label: Some("Depth Texture"),
+            view_formats: &[],
+        };
+        let depth_texture = device.create_texture(&depth_texture_desc);
+        let depth_texture_view = depth_texture.create_view(&wgpu::TextureViewDescriptor::default());
 
         Self {
             surface,
@@ -248,8 +409,20 @@ impl State { // Removed lifetime 'a
             config,
             size: initial_size, // Store initial_size
             render_pipeline,
-            vertex_buffer,
-            num_vertices,
+            // vertex_buffer,
+            // num_vertices,
+            cube_vertex_buffer,
+            cube_index_buffer,
+            num_cube_indices,
+            camera,
+            camera_uniform,
+            camera_buffer,
+            camera_bind_group,
+            chunk,
+            instance_data,
+            instance_buffer,
+            depth_texture,
+            depth_texture_view,
             // window, // Removed
         }
     }
@@ -262,15 +435,80 @@ impl State { // Removed lifetime 'a
             self.size = new_size;
             self.config.width = new_size.width;
             self.config.height = new_size.height;
+            self.camera.aspect = self.config.width as f32 / self.config.height as f32; // Update camera aspect ratio
+
+            // Recreate depth texture for new size
+            let depth_texture_desc = wgpu::TextureDescriptor {
+                size: wgpu::Extent3d {
+                    width: self.config.width,
+                    height: self.config.height,
+                    depth_or_array_layers: 1,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: wgpu::TextureFormat::Depth32Float,
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+                label: Some("Depth Texture (Resized)"),
+                view_formats: &[],
+            };
+            self.depth_texture = self.device.create_texture(&depth_texture_desc);
+            self.depth_texture_view = self.depth_texture.create_view(&wgpu::TextureViewDescriptor::default());
+
             self.surface.configure(&self.device, &self.config);
         }
     }
 
     fn input(&mut self, _event: &WindowEvent) -> bool {
+        // Basic camera controls could be added here later
+        // For now, returning false to allow default event handling (exit, resize)
         false
     }
 
-    fn update(&mut self) {}
+    fn update(&mut self) {
+        // Update camera UBO
+        // Simple camera rotation for demonstration:
+        // let now = std::time::Instant::now();
+        // let time_secs = now.duration_since(self.start_time).as_secs_f32(); // Assuming you add start_time to State
+        // self.camera.eye.x = time_secs.sin() * 5.0;
+        // self.camera.eye.z = time_secs.cos() * 5.0;
+
+        self.camera_uniform.update_view_proj(&self.camera);
+        self.queue.write_buffer(&self.camera_buffer, 0, bytemuck::cast_slice(&[self.camera_uniform]));
+
+        // Generate instance data from chunk
+        self.instance_data.clear();
+        let chunk_offset = glam::Vec3::new(
+            -(crate::chunk::CHUNK_WIDTH as f32 / 2.0),
+            0.0, // Or -(crate::chunk::CHUNK_HEIGHT as f32 / 2.0) if you want to center Y
+            -(crate::chunk::CHUNK_DEPTH as f32 / 2.0)
+        );
+
+        for x in 0..crate::chunk::CHUNK_WIDTH {
+            for y in 0..crate::chunk::CHUNK_HEIGHT {
+                for z in 0..crate::chunk::CHUNK_DEPTH {
+                    if let Some(block) = self.chunk.get_block(x, y, z) {
+                        if block.is_solid() { // Only render solid blocks
+                            let position = glam::Vec3::new(x as f32, y as f32, z as f32) + chunk_offset;
+                            let model_matrix = glam::Mat4::from_translation(position);
+
+                            // Determine color based on block type
+                            let color = match block.block_type {
+                                crate::block::BlockType::Dirt => [0.5, 0.25, 0.05], // Brown
+                                crate::block::BlockType::Grass => [0.0, 0.8, 0.1],  // Green
+                                crate::block::BlockType::Air => [0.0, 0.0, 0.0],    // Should not happen due to is_solid
+                                // Add other block types here
+                            };
+                            self.instance_data.push(InstanceRaw::new(model_matrix, color));
+                        }
+                    }
+                }
+            }
+        }
+        if !self.instance_data.is_empty() {
+            self.queue.write_buffer(&self.instance_buffer, 0, bytemuck::cast_slice(&self.instance_data));
+        }
+    }
 
     fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
         let output = self.surface.get_current_texture()?;
@@ -300,14 +538,30 @@ impl State { // Removed lifetime 'a
                         store: wgpu::StoreOp::Store,
                     },
                 })],
-                depth_stencil_attachment: None,
+                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                    view: &self.depth_texture_view,
+                    depth_ops: Some(wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(1.0), // Clear depth to 1.0 (far plane)
+                        store: wgpu::StoreOp::Store, // Store the depth buffer
+                    }),
+                    stencil_ops: None, // No stencil operations for now
+                }),
                 timestamp_writes: None,
                 occlusion_query_set: None,
             });
 
             render_pass.set_pipeline(&self.render_pipeline);
-            render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
-            render_pass.draw(0..self.num_vertices, 0..1);
+            render_pass.set_bind_group(0, &self.camera_bind_group, &[]); // Set camera UBO at group 0
+            render_pass.set_vertex_buffer(0, self.cube_vertex_buffer.slice(..)); // Per-vertex data
+            render_pass.set_vertex_buffer(1, self.instance_buffer.slice(..)); // Per-instance data
+            render_pass.set_index_buffer(self.cube_index_buffer.slice(..), wgpu::IndexFormat::Uint16);
+
+            if self.instance_data.is_empty() {
+                // If there's nothing to draw, don't call draw_indexed.
+                // This can happen if the chunk is all air or if instance_data failed to populate.
+            } else {
+                render_pass.draw_indexed(0..self.num_cube_indices, 0, 0..self.instance_data.len() as u32);
+            }
         }
 
         self.queue.submit(Some(encoder.finish()));
