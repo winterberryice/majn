@@ -1,11 +1,93 @@
-// use std::path::PathBuf; // No longer attempting to use PathBuf directly for trace
-use wgpu::Trace; // Added based on compiler suggestion
+use std::sync::Arc; // Added for Arc<Window>
+use wgpu::Trace;
 use winit::{
+    application::ApplicationHandler,
     event::*,
-    event_loop::EventLoop, // ControlFlow was removed as unused previously
-    window::Window,
+    event_loop::{ActiveEventLoop, EventLoop},
+    window::{Window, WindowId},
     keyboard::{KeyCode, PhysicalKey},
 };
+
+// Struct to hold application state and wgpu state
+struct App { // Removed lifetime 'a
+    window: Option<Arc<Window>>, // Changed to Option<Arc<Window>>
+    state: Option<State>,      // Changed to Option<State> (State will also not have 'a)
+}
+
+impl App { // Removed lifetime 'a
+    fn new() -> Self {
+        Self {
+            window: None,
+            state: None,
+        }
+    }
+}
+
+impl ApplicationHandler for App {
+    fn resumed(&mut self, event_loop: &ActiveEventLoop) {
+        if self.window.is_none() {
+            let window_attributes = Window::default_attributes().with_title("Hello WGPU!");
+            let window_arc = Arc::new(event_loop.create_window(window_attributes).unwrap());
+            self.window = Some(Arc::clone(&window_arc));
+            let initial_size = window_arc.inner_size();
+
+            // Initialize State here. State::new is async.
+            // ApplicationHandler methods are not async, so use pollster::block_on.
+            let state = pollster::block_on(State::new(Arc::clone(&window_arc), initial_size));
+            self.state = Some(state);
+        }
+    }
+
+    fn window_event(
+        &mut self,
+        event_loop: &ActiveEventLoop,
+        window_id: WindowId,
+        event: WindowEvent,
+    ) {
+        // Ensure the event is for our window
+        if self.window.as_ref().map_or(false, |w| w.id() == window_id) {
+            let state = self.state.as_mut().unwrap(); // Should be Some if window is Some
+
+            if !state.input(&event) {
+                match event {
+                    WindowEvent::CloseRequested
+                    | WindowEvent::KeyboardInput {
+                        event:
+                            KeyEvent {
+                                physical_key: PhysicalKey::Code(KeyCode::Escape),
+                                state: ElementState::Pressed,
+                                ..
+                            },
+                        ..
+                    } => {
+                        event_loop.exit();
+                    }
+                    WindowEvent::Resized(physical_size) => {
+                        state.resize(physical_size);
+                    }
+                    WindowEvent::RedrawRequested => {
+                        state.update();
+                        match state.render() {
+                            Ok(_) => {}
+                            Err(wgpu::SurfaceError::Lost) => state.resize(state.size),
+                            Err(wgpu::SurfaceError::OutOfMemory) => event_loop.exit(),
+                            Err(e) => eprintln!("Error rendering: {:?}", e),
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
+
+    fn about_to_wait(&mut self, _event_loop: &ActiveEventLoop) {
+        if let Some(window) = self.window.as_ref() {
+            window.request_redraw();
+        }
+    }
+
+    // Add other ApplicationHandler methods if needed, e.g. exiting, memory_warning
+}
 
 // Represents a single point on a shape.
 // bytemuck is used to safely cast our struct into a slice of bytes that the GPU can understand.
@@ -46,9 +128,8 @@ const VERTICES: &[Vertex] = &[
 ];
 
 // The State struct holds all of our wgpu-related objects.
-// It now has a lifetime parameter 'a because the `surface` is tied to the `window`'s lifetime.
-struct State<'a> {
-    surface: wgpu::Surface<'a>,
+struct State { // Removed lifetime 'a
+    surface: wgpu::Surface<'static>, // Changed to 'static
     device: wgpu::Device,
     queue: wgpu::Queue,
     config: wgpu::SurfaceConfiguration,
@@ -56,19 +137,20 @@ struct State<'a> {
     render_pipeline: wgpu::RenderPipeline,
     vertex_buffer: wgpu::Buffer,
     num_vertices: u32,
-    window: &'a Window,
+    // window: Arc<Window>, // Removed: No longer needed in State
 }
 
-impl<'a> State<'a> {
-    async fn new(window: &'a Window) -> Self {
-        let size = window.inner_size();
+impl State { // Removed lifetime 'a
+    async fn new(window_surface_target: Arc<Window>, initial_size: winit::dpi::PhysicalSize<u32>) -> Self { // Takes Arc<Window> for surface, initial_size
+        // let size = window.inner_size(); // Now passed as initial_size
 
         let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
             backends: wgpu::Backends::all(),
             ..Default::default()
         });
 
-        let surface = instance.create_surface(window).unwrap();
+        // Create surface using Arc<Window> for Surface<'static>
+        let surface = instance.create_surface(window_surface_target).unwrap();
 
         let adapter = instance
             .request_adapter(&wgpu::RequestAdapterOptions {
@@ -100,8 +182,8 @@ impl<'a> State<'a> {
         let config = wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
             format: surface_format,
-            width: size.width,
-            height: size.height,
+            width: initial_size.width, // Use initial_size
+            height: initial_size.height, // Use initial_size
             present_mode: wgpu::PresentMode::Fifo, // V-sync
             alpha_mode: surface_caps.alpha_modes[0],
             view_formats: vec![],
@@ -164,17 +246,16 @@ impl<'a> State<'a> {
             device,
             queue,
             config,
-            size,
+            size: initial_size, // Store initial_size
             render_pipeline,
             vertex_buffer,
             num_vertices,
-            window,
+            // window, // Removed
         }
     }
 
-    pub fn window(&self) -> &Window {
-        &self.window
-    }
+    // Removed: pub fn window(&self) -> &Window
+    // State no longer directly holds the window Arc. App does.
 
     pub fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) {
         if new_size.width > 0 && new_size.height > 0 {
@@ -240,20 +321,20 @@ pub async fn run() {
     env_logger::init();
     // API Change: EventLoop::new() now returns a Result, which we unwrap.
     let event_loop = EventLoop::new().unwrap();
-    // Corrected: winit 0.30 window creation
-    let window = event_loop.create_window(Window::default_attributes().with_title("Hello WGPU!")).unwrap();
-    // window.set_title("Hello WGPU!"); // Title now set via attributes above
-
-    let mut state = State::new(&window).await;
+    // Corrected: winit 0.30 window creation - This will move into ApplicationHandler
+    // let window = event_loop.create_window(Window::default_attributes().with_title("Hello WGPU!")).unwrap();
+    // let mut state = State::new(window.clone()).await; // If window were Arc'd here
 
     // API Change: The event loop closure now takes different arguments.
     // The `elwt` (Event Loop Window Target) is used to control the loop (e.g., to exit).
+    // OLD event_loop.run CALL WILL BE REPLACED BY run_app
+    /*
     event_loop.run(move |event, elwt| {
         match event {
             Event::WindowEvent {
                 ref event,
                 window_id,
-            } if window_id == state.window().id() => {
+            } if window_id == state.window().id() => { // state would be part of App
                 if !state.input(event) {
                     match event {
                         WindowEvent::CloseRequested
@@ -289,11 +370,16 @@ pub async fn run() {
             }
             // API Change: AboutToWait is the new place to request a redraw for continuous rendering.
             Event::AboutToWait => {
-                state.window().request_redraw();
+                // state.window().request_redraw(); // window would be part of App
             }
             _ => {}
         }
     }).unwrap();
+    */
+    let mut app = App::new();
+    // event_loop.run_app(&mut app) will return Result, so unwrap or handle
+    // The unwrap is fine for an example, but actual error handling might be better.
+    event_loop.run_app(&mut app).unwrap();
 }
 
 fn main() {
