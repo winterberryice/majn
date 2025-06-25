@@ -32,9 +32,9 @@ impl App { // Removed lifetime 'a
         }
     }
 
-    // New method to specifically handle mouse motion
-    fn process_mouse_motion(&mut self, delta_x: f64, delta_y: f64) {
-        if self.camera_controller.movement.mouse_sensitivity > 0.0 { // Check if mouse sensitivity is set
+    // Relocated method to specifically handle mouse motion
+    pub fn process_mouse_motion(&mut self, delta_x: f64, delta_y: f64) {
+        if self.camera_controller.movement.mouse_sensitivity > 0.0 {
             self.camera_controller.process_mouse_movement(delta_x, delta_y);
         }
     }
@@ -141,7 +141,7 @@ impl ApplicationHandler for App {
                         mouse_delta.0 = position.x - last_pos.x;
                         mouse_delta.1 = position.y - last_pos.y;
                     }
-                    self.last_mouse_position = Some(*position);
+                    self.last_mouse_position = Some(position); // position is already PhysicalPosition<f64>, not a reference
                     // Pass the delta to state.input.
                     // We need a way to pass this data, current state.input takes &WindowEvent.
                     // For now, let's modify state.input or call a specific method.
@@ -224,7 +224,7 @@ struct State { // Removed lifetime 'a
     camera_uniform: CameraUniform,
     camera_buffer: wgpu::Buffer,
     camera_bind_group: wgpu::BindGroup,
-    camera_controller: CameraController, // Add CameraController
+    // camera_controller: CameraController, // This was already added in a previous step and is correct here.
 
     chunk: Chunk, // Add a chunk
     instance_data: Vec<InstanceRaw>,
