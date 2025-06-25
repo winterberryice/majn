@@ -32,13 +32,6 @@ impl App { // Removed lifetime 'a
         }
     }
 
-    // Relocated method to specifically handle mouse motion
-    pub fn process_mouse_motion(&mut self, delta_x: f64, delta_y: f64) {
-        if self.camera_controller.movement.mouse_sensitivity > 0.0 {
-            self.camera_controller.process_mouse_movement(delta_x, delta_y);
-        }
-    }
-
     // Helper method to manage mouse grab and cursor visibility
     fn set_mouse_grab(&mut self, grab: bool) {
         if let Some(window) = self.window.as_ref() {
@@ -224,7 +217,7 @@ struct State { // Removed lifetime 'a
     camera_uniform: CameraUniform,
     camera_buffer: wgpu::Buffer,
     camera_bind_group: wgpu::BindGroup,
-    // camera_controller: CameraController, // This was already added in a previous step and is correct here.
+    camera_controller: CameraController, // Ensuring this field is present
 
     chunk: Chunk, // Add a chunk
     instance_data: Vec<InstanceRaw>,
@@ -528,6 +521,14 @@ impl State { // Removed lifetime 'a
             self.depth_texture_view = self.depth_texture.create_view(&wgpu::TextureViewDescriptor::default());
 
             self.surface.configure(&self.device, &self.config);
+        }
+    }
+
+    // Method to specifically handle mouse motion
+    pub fn process_mouse_motion(&mut self, delta_x: f64, delta_y: f64) {
+        // Access camera_controller from State
+        if self.camera_controller.movement.mouse_sensitivity > 0.0 {
+            self.camera_controller.process_mouse_movement(delta_x, delta_y);
         }
     }
 
