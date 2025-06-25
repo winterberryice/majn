@@ -76,41 +76,65 @@ impl ApplicationHandler for App {
     ) {
         // Ensure the event is for our window
         if self.window.as_ref().map_or(false, |w| w.id() == window_id) {
-            let state = self.state.as_mut().unwrap(); // Should be Some if window is Some
 
-            // Handle mouse grab toggle first
-            if let WindowEvent::KeyboardInput {
-                event:
-                    KeyEvent {
-                        physical_key: PhysicalKey::Code(KeyCode::Escape),
-                        state: ElementState::Pressed,
-                        ..
-                    },
-                ..
-            } = event
-            {
-                if self.mouse_grabbed {
-                    self.set_mouse_grab(false);
-                } else {
-                    // If Esc is pressed and mouse is not grabbed, exit.
-                    event_loop.exit();
-                    return; // Avoid further processing if exiting
+            let mut event_consumed_by_grab_logic = false;
+
+            // --- Phase 1: Handle events that might change self.mouse_grabbed or cause an early exit ---
+            match event { // Match on a reference to `event` to inspect it
+                WindowEvent::KeyboardInput {
+                    event: ref key_event, // Borrow key_event to check its fields
+                    ..
+                } if key_event.physical_key == PhysicalKey::Code(KeyCode::Escape) && key_event.state == ElementState::Pressed => {
+                    if self.mouse_grabbed {
+                        self.set_mouse_grab(false);
+                        event_consumed_by_grab_logic = true; // Escape's job was to ungrab
+                    } else {
+                        event_loop.exit(); // Not grabbed, Escape means exit
+                        return;
+                    }
                 }
-                // Don't let the Escape key event propagate further if we handled it for mouse grab
-            } else if let WindowEvent::MouseInput { state: ElementState::Pressed, .. } = event {
-                // Grab mouse on click if not already grabbed
-                if !self.mouse_grabbed {
-                    self.set_mouse_grab(true);
+                WindowEvent::MouseInput { state: ElementState::Pressed, .. } => {
+                    if !self.mouse_grabbed {
+                        self.set_mouse_grab(true);
+                        // A click to grab might also be game input. For now, let it fall through.
+                        // If this click should ONLY grab and do nothing else, set event_consumed_by_grab_logic = true
+                    }
+                }
+                _ => {} // Other events fall through
+            }
+
+            // --- Phase 2: Process event with State ---
+            // Now, self.mouse_grabbed is up-to-date. We can borrow `state`.
+            let state = self.state.as_mut().unwrap();
+
+            let mut event_handled_by_state_input = false;
+            // Only pass event to state.input if not consumed by grab logic (specifically Escape for ungrabbing)
+            if !(event_consumed_by_grab_logic && matches!(event, WindowEvent::KeyboardInput { event: KeyEvent { physical_key: PhysicalKey::Code(KeyCode::Escape), state: ElementState::Pressed, .. }, .. })) {
+                event_handled_by_state_input = state.input(&event);
+            }
+
+            let mut cursor_moved_and_grabbed = false;
+            if self.mouse_grabbed {
+                if let WindowEvent::CursorMoved { position, .. } = event { // event is WindowEvent (value)
+                    let mut mouse_delta = (0.0, 0.0);
+                    if let Some(last_pos) = self.last_mouse_position {
+                        mouse_delta.0 = position.x - last_pos.x;
+                        mouse_delta.1 = position.y - last_pos.y;
+                    }
+                    self.last_mouse_position = Some(position);
+                    state.process_mouse_motion(mouse_delta.0, mouse_delta.1);
+                    cursor_moved_and_grabbed = true; // This event is now handled
                 }
             }
 
-
-            if !state.input(&event) || !self.mouse_grabbed { // Only pass input to state if mouse is grabbed (for camera) or if state handles it regardless
+            // --- Phase 3: Default event handling for non-consumed events ---
+            if !event_consumed_by_grab_logic && !event_handled_by_state_input && !cursor_moved_and_grabbed {
                 match event {
                     WindowEvent::CloseRequested => {
                         event_loop.exit();
                     }
-                    // Escape key for exiting is handled above if mouse is not grabbed
+                    // Escape for exiting is handled in Phase 1 if mouse is not grabbed.
+                    // If it was consumed by grab logic (ungrabbing), we don't get here.
                     WindowEvent::Resized(physical_size) => {
                         state.resize(physical_size);
                     }
@@ -124,24 +148,6 @@ impl ApplicationHandler for App {
                         }
                     }
                     _ => {}
-                }
-            }
-            // Special handling for mouse motion: always pass to state if mouse is grabbed
-            if self.mouse_grabbed {
-                if let WindowEvent::CursorMoved { position, .. } = event {
-                    let mut mouse_delta = (0.0, 0.0);
-                    if let Some(last_pos) = self.last_mouse_position {
-                        mouse_delta.0 = position.x - last_pos.x;
-                        mouse_delta.1 = position.y - last_pos.y;
-                    }
-                    self.last_mouse_position = Some(position); // position is already PhysicalPosition<f64>, not a reference
-                    // Pass the delta to state.input.
-                    // We need a way to pass this data, current state.input takes &WindowEvent.
-                    // For now, let's modify state.input or call a specific method.
-                    // Let's assume state.input is modified to handle this.
-                    // This is a conceptual change, actual implementation in state.input will follow.
-                    // Corrected: Call process_mouse_motion on the state object.
-                    state.process_mouse_motion(mouse_delta.0, mouse_delta.1);
                 }
             }
         }
