@@ -1,7 +1,9 @@
+// use std::path::PathBuf; // No longer attempting to use PathBuf directly for trace
+use wgpu::Trace; // Added based on compiler suggestion
 use winit::{
     event::*,
-    event_loop::{EventLoop, ControlFlow},
-    window::{Window, WindowBuilder},
+    event_loop::EventLoop, // ControlFlow was removed as unused previously
+    window::Window,
     keyboard::{KeyCode, PhysicalKey},
 };
 
@@ -57,11 +59,11 @@ struct State<'a> {
     window: &'a Window,
 }
 
-impl<'a> State {
+impl<'a> State<'a> {
     async fn new(window: &'a Window) -> Self {
         let size = window.inner_size();
 
-        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
+        let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
             backends: wgpu::Backends::all(),
             ..Default::default()
         });
@@ -84,8 +86,10 @@ impl<'a> State {
                     required_features: wgpu::Features::empty(),
                     required_limits: wgpu::Limits::default(),
                     label: None,
+                    memory_hints: wgpu::MemoryHints::default(),
+                    trace: Trace::Off, // Guessed variant Trace::Off
                 },
-                None,
+                // None, // trace_path was removed
             )
             .await
             .unwrap();
@@ -123,14 +127,14 @@ impl<'a> State {
             layout: Some(&render_pipeline_layout),
             vertex: wgpu::VertexState {
                 module: &shader,
-                entry_point: "vs_main",
+                entry_point: Some("vs_main"),
                 buffers: &[Vertex::desc()],
                 // API Change: This new field is required
                 compilation_options: wgpu::PipelineCompilationOptions::default(),
             },
             fragment: Some(wgpu::FragmentState {
                 module: &shader,
-                entry_point: "fs_main",
+                entry_point: Some("fs_main"),
                 targets: &[Some(wgpu::ColorTargetState {
                     format: config.format,
                     blend: Some(wgpu::BlendState::REPLACE),
@@ -225,7 +229,7 @@ impl<'a> State {
             render_pass.draw(0..self.num_vertices, 0..1);
         }
 
-        self.queue.submit(std.iter::once(encoder.finish()));
+        self.queue.submit(Some(encoder.finish()));
         output.present();
 
         Ok(())
@@ -236,8 +240,9 @@ pub async fn run() {
     env_logger::init();
     // API Change: EventLoop::new() now returns a Result, which we unwrap.
     let event_loop = EventLoop::new().unwrap();
-    let window = WindowBuilder::new().build(&event_loop).unwrap();
-    window.set_title("Hello WGPU!");
+    // Corrected: winit 0.30 window creation
+    let window = event_loop.create_window(Window::default_attributes().with_title("Hello WGPU!")).unwrap();
+    // window.set_title("Hello WGPU!"); // Title now set via attributes above
 
     let mut state = State::new(&window).await;
 
@@ -262,7 +267,7 @@ pub async fn run() {
                                 },
                             ..
                         } => {
-                            elwt.set_control_flow(ControlFlow::Exit);
+                            elwt.exit(); // Corrected: Use elwt.exit() for winit 0.30
                         }
                         WindowEvent::Resized(physical_size) => {
                             state.resize(*physical_size);
@@ -273,7 +278,8 @@ pub async fn run() {
                             match state.render() {
                                 Ok(_) => {}
                                 Err(wgpu::SurfaceError::Lost) => state.resize(state.size),
-                                Err(wgpu::SurfaceError::OutOfMemory) => elwt.set_control_flow(ControlFlow::Exit),
+                                // Corrected: Use elwt.exit() for winit 0.30
+                                Err(wgpu::SurfaceError::OutOfMemory) => elwt.exit(),
                                 Err(e) => eprintln!("{:?}", e),
                             }
                         }
