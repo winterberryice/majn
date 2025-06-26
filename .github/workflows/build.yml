@@ -27,14 +27,14 @@ jobs:
         sudo apt-get update
         sudo apt-get install -y libvulkan-dev libxkbcommon-dev libwayland-dev libgtk-3-dev libudev-dev pkg-config
 
-    - name: Build release executable (Linux)
-      run: cargo build --verbose
+    - name: Build debug executable (Linux)
+      run: cargo build --verbose # Removed --release
 
     - name: Archive Linux executable
       uses: actions/upload-artifact@v4
       with:
         name: engine-linux
-        path: engine/target/release/engine
+        path: engine/target/debug/engine # Changed path to debug
 
   build-windows:
     name: Build for Windows
@@ -51,11 +51,11 @@ jobs:
       with:
         toolchain: stable
 
-    - name: Build release executable (Windows)
-      run: cargo build --verbose
+    - name: Build debug executable (Windows)
+      run: cargo build --verbose # Removed --release
 
     - name: Archive Windows executable
       uses: actions/upload-artifact@v4
       with:
         name: engine-windows
-        path: engine/target/release/engine.exe
+        path: engine/target/debug/engine.exe # Changed path to debug
