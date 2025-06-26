@@ -7,55 +7,60 @@ mod instance;
 use std::sync::Arc; // Added for Arc<Window>
 use wgpu::Trace;
 use winit::{
-    event::{Event, WindowEvent, KeyEvent, ElementState, MouseButton, MouseScrollDelta, TouchPhase}, // More specific
-    event_loop::{EventLoop, EventLoopWindowTarget, ControlFlow},
-    window::{Window, WindowId}, // Ensure WindowId is imported
-    keyboard::{KeyCode, PhysicalKey}, // PhysicalKey is part of event::* but explicit can be fine
+    // application::ApplicationHandler, // Removed
+    event::{Event, WindowEvent, KeyEvent, ElementState, DeviceEvent, MouseButton, MouseScrollDelta, TouchPhase},
+    event_loop::{EventLoop, ActiveEventLoop, ControlFlow}, // ControlFlow and ActiveEventLoop are key
+    window::{Window, WindowId},
+    keyboard::{KeyCode, PhysicalKey}, // These are also available via event::* usually
 };
-// Note: `winit::keyboard::KeyCode` is distinct from `winit::event::KeyCode` if not re-exported.
-// `event::*` usually brings `KeyCode` from `winit::keyboard::KeyCode` via `pub use winit_types::keyboard::KeyCode;` in `winit::event`
-// So `keyboard::KeyCode` might be redundant if `event::*` or `event::KeyCode` is used.
-// For now, let's keep `keyboard::KeyCode` and `keyboard::PhysicalKey` for clarity.
 
 // Struct to hold application state and wgpu state
-struct App { // Removed lifetime 'a
-    window: Option<Arc<Window>>, // Changed to Option<Arc<Window>>
-    state: Option<State>,      // Changed to Option<State> (State will also not have 'a)
-    mouse_grabbed: bool,       // Added to track mouse grab state
-    last_mouse_position: Option<winit::dpi::PhysicalPosition<f64>>, // Added to track last mouse position
+struct App {
+    window: Option<Arc<Window>>,
+    state: Option<State>,
+    mouse_grabbed: bool,       // Added for mouse grab
+    last_mouse_position: Option<winit::dpi::PhysicalPosition<f64>>, // Added for mouse delta
 }
 
-impl App { // Removed lifetime 'a
+impl App {
     fn new() -> Self {
         Self {
             window: None,
             state: None,
-            mouse_grabbed: false,
-            last_mouse_position: None,
+            mouse_grabbed: false,      // Initialize
+            last_mouse_position: None, // Initialize
         }
     }
 
     // Helper method to manage mouse grab and cursor visibility
     fn set_mouse_grab(&mut self, grab: bool) {
         if let Some(window) = self.window.as_ref() {
-            if grab {
-                window.set_cursor_grab(winit::window::CursorGrabMode::Confined)
-                    .or_else(|_e| window.set_cursor_grab(winit::window::CursorGrabMode::Locked))
-                    .unwrap_or_else(|e| eprintln!("Failed to grab cursor: {:?}", e));
-                window.set_cursor_visible(false);
+            let grab_mode = if grab {
+                winit::window::CursorGrabMode::Confined
             } else {
-                window.set_cursor_grab(winit::window::CursorGrabMode::None)
-                    .unwrap_or_else(|e| eprintln!("Failed to release cursor: {:?}", e));
-                window.set_cursor_visible(true);
+                winit::window::CursorGrabMode::None
+            };
+            if window.set_cursor_grab(grab_mode).is_err() {
+                if grab { // try Locked only if Confined failed for grabbing
+                    if window.set_cursor_grab(winit::window::CursorGrabMode::Locked).is_err() {
+                        eprintln!("Failed to grab cursor (Confined and Locked failed).");
+                    }
+                } else { // if releasing and None failed (highly unlikely)
+                     eprintln!("Failed to release cursor grab.");
+                }
             }
+            window.set_cursor_visible(!grab);
             self.mouse_grabbed = grab;
+            if grab { // When grabbing, reset last_mouse_position to avoid a jump
+                self.last_mouse_position = None;
+            }
         }
     }
 
-    // New method to handle window events, adapted from ApplicationHandler::window_event
-    fn handle_window_event(&mut self, event: WindowEvent, control_flow: &mut ControlFlow) { // Changed elwt to control_flow
-        // This logic is mostly copied from the old App::window_event
-        // Ensure state exists
+    // New method for handling window events in the manual loop
+    fn handle_manual_window_event(&mut self, event: WindowEvent, _window_id: WindowId, active_event_loop: &ActiveEventLoop) {
+        // _window_id check is already done by the caller in the main loop
+
         let state = match self.state.as_mut() {
             Some(s) => s,
             None => return, // Should not happen if Resumed initialized state
@@ -63,17 +68,16 @@ impl App { // Removed lifetime 'a
 
         let mut event_consumed_by_grab_logic = false;
 
-        // --- Phase 1: Handle events that might change self.mouse_grabbed or cause an early exit ---
         match event {
             WindowEvent::KeyboardInput {
-                event: ref key_event,
+                event: ref key_event, // Use ref to avoid moving out of key_event
                 ..
             } if key_event.physical_key == PhysicalKey::Code(KeyCode::Escape) && key_event.state == ElementState::Pressed => {
                 if self.mouse_grabbed {
                     self.set_mouse_grab(false);
                     event_consumed_by_grab_logic = true;
                 } else {
-                    control_flow.set_exit(); // Changed from elwt.exit()
+                    active_event_loop.exit();
                     return;
                 }
             }
@@ -85,71 +89,46 @@ impl App { // Removed lifetime 'a
             _ => {}
         }
 
-        // --- Phase 2: Process event with State ---
         let mut event_handled_by_state_input = false;
         if !(event_consumed_by_grab_logic && matches!(event, WindowEvent::KeyboardInput { event: KeyEvent { physical_key: PhysicalKey::Code(KeyCode::Escape), state: ElementState::Pressed, .. }, .. })) {
             event_handled_by_state_input = state.input(&event);
         }
 
-        let mut cursor_moved_and_grabbed = false;
-        if self.mouse_grabbed {
-            if let WindowEvent::CursorMoved { position, .. } = event {
-                let mut mouse_delta = (0.0, 0.0);
-                if let Some(last_pos) = self.last_mouse_position {
-                    mouse_delta.0 = position.x - last_pos.x;
-                    mouse_delta.1 = position.y - last_pos.y;
-                }
-                self.last_mouse_position = Some(position);
-                // state.process_mouse_motion(mouse_delta.0, mouse_delta.1); // REMOVED: Handled by DeviceEvent::MouseMotion
-                // cursor_moved_and_grabbed = true; // This event is no longer solely for camera when grabbed.
-                                                 // It might still be useful for knowing the cursor is over the window.
-                                                 // For now, let's assume if mouse is grabbed, DeviceEvent handles motion.
-                                                 // If other logic needs to know if CursorMoved happened, this flag can be set.
-                                                 // We'll set it to true if mouse_grabbed is true, to prevent default event processing.
-                if self.mouse_grabbed { // If grabbed, CursorMoved itself (even if not for camera) could be considered "handled"
-                    cursor_moved_and_grabbed = true;
-                }
-            }
+        // Mouse motion for camera is now handled by DeviceEvent::MouseMotion.
+        // We only update last_mouse_position here if needed for other UI, or just to keep it updated.
+        // And ensure it doesn't interfere with default event processing if mouse is grabbed.
+        let mut cursor_moved_event_occurred = false;
+        if let WindowEvent::CursorMoved { position, .. } = event {
+            self.last_mouse_position = Some(position);
+            cursor_moved_event_occurred = true;
         }
 
-        // --- Phase 3: Default event handling for non-consumed events ---
-        if !event_consumed_by_grab_logic && !event_handled_by_state_input && !cursor_moved_and_grabbed {
+        // If mouse is grabbed, and CursorMoved happened, consider it "handled" for default processing purposes,
+        // even if camera rotation is done by DeviceEvent.
+        let event_effectively_handled = event_consumed_by_grab_logic ||
+                                      event_handled_by_state_input ||
+                                      (self.mouse_grabbed && cursor_moved_event_occurred);
+
+        if !event_effectively_handled {
             match event {
                 WindowEvent::CloseRequested => {
-                    control_flow.set_exit(); // Changed from elwt.exit()
+                    active_event_loop.exit();
                 }
                 WindowEvent::Resized(physical_size) => {
                     state.resize(physical_size);
                 }
-                WindowEvent::RedrawRequested => { // This RedrawRequested might be redundant if MainEventsCleared handles it
-                    state.update();
-                    match state.render() {
-                        Ok(_) => {}
-                        Err(wgpu::SurfaceError::Lost) => state.resize(state.size),
-                        Err(wgpu::SurfaceError::OutOfMemory) => control_flow.set_exit(), // Changed from elwt.exit()
-                        Err(e) => eprintln!("Error rendering: {:?}", e),
-                    }
-                }
+                // RedrawRequested is handled in the main loop directly
+                // WindowEvent::RedrawRequested => { ... }
                 _ => {}
             }
         }
     }
 }
 
-/*
+/* Commenting out ApplicationHandler impl as it's no longer used by event_loop.run()
 impl ApplicationHandler for App {
     fn resumed(&mut self, _event_loop: &ActiveEventLoop) {
         // This logic has been moved to the Event::Resumed arm in the main event_loop.run() closure.
-        // Original logic:
-        // if self.window.is_none() {
-        //     let window_attributes = Window::default_attributes().with_title("Hello WGPU!");
-        //     let window_arc = Arc::new(event_loop.create_window(window_attributes).unwrap());
-        //     self.window = Some(Arc::clone(&window_arc));
-        //     let initial_size = window_arc.inner_size();
-        //     let state = pollster::block_on(State::new(Arc::clone(&window_arc), initial_size));
-        //     self.state = Some(state);
-        //     self.set_mouse_grab(true);
-        // }
     }
 
     fn window_event(
@@ -158,21 +137,13 @@ impl ApplicationHandler for App {
         _window_id: WindowId,
         _event: WindowEvent,
     ) {
-        // This logic has been moved to App::handle_window_event,
-        // which is called from the Event::WindowEvent arm in the main event_loop.run() closure.
+        // This logic has been moved to App::handle_manual_window_event
     }
 
     fn about_to_wait(&mut self, _event_loop: &ActiveEventLoop) {
-        // This logic has been moved to the Event::MainEventsCleared arm
+        // This logic has been moved to the Event::AboutToWait arm
         // in the main event_loop.run() closure.
-        // Original logic:
-        // if let Some(window) = self.window.as_ref() {
-        //     window.request_redraw();
-        // }
     }
-
-    // Other ApplicationHandler methods like exiting(), new_events(), memory_warning()
-    // would also be handled by corresponding Event variants in the main loop if needed.
 }
 */
 
@@ -214,7 +185,7 @@ impl Vertex {
 //     Vertex { position: [0.5, -0.5, 0.0], color: [0.0, 0.0, 1.0] },  // Bottom-right (Blue)
 // ];
 // use crate::cube_geometry; // Removed: `mod cube_geometry;` makes it available.
-use crate::camera::{Camera, CameraController, CameraUniform}; // Import Camera, CameraController, and CameraUniform
+use crate::camera::{Camera, CameraController, CameraUniform}; // Import Camera, CameraController, CameraUniform
 use crate::chunk::Chunk; // Import Chunk
 use crate::instance::InstanceRaw; // Import InstanceRaw
 
@@ -237,7 +208,8 @@ struct State { // Removed lifetime 'a
     camera_uniform: CameraUniform,
     camera_buffer: wgpu::Buffer,
     camera_bind_group: wgpu::BindGroup,
-    camera_controller: CameraController, // Ensuring this field is present
+    camera_controller: CameraController,
+
 
     chunk: Chunk, // Add a chunk
     instance_data: Vec<InstanceRaw>,
@@ -414,7 +386,7 @@ impl State { // Removed lifetime 'a
         let mut camera_uniform = CameraUniform::new();
         camera_uniform.update_view_proj(&camera);
 
-        let camera_controller = CameraController::new(10.0, 0.1); // Adjust speed and sensitivity as needed
+        let camera_controller = CameraController::new(10.0, 0.1); // speed: 10.0, sensitivity: 0.1
 
         let camera_buffer = device.create_buffer_init(
             &wgpu::util::BufferInitDescriptor {
@@ -544,9 +516,7 @@ impl State { // Removed lifetime 'a
         }
     }
 
-    // Method to specifically handle mouse motion
     pub fn process_mouse_motion(&mut self, delta_x: f64, delta_y: f64) {
-        // Access camera_controller from State
         if self.camera_controller.movement.mouse_sensitivity > 0.0 {
             self.camera_controller.process_mouse_movement(delta_x, delta_y);
         }
@@ -567,50 +537,41 @@ impl State { // Removed lifetime 'a
                 match key_code {
                     KeyCode::KeyW | KeyCode::ArrowUp => {
                         self.camera_controller.movement.is_forward_pressed = is_pressed;
-                        true // Event handled
+                        true
                     }
                     KeyCode::KeyS | KeyCode::ArrowDown => {
                         self.camera_controller.movement.is_backward_pressed = is_pressed;
-                        true // Event handled
+                        true
                     }
                     KeyCode::KeyA | KeyCode::ArrowLeft => {
                         self.camera_controller.movement.is_left_pressed = is_pressed;
-                        true // Event handled
+                        true
                     }
                     KeyCode::KeyD | KeyCode::ArrowRight => {
                         self.camera_controller.movement.is_right_pressed = is_pressed;
-                        true // Event handled
+                        true
                     }
                     KeyCode::Space => {
                         self.camera_controller.movement.is_up_pressed = is_pressed;
-                        true // Event handled
+                        true
                     }
                     KeyCode::ShiftLeft | KeyCode::ShiftRight => {
                         self.camera_controller.movement.is_down_pressed = is_pressed;
-                        true // Event handled
+                        true
                     }
-                    // Let App handle Escape for mouse grab toggle / exit
-                    KeyCode::Escape => false, // Event not handled by State, let App handle it
-                    _ => false, // Event not handled
+                    KeyCode::Escape => {
+                        // Escape is handled by App for mouse grab / exit, so State doesn't consume it here.
+                        false
+                    }
+                    _ => false,
                 }
             }
-            // CursorMoved is now handled by App, which calls state.process_mouse_motion directly.
-            // So, we don't need to handle CursorMoved here in state.input for camera purposes.
-            // WindowEvent::CursorMoved { .. } => {
-            //     true // Indicate event was seen, even if handled by App calling process_mouse_motion
-            // }
-            _ => false, // Event not handled by State's general input processing
+            _ => false,
         }
     }
 
     fn update(&mut self) {
-        // Update camera based on controller
-        // For dt, we'd ideally pass the actual delta time from the game loop.
-        // For now, let's use a fixed placeholder or calculate it if possible.
-        // If App::about_to_wait is called regularly (e.g., for each frame),
-        // we could store a `last_update_time` in `State` and calculate `dt`.
-        // For simplicity here, let's assume a fixed `dt` for now, e.g., 1/60th of a second.
-        let dt = std::time::Duration::from_secs_f32(1.0 / 60.0); // Placeholder
+        let dt = std::time::Duration::from_secs_f32(1.0 / 60.0); // Placeholder for delta time
         self.camera_controller.update_camera(&mut self.camera, dt);
 
         // Update camera UBO
@@ -772,40 +733,35 @@ pub async fn run() {
     }).unwrap();
     */
     let mut app = App::new();
-    // event_loop.run_app(&mut app) will return Result, so unwrap or handle
     // The unwrap is fine for an example, but actual error handling might be better.
-    // event_loop.run_app(&mut app).unwrap(); // Old way
+    // event_loop.run_app(&mut app).unwrap(); // Old way using ApplicationHandler
 
-    let mut app = App::new(); // Create App instance
+    let mut app = App::new();
 
-    // Initial setup before the event loop, if `run` takes 2 arguments
-    // This moves the Resumed logic out.
-    if app.window.is_none() { // Assuming app is created before this block
-        let window_attributes = Window::default_attributes().with_title("Hello WGPU Refactored!");
-        // Create window using event_loop directly, before calling run
-        // This is typical for older winit or if elwt is not in run's closure
-        let window_arc = Arc::new(event_loop.create_window(window_attributes).unwrap()); // Needs event_loop to live long enough
-        app.window = Some(Arc::clone(&window_arc));
-        let initial_size = window_arc.inner_size();
-        let state = pollster::block_on(State::new(Arc::clone(&window_arc), initial_size));
-        app.state = Some(state);
-        app.set_mouse_grab(true);
-    }
-
-
-    event_loop.run(move |event, control_flow| { // Changed signature to 2 arguments
-        *control_flow = ControlFlow::Poll;
+    event_loop.run(move |event, active_event_loop| {
+        active_event_loop.set_control_flow(ControlFlow::Poll);
 
         match event {
-            // Event::Resumed logic is now handled before event_loop.run()
-            // Event::Resumed => { /* ... */ } // This arm might not be needed or behave differently
-
+            Event::Resumed => {
+                if app.window.is_none() {
+                    let window_attributes = Window::default_attributes().with_title("Hello WGPU (Manual Loop)");
+                    let window_arc = Arc::new(active_event_loop.create_window(window_attributes).unwrap());
+                    app.window = Some(Arc::clone(&window_arc));
+                    let initial_size = window_arc.inner_size();
+                    let state = pollster::block_on(State::new(Arc::clone(&window_arc), initial_size));
+                    app.state = Some(state);
+                    app.set_mouse_grab(true);
+                }
+            }
             Event::WindowEvent { window_id, event } => {
                 if let Some(window) = app.window.as_ref() {
                     if window.id() == window_id {
-                        // App::handle_window_event needs to be adapted to not take `elwt`
-                        // Exiting will be done via control_flow.set_exit()
-                        app.handle_window_event(event, control_flow);
+                        // We'll need to adapt App's window event handling method or inline logic here.
+                        // For now, let's use the existing App::window_event logic from ApplicationHandler as a template
+                        // and call it by passing `active_event_loop` and `window_id`.
+                        // This requires App::window_event to be a normal method, not an ApplicationHandler trait method.
+                        // Let's assume we'll refactor App::window_event to App::handle_window_event.
+                        app.handle_manual_window_event(event, window_id, active_event_loop);
                     }
                 }
             }
@@ -818,25 +774,23 @@ pub async fn run() {
                             }
                         }
                     }
-                    // Other device events can be handled here if needed
                     _ => {}
                 }
             }
             Event::AboutToWait => { // Changed from MainEventsCleared
-                // Request a redraw continuously for animation, if the window exists.
                 if let Some(window) = app.window.as_ref() {
                     window.request_redraw();
                 }
             }
-            Event::RedrawRequested(requested_window_id) => { // Assuming this is correct, despite error
-                if let Some(window) = app.window.as_ref() {
+            Event::RedrawRequested(requested_window_id) => {
+                if let Some(window) = app.window.as_ref() { // Ensure window exists
                     if window.id() == requested_window_id {
                         if let Some(ref mut state_obj) = app.state {
                             state_obj.update();
                             match state_obj.render() {
                                 Ok(_) => {}
                                 Err(wgpu::SurfaceError::Lost) => state_obj.resize(state_obj.size),
-                                Err(wgpu::SurfaceError::OutOfMemory) => control_flow.set_exit(),
+                                Err(wgpu::SurfaceError::OutOfMemory) => active_event_loop.exit(),
                                 Err(e) => eprintln!("Error rendering: {:?}", e),
                             }
                         }
@@ -844,11 +798,11 @@ pub async fn run() {
                 }
             }
             Event::LoopExiting => { // Changed from LoopDestroyed
-                // Perform cleanup if necessary
+                // Cleanup if needed
             }
-            _ => {} // Catch-all for other events
+            _ => {}
         }
-    }).unwrap();
+    }); // .unwrap() removed as run with this signature doesn't return Result
 }
 
 fn main() {

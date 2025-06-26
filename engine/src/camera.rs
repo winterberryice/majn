@@ -38,12 +38,9 @@ impl Camera {
     }
 }
 
-// We'll also define our Uniform struct here for now.
-// It needs to be `repr(C)` to ensure predictable memory layout for the shader.
 #[repr(C)]
 #[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct CameraUniform {
-    // Store as [[f32; 4]; 4] for bytemuck compatibility
     view_proj: [[f32; 4]; 4],
 }
 
@@ -105,49 +102,47 @@ impl CameraController {
         let delta_y = delta_y as f32 * self.movement.mouse_sensitivity;
 
         self.yaw += delta_x;
-        self.pitch -= delta_y; // Inverted because y-coordinates go from bottom to top
+        self.pitch -= delta_y;
 
-        // Clamp pitch to avoid flipping
         self.pitch = self.pitch.clamp(-89.0f32.to_radians(), 89.0f32.to_radians());
     }
 
     pub fn update_camera(&self, camera: &mut Camera, dt: std::time::Duration) {
         let dt_secs = dt.as_secs_f32();
-        let forward = (camera.target - camera.eye).normalize();
-        let right = forward.cross(camera.up).normalize();
-        // let up = right.cross(forward).normalize(); // We'll use world up for movement simplicity
+        let current_forward = (camera.target - camera.eye).normalize();
+        let right = current_forward.cross(camera.up).normalize();
+
+        let mut effective_eye_movement = Vec3::ZERO;
 
         if self.movement.is_forward_pressed {
-            camera.eye += forward * self.movement.speed * dt_secs;
+            effective_eye_movement += current_forward;
         }
         if self.movement.is_backward_pressed {
-            camera.eye -= forward * self.movement.speed * dt_secs;
+            effective_eye_movement -= current_forward;
         }
         if self.movement.is_left_pressed {
-            camera.eye -= right * self.movement.speed * dt_secs;
+            effective_eye_movement -= right;
         }
         if self.movement.is_right_pressed {
-            camera.eye += right * self.movement.speed * dt_secs;
+            effective_eye_movement += right;
         }
+
+        camera.eye += effective_eye_movement.normalize_or_zero() * self.movement.speed * dt_secs;
+
+        // Vertical movement
         if self.movement.is_up_pressed {
-            // Move along world up/down for simplicity, not camera's local up
             camera.eye.y += self.movement.speed * dt_secs;
         }
         if self.movement.is_down_pressed {
             camera.eye.y -= self.movement.speed * dt_secs;
         }
 
-        // Update target based on yaw and pitch
-        let front = Vec3::new(
+        let new_forward_direction = Vec3::new(
             self.yaw.cos() * self.pitch.cos(),
             self.pitch.sin(),
             self.yaw.sin() * self.pitch.cos(),
         )
         .normalize();
-        camera.target = camera.eye + front;
-
-        // Recalculate the camera's right and up vectors if needed, though up is usually fixed.
-        // camera.up might need to be recalculated if roll is introduced.
-        // For FPS style controls, world up (Vec3::Y) is often sufficient.
+        camera.target = camera.eye + new_forward_direction;
     }
 }
