@@ -109,27 +109,31 @@ impl CameraController {
 
     pub fn update_camera(&self, camera: &mut Camera, dt: std::time::Duration) {
         let dt_secs = dt.as_secs_f32();
-        let current_forward = (camera.target - camera.eye).normalize();
-        let right = current_forward.cross(camera.up).normalize();
 
-        let mut effective_eye_movement = Vec3::ZERO;
+        // Calculate movement direction based on current orientation BEFORE changing eye position
+        let view_direction = (camera.target - camera.eye).normalize_or_zero();
+        let right_direction = view_direction.cross(camera.up).normalize_or_zero();
 
+        let mut move_vector = Vec3::ZERO;
         if self.movement.is_forward_pressed {
-            effective_eye_movement += current_forward;
+            move_vector += view_direction;
         }
         if self.movement.is_backward_pressed {
-            effective_eye_movement -= current_forward;
+            move_vector -= view_direction;
         }
         if self.movement.is_left_pressed {
-            effective_eye_movement -= right;
+            move_vector -= right_direction;
         }
         if self.movement.is_right_pressed {
-            effective_eye_movement += right;
+            move_vector += right_direction;
         }
 
-        camera.eye += effective_eye_movement.normalize_or_zero() * self.movement.speed * dt_secs;
+        // Normalize combined horizontal movement vector to prevent faster diagonal movement
+        if move_vector.length_squared() > 0.0 {
+             camera.eye += move_vector.normalize() * self.movement.speed * dt_secs;
+        }
 
-        // Vertical movement
+        // Vertical movement (fly mode) - along world Y axis
         if self.movement.is_up_pressed {
             camera.eye.y += self.movement.speed * dt_secs;
         }
@@ -137,12 +141,13 @@ impl CameraController {
             camera.eye.y -= self.movement.speed * dt_secs;
         }
 
+        // Update target based on yaw and pitch (from mouse movement)
         let new_forward_direction = Vec3::new(
             self.yaw.cos() * self.pitch.cos(),
             self.pitch.sin(),
             self.yaw.sin() * self.pitch.cos(),
         )
-        .normalize();
+        .normalize_or_zero(); // Use normalize_or_zero for safety
         camera.target = camera.eye + new_forward_direction;
     }
 }
