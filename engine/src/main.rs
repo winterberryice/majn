@@ -3,6 +3,8 @@ mod chunk;
 mod cube_geometry;
 mod camera;
 mod instance;
+pub mod physics;
+pub mod player;
 
 use std::sync::Arc; // Added for Arc<Window>
 use wgpu::Trace;
@@ -252,14 +254,12 @@ impl Vertex {
 //     Vertex { position: [0.5, -0.5, 0.0], color: [0.0, 0.0, 1.0] },  // Bottom-right (Blue)
 // ];
 // use crate::cube_geometry;
-use crate::camera::{Camera, CameraController, CameraUniform};
+use crate::camera::CameraUniform; // Camera and CameraController removed
 use crate::chunk::{Chunk, CHUNK_WIDTH, CHUNK_HEIGHT, CHUNK_DEPTH}; // Import chunk dimensions
 use crate::cube_geometry::CubeFace; // Import CubeFace
-// No longer using InstanceRaw for blocks, so remove the import if it's otherwise unused.
-// Depending on other uses, `mod instance;` might also be removable or its contents cleared.
-// For now, just removing the direct `use`.
-// use crate::instance::InstanceRaw;
-
+use crate::player::Player; // Import Player
+use crate::physics::PLAYER_EYE_HEIGHT; // For camera positioning
+use glam::Mat4; // For view/projection matrix calculation
 
 // The State struct holds all of our wgpu-related objects.
 struct State {
@@ -270,14 +270,13 @@ struct State {
     size: winit::dpi::PhysicalSize<u32>,
     render_pipeline: wgpu::RenderPipeline,
 
-    // Removed cube_vertex_buffer and cube_index_buffer for individual cubes
-    // num_cube_indices is also removed as it related to drawing a single full cube
+    // Player replaces Camera and CameraController
+    player: Player,
 
-    camera: Camera,
+    // CameraUniform and related GPU resources are still needed for rendering
     camera_uniform: CameraUniform,
     camera_buffer: wgpu::Buffer,
     camera_bind_group: wgpu::BindGroup,
-    camera_controller: CameraController,
 
     chunk: Chunk,
     // New fields for the combined chunk mesh
@@ -405,21 +404,29 @@ impl State {
             cache: None,
         });
 
-        // Camera setup
-        let camera = Camera::new(
-            // Position camera to see the chunk centered at world origin
-             glam::Vec3::new(CHUNK_WIDTH as f32 / 2.0, CHUNK_HEIGHT as f32 * 0.75, CHUNK_DEPTH as f32 * 2.0),
-            // Target the center of the chunk mass
-             glam::Vec3::new(CHUNK_WIDTH as f32 / 2.0, CHUNK_HEIGHT as f32 / 2.0, CHUNK_DEPTH as f32 / 2.0),
-            glam::Vec3::Y, // Up
-            config.width as f32 / config.height as f32, // Aspect
-            45.0, // FOVY
-            0.1,  // ZNear
-            1000.0, // ZFar - increased to see further
+        // Player setup
+        let initial_player_position = glam::Vec3::new(
+            CHUNK_WIDTH as f32 / 2.0,
+            (CHUNK_HEIGHT / 2) as f32 + 2.0, // Start slightly above the surface
+            CHUNK_DEPTH as f32 / 2.0,
         );
-        let mut camera_uniform = CameraUniform::new();
-        camera_uniform.update_view_proj(&camera);
-        let camera_controller = CameraController::new(15.0, 0.003); // Adjusted speed and sensitivity
+        let initial_yaw = -std::f32::consts::FRAC_PI_2; // Look along -Z
+        let initial_pitch = 0.0;
+        let mouse_sensitivity = 0.003; // Same as old CameraController
+
+        let player = Player::new(
+            initial_player_position,
+            initial_yaw,
+            initial_pitch,
+            mouse_sensitivity,
+        );
+
+        // CameraUniform setup - still needed, but will be updated by Player's state
+        // We need a temporary Camera struct or matrix to initialize it the first time.
+        // Or, we can update it in the first call to State::update().
+        // For now, let's initialize it with identity, it will be updated before first render.
+        let camera_uniform = CameraUniform::new();
+        // camera_uniform.update_view_proj(&camera); // This will be done in State::update
 
         use wgpu::util::DeviceExt; // For create_buffer_init
         let camera_buffer = device.create_buffer_init(
@@ -469,11 +476,11 @@ impl State {
             config,
             size: initial_size,
             render_pipeline,
-            camera,
+            player, // Player is now part of State
             camera_uniform,
             camera_buffer,
             camera_bind_group,
-            camera_controller,
+            // camera and camera_controller removed
             chunk,
             chunk_vertex_buffer: None,
             chunk_index_buffer: None,
@@ -589,7 +596,7 @@ impl State {
             self.size = new_size;
             self.config.width = new_size.width;
             self.config.height = new_size.height;
-            self.camera.aspect = self.config.width as f32 / self.config.height as f32;
+            // self.camera.aspect = self.config.width as f32 / self.config.height as f32; // Removed, self.camera no longer exists
 
             let depth_texture_desc = wgpu::TextureDescriptor {
                 size: wgpu::Extent3d {
@@ -613,9 +620,10 @@ impl State {
     }
 
     pub fn process_mouse_motion(&mut self, delta_x: f64, delta_y: f64) {
-        if self.camera_controller.movement.mouse_sensitivity > 0.0 {
-            self.camera_controller.process_mouse_movement(delta_x, delta_y);
-        }
+        // Sensitivity check is handled inside player.process_mouse_movement if needed,
+        // or we assume it's always active if called.
+        // The player's mouse_sensitivity field is used by its own method.
+        self.player.process_mouse_movement(delta_x, delta_y);
     }
 
     fn input(&mut self, event: &WindowEvent) -> bool {
@@ -632,24 +640,27 @@ impl State {
                 let is_pressed = *state == ElementState::Pressed;
                 match key_code {
                     KeyCode::KeyW | KeyCode::ArrowUp => {
-                        self.camera_controller.movement.is_forward_pressed = is_pressed; true
+                        self.player.movement_intention.forward = is_pressed; true
                     }
                     KeyCode::KeyS | KeyCode::ArrowDown => {
-                        self.camera_controller.movement.is_backward_pressed = is_pressed; true
+                        self.player.movement_intention.backward = is_pressed; true
                     }
                     KeyCode::KeyA | KeyCode::ArrowLeft => {
-                        self.camera_controller.movement.is_left_pressed = is_pressed; true
+                        self.player.movement_intention.left = is_pressed; true
                     }
                     KeyCode::KeyD | KeyCode::ArrowRight => {
-                        self.camera_controller.movement.is_right_pressed = is_pressed; true
+                        self.player.movement_intention.right = is_pressed; true
                     }
                     KeyCode::Space => {
-                        self.camera_controller.movement.is_up_pressed = is_pressed; true
+                        // For player, Space is jump. "Up" movement (flying) is removed.
+                        self.player.movement_intention.jump = is_pressed; true
                     }
                     KeyCode::ShiftLeft | KeyCode::ShiftRight => {
-                        self.camera_controller.movement.is_down_pressed = is_pressed; true
+                        // "Down" movement (flying) is removed. Shift could be for sprinting or crouching later.
+                        // For now, it does nothing with the player controller.
+                        false // Or handle as sprint/crouch if implemented
                     }
-                    KeyCode::Escape => false,
+                    KeyCode::Escape => false, // Escape is handled by App for mouse grab
                     _ => false,
                 }
             }
@@ -658,10 +669,40 @@ impl State {
     }
 
     fn update(&mut self) {
-        let dt = std::time::Duration::from_secs_f32(1.0 / 60.0);
-        self.camera_controller.update_camera(&mut self.camera, dt);
-        self.camera_uniform.update_view_proj(&self.camera);
+        // TODO: Calculate actual delta time instead of fixed value
+        let dt_secs = 1.0 / 60.0; // Using f32 directly for physics
+
+        // 1. Update player physics and collision
+        self.player.update_physics_and_collision(dt_secs, &self.chunk);
+
+        // 2. Update camera view based on player state
+        let camera_eye = self.player.position + glam::Vec3::new(0.0, PLAYER_EYE_HEIGHT, 0.0);
+
+        // Calculate target based on player's yaw and pitch
+        // This logic is similar to how CameraController used to calculate its target.
+        let camera_front = glam::Vec3::new(
+            self.player.yaw.cos() * self.player.pitch.cos(),
+            self.player.pitch.sin(),
+            self.player.yaw.sin() * self.player.pitch.cos(),
+        ).normalize();
+        let camera_target = camera_eye + camera_front;
+
+        let view_matrix = Mat4::look_at_rh(camera_eye, camera_target, glam::Vec3::Y);
+
+        // Projection matrix (aspect ratio might need to be updated if window resizes,
+        // which is handled by resize() method for config, but perspective_rh needs it too)
+        let aspect_ratio = self.config.width as f32 / self.config.height as f32;
+        let fovy_radians = 45.0f32.to_radians(); // Example FOV, could be configurable
+        let znear = 0.1;
+        let zfar = 1000.0; // Make sure this is far enough
+        let projection_matrix = Mat4::perspective_rh(fovy_radians, aspect_ratio, znear, zfar);
+
+        let view_proj_matrix = projection_matrix * view_matrix;
+        self.camera_uniform.view_proj = view_proj_matrix.to_cols_array_2d();
+
+        // 3. Write updated camera uniform to GPU buffer
         self.queue.write_buffer(&self.camera_buffer, 0, bytemuck::cast_slice(&[self.camera_uniform]));
+
         // Chunk mesh is static for now after initial build.
         // If blocks could change, we would call self.build_chunk_mesh() here or when a change occurs.
     }
