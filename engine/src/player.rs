@@ -1,4 +1,4 @@
-use glam::{Vec3, Mat3}; // Added Mat3 for rotation
+use glam::Vec3; // Removed Mat3
 use crate::physics::{AABB, PLAYER_HEIGHT, PLAYER_HALF_WIDTH, GRAVITY, JUMP_FORCE, WALK_SPEED, FRICTION_COEFFICIENT};
 use crate::chunk::Chunk; // For type hint
 
@@ -68,8 +68,8 @@ impl Player {
     pub fn update_physics_and_collision(&mut self, dt: f32, chunk: &Chunk) {
         // 1. Apply Inputs & Intentions
         let mut intended_horizontal_velocity = Vec3::ZERO;
-        let forward_direction = Vec3::new(self.yaw.cos(), 0.0, self.yaw.sin()).normalize_or_zero();
-        let right_direction = Vec3::new(-self.yaw.sin(), 0.0, self.yaw.cos()).normalize_or_zero(); // Or Vec3::new(self.yaw.sin(), 0.0, -self.yaw.cos()) depending on yaw convention. Check this.
+        // let forward_direction = Vec3::new(self.yaw.cos(), 0.0, self.yaw.sin()).normalize_or_zero(); // Unused
+        // let right_direction = Vec3::new(-self.yaw.sin(), 0.0, self.yaw.cos()).normalize_or_zero(); // Unused
                                                                                                     // Standard: positive yaw rotates counter-clockwise from +X towards +Z.
                                                                                                     // If yaw=0 is +X, then forward is (cos(yaw), 0, sin(yaw)). Right is (sin(yaw), 0, -cos(yaw)) or (cos(yaw-PI/2), 0, sin(yaw-PI/2))
                                                                                                     // Let's assume forward is (cos(yaw), 0, sin(yaw)).
@@ -161,14 +161,15 @@ impl Player {
                 }
                 self.velocity.y = 0.0;
                 desired_move.y = 0.0; // No further movement on this axis this frame
-                player_world_box = self.get_world_bounding_box(); // Update box after position correction
+                // player_world_box = self.get_world_bounding_box(); // Removed: Unused assignment as per compiler warning.
+                                                                  // The important update to player_world_box is at the start of the next axis processing.
                 break;
             }
         }
 
         // --- X-AXIS COLLISION ---
         self.position.x += desired_move.x;
-        player_world_box = self.get_world_bounding_box(); // Update box for X-movement
+        player_world_box = self.get_world_bounding_box(); // Update box for X-movement, using Y-resolved position
         let nearby_x_blocks = get_nearby_block_aabbs(&player_world_box, chunk);
 
         for block_box in nearby_x_blocks {
@@ -179,8 +180,9 @@ impl Player {
                     self.position.x = block_box.max.x - self.local_bounding_box.min.x + 0.0001;
                 }
                 self.velocity.x = 0.0;
-                // desired_move.x = 0.0; // Not strictly needed if not re-using desired_move.x
-                player_world_box = self.get_world_bounding_box(); // Update box after position correction
+                // desired_move.x = 0.0;
+                // player_world_box = self.get_world_bounding_box(); // Removed: Unused assignment as per compiler warning.
+                                                                  // The important update to player_world_box is at the start of the next axis processing.
                 break;
             }
         }
@@ -198,7 +200,7 @@ impl Player {
                     self.position.z = block_box.max.z - self.local_bounding_box.min.z + 0.0001;
                 }
                 self.velocity.z = 0.0;
-                // player_world_box = self.get_world_bounding_box(); // Update box, though not used after this loop
+                // player_world_box = self.get_world_bounding_box(); // This assignment was unused before break and end of function.
                 break;
             }
         }
