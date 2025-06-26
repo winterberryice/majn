@@ -74,6 +74,59 @@ pub fn cube_indices() -> &'static [u16] {
     CUBE_INDICES_DATA
 }
 
+// Enum to identify cube faces. The order must match CUBE_VERTICES_DATA face order.
+// Front (-Z), Back (+Z), Right (+X), Left (-X), Top (+Y), Bottom (-Y)
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, usize_enum::TryFromEnum)]
+pub enum CubeFace {
+    Front,  // Negative Z
+    Back,   // Positive Z
+    Right,  // Positive X
+    Left,   // Negative X
+    Top,    // Positive Y
+    Bottom, // Negative Y
+}
+
+// These offsets assume each face has 4 vertices and 6 indices (2 triangles)
+const NUM_VERTICES_PER_FACE: usize = 4;
+// const NUM_INDICES_PER_FACE: usize = 6; // Not directly used for slicing CUBE_INDICES_DATA
+
+// Start index in CUBE_VERTICES_DATA for each face
+const FACE_VERTEX_START_INDICES: [usize; 6] = [
+    0,  // Front
+    4,  // Back
+    8,  // Right
+    12, // Left
+    16, // Top
+    20, // Bottom
+];
+
+// The indices for a single face (two triangles), assuming vertices are ordered 0, 1, 2, 3
+// in a quad (e.g., bottom-left, bottom-right, top-right, top-left for CCW)
+const LOCAL_FACE_INDICES: [u16; 6] = [0, 1, 2, 0, 2, 3];
+
+impl CubeFace {
+    pub fn get_vertices_template(&self) -> &'static [Vertex] {
+        let start_index = FACE_VERTEX_START_INDICES[*self as usize];
+        &CUBE_VERTICES_DATA[start_index..start_index + NUM_VERTICES_PER_FACE]
+    }
+
+    pub fn get_local_indices(&self) -> &'static [u16] {
+        &LOCAL_FACE_INDICES
+    }
+
+    pub fn all_faces() -> [CubeFace; 6] {
+        [
+            CubeFace::Front,
+            CubeFace::Back,
+            CubeFace::Right,
+            CubeFace::Left,
+            CubeFace::Top,
+            CubeFace::Bottom,
+        ]
+    }
+}
+
+
 // Later we will add functions to get texture coordinates too.
 // For now, color is part of Vertex.
 // pub fn get_face_texture_coordinates(face_index: usize) -> &'static [[f32; 2]; 4] { ... }

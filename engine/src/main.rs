@@ -251,51 +251,51 @@ impl Vertex {
 //     Vertex { position: [-0.5, -0.5, 0.0], color: [0.0, 1.0, 0.0] }, // Bottom-left (Green)
 //     Vertex { position: [0.5, -0.5, 0.0], color: [0.0, 0.0, 1.0] },  // Bottom-right (Blue)
 // ];
-// use crate::cube_geometry; // Removed: `mod cube_geometry;` makes it available.
-use crate::camera::{Camera, CameraController, CameraUniform}; // Import Camera, CameraController, and CameraUniform
-use crate::chunk::Chunk; // Import Chunk
-use crate::instance::InstanceRaw; // Import InstanceRaw
+// use crate::cube_geometry;
+use crate::camera::{Camera, CameraController, CameraUniform};
+use crate::chunk::{Chunk, CHUNK_WIDTH, CHUNK_HEIGHT, CHUNK_DEPTH}; // Import chunk dimensions
+use crate::cube_geometry::CubeFace; // Import CubeFace
+// No longer using InstanceRaw for blocks, so remove the import if it's otherwise unused.
+// Depending on other uses, `mod instance;` might also be removable or its contents cleared.
+// For now, just removing the direct `use`.
+// use crate::instance::InstanceRaw;
+
 
 // The State struct holds all of our wgpu-related objects.
-struct State { // Removed lifetime 'a
-    surface: wgpu::Surface<'static>, // Changed to 'static
+struct State {
+    surface: wgpu::Surface<'static>,
     device: wgpu::Device,
     queue: wgpu::Queue,
     config: wgpu::SurfaceConfiguration,
     size: winit::dpi::PhysicalSize<u32>,
     render_pipeline: wgpu::RenderPipeline,
-    // vertex_buffer: wgpu::Buffer, // Old triangle vertex buffer
-    // num_vertices: u32,           // Old number of triangle vertices
 
-    cube_vertex_buffer: wgpu::Buffer,
-    cube_index_buffer: wgpu::Buffer,
-    num_cube_indices: u32,
+    // Removed cube_vertex_buffer and cube_index_buffer for individual cubes
+    // num_cube_indices is also removed as it related to drawing a single full cube
 
     camera: Camera,
     camera_uniform: CameraUniform,
     camera_buffer: wgpu::Buffer,
     camera_bind_group: wgpu::BindGroup,
-    camera_controller: CameraController, // Ensuring this field is present
+    camera_controller: CameraController,
 
-    chunk: Chunk, // Add a chunk
-    instance_data: Vec<InstanceRaw>,
-    instance_buffer: wgpu::Buffer,
+    chunk: Chunk,
+    // New fields for the combined chunk mesh
+    chunk_vertex_buffer: Option<wgpu::Buffer>,
+    chunk_index_buffer: Option<wgpu::Buffer>,
+    num_chunk_indices: u32,
 
     depth_texture: wgpu::Texture,
     depth_texture_view: wgpu::TextureView,
-    // window: Arc<Window>, // Removed: No longer needed in State
 }
 
-impl State { // Removed lifetime 'a
-    async fn new(window_surface_target: Arc<Window>, initial_size: winit::dpi::PhysicalSize<u32>) -> Self { // Takes Arc<Window> for surface, initial_size
-        // let size = window.inner_size(); // Now passed as initial_size
-
+impl State {
+    async fn new(window_surface_target: Arc<Window>, initial_size: winit::dpi::PhysicalSize<u32>) -> Self {
         let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
             backends: wgpu::Backends::all(),
             ..Default::default()
         });
 
-        // Create surface using Arc<Window> for Surface<'static>
         let surface = instance.create_surface(window_surface_target).unwrap();
 
         let adapter = instance
@@ -310,30 +310,28 @@ impl State { // Removed lifetime 'a
         let (device, queue) = adapter
             .request_device(
                 &wgpu::DeviceDescriptor {
-                    // API Change: The fields were renamed from 'features' and 'limits'
                     required_features: wgpu::Features::empty(),
                     required_limits: wgpu::Limits::default(),
                     label: None,
                     memory_hints: wgpu::MemoryHints::default(),
-                    trace: Trace::Off, // Guessed variant Trace::Off
+                    trace: Trace::Off,
                 },
-                // None, // trace_path was removed
+                None, // trace_path
             )
             .await
             .unwrap();
 
         let surface_caps = surface.get_capabilities(&adapter);
-        let surface_format = surface_caps.formats[0]; // Choose a supported format
+        let surface_format = surface_caps.formats[0];
 
         let config = wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
             format: surface_format,
-            width: initial_size.width, // Use initial_size
-            height: initial_size.height, // Use initial_size
-            present_mode: wgpu::PresentMode::Fifo, // V-sync
+            width: initial_size.width,
+            height: initial_size.height,
+            present_mode: wgpu::PresentMode::Fifo,
             alpha_mode: surface_caps.alpha_modes[0],
             view_formats: vec![],
-            // API Change: This new field is required
             desired_maximum_frame_latency: 2,
         };
         surface.configure(&device, &config);
@@ -343,7 +341,6 @@ impl State { // Removed lifetime 'a
             source: wgpu::ShaderSource::Wgsl(include_str!("shader.wgsl").into()),
         });
 
-        // Create camera bind group layout FIRST
         let camera_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             entries: &[
                 wgpu::BindGroupLayoutEntry {
@@ -363,18 +360,18 @@ impl State { // Removed lifetime 'a
         let render_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("Render Pipeline Layout"),
-                bind_group_layouts: &[&camera_bind_group_layout], // USE THE CAMERA BIND GROUP LAYOUT
+                bind_group_layouts: &[&camera_bind_group_layout],
                 push_constant_ranges: &[],
             });
 
         let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("Render Pipeline"),
-            layout: Some(&render_pipeline_layout), // This now uses the layout with the camera BGL
+            layout: Some(&render_pipeline_layout),
             vertex: wgpu::VertexState {
                 module: &shader,
                 entry_point: Some("vs_main"),
-                buffers: &[Vertex::desc(), InstanceRaw::desc()], // Add InstanceRaw desc
-                // API Change: This new field is required
+                // Only Vertex::desc() now, no InstanceRaw::desc()
+                buffers: &[Vertex::desc()],
                 compilation_options: wgpu::PipelineCompilationOptions::default(),
             },
             fragment: Some(wgpu::FragmentState {
@@ -385,76 +382,46 @@ impl State { // Removed lifetime 'a
                     blend: Some(wgpu::BlendState::REPLACE),
                     write_mask: wgpu::ColorWrites::ALL,
                 })],
-                // API Change: This new field is required
                 compilation_options: wgpu::PipelineCompilationOptions::default(),
             }),
             primitive: wgpu::PrimitiveState {
                 topology: wgpu::PrimitiveTopology::TriangleList,
                 strip_index_format: None,
-                front_face: wgpu::FrontFace::Ccw, // Counter-clockwise triangles are front-facing
-                cull_mode: Some(wgpu::Face::Back), // Cull back-facing triangles
-                // Setting this to None requires Features::POLYGON_MODE_LINE or Features::POLYGON_MODE_POINT
+                front_face: wgpu::FrontFace::Ccw,
+                cull_mode: Some(wgpu::Face::Back), // Still use back-face culling GPU-side
                 polygon_mode: wgpu::PolygonMode::Fill,
-                // Requires Features::DEPTH_CLIP_CONTROL
                 unclipped_depth: false,
-                // Requires Features::CONSERVATIVE_RASTERIZATION
                 conservative: false,
             },
             depth_stencil: Some(wgpu::DepthStencilState {
-                format: wgpu::TextureFormat::Depth32Float, // Must match depth_texture format
+                format: wgpu::TextureFormat::Depth32Float,
                 depth_write_enabled: true,
-                depth_compare: wgpu::CompareFunction::Less, // Standard depth comparison
-                stencil: wgpu::StencilState::default(), // No stencil for now
+                depth_compare: wgpu::CompareFunction::Less,
+                stencil: wgpu::StencilState::default(),
                 bias: wgpu::DepthBiasState::default(),
             }),
             multisample: wgpu::MultisampleState::default(),
             multiview: None,
-            // API Change: This new field is required
             cache: None,
         });
 
-        use wgpu::util::DeviceExt;
-        // let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-        //     label: Some("Vertex Buffer"),
-        //     contents: bytemuck::cast_slice(VERTICES), // VERTICES is commented out
-        //     usage: wgpu::BufferUsages::VERTEX,
-        // });
-        // let num_vertices = VERTICES.len() as u32; // VERTICES is commented out
-
-        let cube_vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Cube Vertex Buffer"),
-            contents: bytemuck::cast_slice(cube_geometry::cube_vertices()),
-            usage: wgpu::BufferUsages::VERTEX,
-        });
-
-        let cube_index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Cube Index Buffer"),
-            contents: bytemuck::cast_slice(cube_geometry::cube_indices()),
-            usage: wgpu::BufferUsages::INDEX,
-        });
-        let num_cube_indices = cube_geometry::cube_indices().len() as u32;
-
+        // Camera setup
         let camera = Camera::new(
-            // Adjust camera position for better view of the 16x32x16 chunk
-            glam::Vec3::new(
-                0.0,
-                crate::chunk::CHUNK_HEIGHT as f32 / 1.5, // Higher up
-                crate::chunk::CHUNK_DEPTH as f32 * 2.0 // Further back
-            ),
-            glam::Vec3::new(0.0, crate::chunk::CHUNK_HEIGHT as f32 / 2.0 - 5.0 , 0.0), // Target: look towards the center of the chunk mass
-            glam::Vec3::Y,                  // up: standard Y up
-            config.width as f32 / config.height as f32,
-            45.0, // fovy_degrees
-            0.1,  // znear
-            100.0, // zfar
+            // Position camera to see the chunk centered at world origin
+             glam::Vec3::new(CHUNK_WIDTH as f32 / 2.0, CHUNK_HEIGHT as f32 * 0.75, CHUNK_DEPTH as f32 * 2.0),
+            // Target the center of the chunk mass
+             glam::Vec3::new(CHUNK_WIDTH as f32 / 2.0, CHUNK_HEIGHT as f32 / 2.0, CHUNK_DEPTH as f32 / 2.0),
+            glam::Vec3::Y, // Up
+            config.width as f32 / config.height as f32, // Aspect
+            45.0, // FOVY
+            0.1,  // ZNear
+            1000.0, // ZFar - increased to see further
         );
-
         let mut camera_uniform = CameraUniform::new();
         camera_uniform.update_view_proj(&camera);
+        let camera_controller = CameraController::new(15.0, 0.003); // Adjusted speed and sensitivity
 
-        // Further adjusted mouse_sensitivity to 0.0025 for testing
-        let camera_controller = CameraController::new(10.0, 0.0025);
-
+        use wgpu::util::DeviceExt; // For create_buffer_init
         let camera_buffer = device.create_buffer_init(
             &wgpu::util::BufferInitDescriptor {
                 label: Some("Camera Buffer"),
@@ -462,26 +429,8 @@ impl State { // Removed lifetime 'a
                 usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             }
         );
-
-        // camera_bind_group_layout is now created earlier, before render_pipeline_layout
-        // let camera_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-        //     entries: &[
-        //         wgpu::BindGroupLayoutEntry {
-        //             binding: 0,
-        //             visibility: wgpu::ShaderStages::VERTEX,
-        //             ty: wgpu::BindingType::Buffer {
-        //                 ty: wgpu::BufferBindingType::Uniform,
-        //                 has_dynamic_offset: false,
-        //                 min_binding_size: None,
-        //             },
-        //             count: None,
-        //         }
-        //     ],
-        //     label: Some("camera_bind_group_layout"),
-        // });
-
         let camera_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            layout: &camera_bind_group_layout, // This refers to the earlier created layout
+            layout: &camera_bind_group_layout,
             entries: &[
                 wgpu::BindGroupEntry {
                     binding: 0,
@@ -491,23 +440,11 @@ impl State { // Removed lifetime 'a
             label: Some("camera_bind_group"),
         });
 
+        // Chunk initialization
         let mut chunk = Chunk::new();
-        chunk.generate_terrain(); // Populate with dirt and grass
+        chunk.generate_terrain();
 
-        // Initial instance data and buffer
-        // Max instances = CHUNK_WIDTH * CHUNK_HEIGHT * CHUNK_DEPTH
-        let max_instances = crate::chunk::CHUNK_WIDTH * crate::chunk::CHUNK_HEIGHT * crate::chunk::CHUNK_DEPTH;
-        // Ensure instance_data Vec has enough capacity
-        let instance_data: Vec<InstanceRaw> = Vec::with_capacity(max_instances);
-
-        let instance_buffer_size = (max_instances * std::mem::size_of::<InstanceRaw>()) as wgpu::BufferAddress;
-        let instance_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("Instance Buffer"),
-            size: instance_buffer_size, // Initial size, can be larger if needed or resized
-            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false, // Data will be copied via queue.write_buffer
-        });
-
+        // Depth texture
         let depth_texture_desc = wgpu::TextureDescriptor {
             size: wgpu::Extent3d {
                 width: config.width,
@@ -517,51 +454,143 @@ impl State { // Removed lifetime 'a
             mip_level_count: 1,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Depth32Float, // Or Depth24PlusStencil8, etc.
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT, // Removed | wgpu::TextureUsages::TEXTURE_BINDING as not currently sampled
+            format: wgpu::TextureFormat::Depth32Float,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
             label: Some("Depth Texture"),
             view_formats: &[],
         };
         let depth_texture = device.create_texture(&depth_texture_desc);
         let depth_texture_view = depth_texture.create_view(&wgpu::TextureViewDescriptor::default());
 
-        Self {
+        let mut state = Self {
             surface,
             device,
             queue,
             config,
-            size: initial_size, // Store initial_size
+            size: initial_size,
             render_pipeline,
-            // vertex_buffer,
-            // num_vertices,
-            cube_vertex_buffer,
-            cube_index_buffer,
-            num_cube_indices,
             camera,
             camera_uniform,
             camera_buffer,
             camera_bind_group,
             camera_controller,
             chunk,
-            instance_data,
-            instance_buffer,
+            chunk_vertex_buffer: None,
+            chunk_index_buffer: None,
+            num_chunk_indices: 0,
             depth_texture,
             depth_texture_view,
-            // window, // Removed
-        }
+        };
+
+        state.build_chunk_mesh(); // Build the initial mesh
+
+        state
     }
 
-    // Removed: pub fn window(&self) -> &Window
-    // State no longer directly holds the window Arc. App does.
+    fn build_chunk_mesh(&mut self) {
+        let mut chunk_mesh_vertices: Vec<Vertex> = Vec::new();
+        let mut chunk_mesh_indices: Vec<u16> = Vec::new();
+        let mut current_vertex_offset: u16 = 0;
+
+        // The chunk is generated with block coordinates (0,0,0) to (CHUNK_WIDTH-1, CHUNK_HEIGHT-1, CHUNK_DEPTH-1).
+        // The cube templates are unit cubes centered at origin [-0.5, 0.5].
+        // To place a block at integer coordinates (x,y,z) such that its corner is at (x,y,z)
+        // and it extends to (x+1, y+1, z+1), its center will be (x+0.5, y+0.5, z+0.5).
+        // This is the position we add to the template's local vertex positions.
+
+        for x_idx in 0..CHUNK_WIDTH {
+            for y_idx in 0..CHUNK_HEIGHT {
+                for z_idx in 0..CHUNK_DEPTH {
+                    if let Some(block) = self.chunk.get_block(x_idx, y_idx, z_idx) {
+                        if block.is_solid() {
+                            let block_color = match block.block_type {
+                                crate::block::BlockType::Dirt => [0.5, 0.25, 0.05],
+                                crate::block::BlockType::Grass => [0.0, 0.8, 0.1],
+                                crate::block::BlockType::Air => continue, // Should be caught by is_solid
+                            };
+
+                            let current_block_world_center = glam::Vec3::new(
+                                x_idx as f32 + 0.5,
+                                y_idx as f32 + 0.5,
+                                z_idx as f32 + 0.5
+                            );
+
+                            let face_definitions: [(CubeFace, (i32, i32, i32)); 6] = [
+                                (CubeFace::Front,  (0, 0, -1)), // Check block at (x, y, z-1) for Front face of current block
+                                (CubeFace::Back,   (0, 0, 1)),
+                                (CubeFace::Right,  (1, 0, 0)),
+                                (CubeFace::Left,   (-1, 0, 0)),
+                                (CubeFace::Top,    (0, 1, 0)),
+                                (CubeFace::Bottom, (0, -1, 0)),
+                            ];
+
+                            for (face_type, offset) in face_definitions.iter() {
+                                let neighbor_x = x_idx as i32 + offset.0;
+                                let neighbor_y = y_idx as i32 + offset.1;
+                                let neighbor_z = z_idx as i32 + offset.2;
+
+                                let mut is_face_visible = true;
+                                if neighbor_x >= 0 && neighbor_x < CHUNK_WIDTH as i32 &&
+                                   neighbor_y >= 0 && neighbor_y < CHUNK_HEIGHT as i32 &&
+                                   neighbor_z >= 0 && neighbor_z < CHUNK_DEPTH as i32 {
+                                    if let Some(neighbor_block) = self.chunk.get_block(
+                                        neighbor_x as usize, neighbor_y as usize, neighbor_z as usize
+                                    ) {
+                                        if neighbor_block.is_solid() {
+                                            is_face_visible = false;
+                                        }
+                                    }
+                                }
+
+                                if is_face_visible {
+                                    let vertices_template = face_type.get_vertices_template();
+                                    let local_indices = face_type.get_local_indices();
+
+                                    for v_template in vertices_template {
+                                        chunk_mesh_vertices.push(Vertex {
+                                            position: (current_block_world_center + glam::Vec3::from(v_template.position)).into(),
+                                            color: block_color,
+                                        });
+                                    }
+                                    for local_idx in local_indices {
+                                        chunk_mesh_indices.push(current_vertex_offset + local_idx);
+                                    }
+                                    current_vertex_offset += vertices_template.len() as u16;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        if !chunk_mesh_vertices.is_empty() {
+            use wgpu::util::DeviceExt;
+            self.chunk_vertex_buffer = Some(self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("Chunk Vertex Buffer"),
+                contents: bytemuck::cast_slice(&chunk_mesh_vertices),
+                usage: wgpu::BufferUsages::VERTEX,
+            }));
+            self.chunk_index_buffer = Some(self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("Chunk Index Buffer"),
+                contents: bytemuck::cast_slice(&chunk_mesh_indices),
+                usage: wgpu::BufferUsages::INDEX,
+            }));
+            self.num_chunk_indices = chunk_mesh_indices.len() as u32;
+        } else {
+            self.chunk_vertex_buffer = None;
+            self.chunk_index_buffer = None;
+            self.num_chunk_indices = 0;
+        }
+    }
 
     pub fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) {
         if new_size.width > 0 && new_size.height > 0 {
             self.size = new_size;
             self.config.width = new_size.width;
             self.config.height = new_size.height;
-            self.camera.aspect = self.config.width as f32 / self.config.height as f32; // Update camera aspect ratio
+            self.camera.aspect = self.config.width as f32 / self.config.height as f32;
 
-            // Recreate depth texture for new size
             let depth_texture_desc = wgpu::TextureDescriptor {
                 size: wgpu::Extent3d {
                     width: self.config.width,
@@ -583,9 +612,7 @@ impl State { // Removed lifetime 'a
         }
     }
 
-    // Method to specifically handle mouse motion
     pub fn process_mouse_motion(&mut self, delta_x: f64, delta_y: f64) {
-        // Access camera_controller from State
         if self.camera_controller.movement.mouse_sensitivity > 0.0 {
             self.camera_controller.process_mouse_movement(delta_x, delta_y);
         }
@@ -605,89 +632,38 @@ impl State { // Removed lifetime 'a
                 let is_pressed = *state == ElementState::Pressed;
                 match key_code {
                     KeyCode::KeyW | KeyCode::ArrowUp => {
-                        self.camera_controller.movement.is_forward_pressed = is_pressed;
-                        true // Event handled
+                        self.camera_controller.movement.is_forward_pressed = is_pressed; true
                     }
                     KeyCode::KeyS | KeyCode::ArrowDown => {
-                        self.camera_controller.movement.is_backward_pressed = is_pressed;
-                        true // Event handled
+                        self.camera_controller.movement.is_backward_pressed = is_pressed; true
                     }
                     KeyCode::KeyA | KeyCode::ArrowLeft => {
-                        self.camera_controller.movement.is_left_pressed = is_pressed;
-                        true // Event handled
+                        self.camera_controller.movement.is_left_pressed = is_pressed; true
                     }
                     KeyCode::KeyD | KeyCode::ArrowRight => {
-                        self.camera_controller.movement.is_right_pressed = is_pressed;
-                        true // Event handled
+                        self.camera_controller.movement.is_right_pressed = is_pressed; true
                     }
                     KeyCode::Space => {
-                        self.camera_controller.movement.is_up_pressed = is_pressed;
-                        true // Event handled
+                        self.camera_controller.movement.is_up_pressed = is_pressed; true
                     }
                     KeyCode::ShiftLeft | KeyCode::ShiftRight => {
-                        self.camera_controller.movement.is_down_pressed = is_pressed;
-                        true // Event handled
+                        self.camera_controller.movement.is_down_pressed = is_pressed; true
                     }
-                    // Let App handle Escape for mouse grab toggle / exit
-                    KeyCode::Escape => false, // Event not handled by State, let App handle it
-                    _ => false, // Event not handled
+                    KeyCode::Escape => false,
+                    _ => false,
                 }
             }
-            // CursorMoved is now handled by App, which calls state.process_mouse_motion directly.
-            // So, we don't need to handle CursorMoved here in state.input for camera purposes.
-            // WindowEvent::CursorMoved { .. } => {
-            //     true // Indicate event was seen, even if handled by App calling process_mouse_motion
-            // }
-            _ => false, // Event not handled by State's general input processing
+            _ => false,
         }
     }
 
     fn update(&mut self) {
-        // Update camera based on controller
-        // For dt, we'd ideally pass the actual delta time from the game loop.
-        // For now, let's use a fixed placeholder or calculate it if possible.
-        // If App::about_to_wait is called regularly (e.g., for each frame),
-        // we could store a `last_update_time` in `State` and calculate `dt`.
-        // For simplicity here, let's assume a fixed `dt` for now, e.g., 1/60th of a second.
-        let dt = std::time::Duration::from_secs_f32(1.0 / 60.0); // Placeholder
+        let dt = std::time::Duration::from_secs_f32(1.0 / 60.0);
         self.camera_controller.update_camera(&mut self.camera, dt);
-
-        // Update camera UBO
         self.camera_uniform.update_view_proj(&self.camera);
         self.queue.write_buffer(&self.camera_buffer, 0, bytemuck::cast_slice(&[self.camera_uniform]));
-
-        // Generate instance data from chunk
-        self.instance_data.clear();
-        let chunk_offset = glam::Vec3::new(
-            -(crate::chunk::CHUNK_WIDTH as f32 / 2.0),
-            0.0, // Or -(crate::chunk::CHUNK_HEIGHT as f32 / 2.0) if you want to center Y
-            -(crate::chunk::CHUNK_DEPTH as f32 / 2.0)
-        );
-
-        for x in 0..crate::chunk::CHUNK_WIDTH {
-            for y in 0..crate::chunk::CHUNK_HEIGHT {
-                for z in 0..crate::chunk::CHUNK_DEPTH {
-                    if let Some(block) = self.chunk.get_block(x, y, z) {
-                        if block.is_solid() { // Only render solid blocks
-                            let position = glam::Vec3::new(x as f32, y as f32, z as f32) + chunk_offset;
-                            let model_matrix = glam::Mat4::from_translation(position);
-
-                            // Determine color based on block type
-                            let color = match block.block_type {
-                                crate::block::BlockType::Dirt => [0.5, 0.25, 0.05], // Brown
-                                crate::block::BlockType::Grass => [0.0, 0.8, 0.1],  // Green
-                                crate::block::BlockType::Air => [0.0, 0.0, 0.0],    // Should not happen due to is_solid
-                                // Add other block types here
-                            };
-                            self.instance_data.push(InstanceRaw::new(model_matrix, color));
-                        }
-                    }
-                }
-            }
-        }
-        if !self.instance_data.is_empty() {
-            self.queue.write_buffer(&self.instance_buffer, 0, bytemuck::cast_slice(&self.instance_data));
-        }
+        // Chunk mesh is static for now after initial build.
+        // If blocks could change, we would call self.build_chunk_mesh() here or when a change occurs.
     }
 
     fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
@@ -710,10 +686,7 @@ impl State { // Removed lifetime 'a
                     resolve_target: None,
                     ops: wgpu::Operations {
                         load: wgpu::LoadOp::Clear(wgpu::Color {
-                            r: 0.1,
-                            g: 0.2,
-                            b: 0.3,
-                            a: 1.0,
+                            r: 0.1, g: 0.2, b: 0.3, a: 1.0,
                         }),
                         store: wgpu::StoreOp::Store,
                     },
@@ -721,26 +694,26 @@ impl State { // Removed lifetime 'a
                 depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
                     view: &self.depth_texture_view,
                     depth_ops: Some(wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(1.0), // Clear depth to 1.0 (far plane)
-                        store: wgpu::StoreOp::Store, // Store the depth buffer
+                        load: wgpu::LoadOp::Clear(1.0),
+                        store: wgpu::StoreOp::Store,
                     }),
-                    stencil_ops: None, // No stencil operations for now
+                    stencil_ops: None,
                 }),
                 timestamp_writes: None,
                 occlusion_query_set: None,
             });
 
             render_pass.set_pipeline(&self.render_pipeline);
-            render_pass.set_bind_group(0, &self.camera_bind_group, &[]); // Set camera UBO at group 0
-            render_pass.set_vertex_buffer(0, self.cube_vertex_buffer.slice(..)); // Per-vertex data
-            render_pass.set_vertex_buffer(1, self.instance_buffer.slice(..)); // Per-instance data
-            render_pass.set_index_buffer(self.cube_index_buffer.slice(..), wgpu::IndexFormat::Uint16);
+            render_pass.set_bind_group(0, &self.camera_bind_group, &[]);
 
-            if self.instance_data.is_empty() {
-                // If there's nothing to draw, don't call draw_indexed.
-                // This can happen if the chunk is all air or if instance_data failed to populate.
-            } else {
-                render_pass.draw_indexed(0..self.num_cube_indices, 0, 0..self.instance_data.len() as u32);
+            if let (Some(vertex_buffer), Some(index_buffer)) =
+                (&self.chunk_vertex_buffer, &self.chunk_index_buffer)
+            {
+                if self.num_chunk_indices > 0 {
+                    render_pass.set_vertex_buffer(0, vertex_buffer.slice(..));
+                    render_pass.set_index_buffer(index_buffer.slice(..), wgpu::IndexFormat::Uint16);
+                    render_pass.draw_indexed(0..self.num_chunk_indices, 0, 0..1); // Draw 1 instance of the combined mesh
+                }
             }
         }
 
