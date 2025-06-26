@@ -316,7 +316,7 @@ impl State {
                     memory_hints: wgpu::MemoryHints::default(),
                     trace: Trace::Off,
                 },
-                None, // trace_path
+                // None, // trace_path - Removed as it's an extra argument
             )
             .await
             .unwrap();

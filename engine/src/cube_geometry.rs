@@ -76,7 +76,7 @@ pub fn cube_indices() -> &'static [u16] {
 
 // Enum to identify cube faces. The order must match CUBE_VERTICES_DATA face order.
 // Front (-Z), Back (+Z), Right (+X), Left (-X), Top (+Y), Bottom (-Y)
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, usize_enum::TryFromEnum)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum CubeFace {
     Front,  // Negative Z
     Back,   // Positive Z
@@ -106,7 +106,14 @@ const LOCAL_FACE_INDICES: [u16; 6] = [0, 1, 2, 0, 2, 3];
 
 impl CubeFace {
     pub fn get_vertices_template(&self) -> &'static [Vertex] {
-        let start_index = FACE_VERTEX_START_INDICES[*self as usize];
+        let start_index = match self {
+            CubeFace::Front => FACE_VERTEX_START_INDICES[0],
+            CubeFace::Back => FACE_VERTEX_START_INDICES[1],
+            CubeFace::Right => FACE_VERTEX_START_INDICES[2],
+            CubeFace::Left => FACE_VERTEX_START_INDICES[3],
+            CubeFace::Top => FACE_VERTEX_START_INDICES[4],
+            CubeFace::Bottom => FACE_VERTEX_START_INDICES[5],
+        };
         &CUBE_VERTICES_DATA[start_index..start_index + NUM_VERTICES_PER_FACE]
     }
 
