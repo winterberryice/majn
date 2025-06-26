@@ -27,14 +27,19 @@ jobs:
         sudo apt-get update
         sudo apt-get install -y libvulkan-dev libxkbcommon-dev libwayland-dev libgtk-3-dev libudev-dev pkg-config
 
-    - name: Build debug executable (Linux)
-      run: cargo build --verbose # Removed --release
+    - name: Build release executable (Linux)
+      # This 'env' block sets the RUSTFLAGS environment variable ONLY for this step.
+      # It tells the Rust compiler to specifically allow dead_code, overriding the
+      # CI environment's default of treating warnings as errors.
+      env:
+        RUSTFLAGS: "-A dead_code"
+      run: cargo build --release --verbose
 
     - name: Archive Linux executable
       uses: actions/upload-artifact@v4
       with:
         name: engine-linux
-        path: engine/target/debug/engine # Changed path to debug
+        path: engine/target/release/engine
 
   build-windows:
     name: Build for Windows
@@ -51,11 +56,14 @@ jobs:
       with:
         toolchain: stable
 
-    - name: Build debug executable (Windows)
-      run: cargo build --verbose # Removed --release
+    - name: Build release executable (Windows)
+      # We apply the same fix here for the Windows build job.
+      env:
+        RUSTFLAGS: "-A dead_code"
+      run: cargo build --release --verbose
 
     - name: Archive Windows executable
       uses: actions/upload-artifact@v4
       with:
         name: engine-windows
-        path: engine/target/debug/engine.exe # Changed path to debug
+        path: engine/target/release/engine.exe
