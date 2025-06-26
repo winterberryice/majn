@@ -7,17 +7,11 @@ struct CameraUniform {
 var<uniform> camera: CameraUniform;
 
 struct VertexInput {
-    @location(0) position: vec3<f32>,
-    @location(1) color: vec3<f32>, // Original vertex color (from cube_geometry)
+    @location(0) position: vec3<f32>, // Now world position
+    @location(1) color: vec3<f32>,    // Vertex color (block type color)
 };
 
-struct InstanceInput {
-    @location(5) model_matrix_col_0: vec4<f32>,
-    @location(6) model_matrix_col_1: vec4<f32>,
-    @location(7) model_matrix_col_2: vec4<f32>,
-    @location(8) model_matrix_col_3: vec4<f32>,
-    @location(9) instance_color: vec3<f32>, // New: per-instance color
-};
+// InstanceInput is no longer used for blocks
 
 struct VertexOutput {
     @builtin(position) clip_position: vec4<f32>,
@@ -25,20 +19,13 @@ struct VertexOutput {
 };
 
 @vertex
-fn vs_main(
-    model: VertexInput,
-    instance: InstanceInput,
-) -> VertexOutput {
+fn vs_main(model: VertexInput) -> VertexOutput { // No instance input
     var out: VertexOutput;
-    let model_matrix = mat4x4<f32>(
-        instance.model_matrix_col_0,
-        instance.model_matrix_col_1,
-        instance.model_matrix_col_2,
-        instance.model_matrix_col_3
-    );
-    out.clip_position = camera.view_proj * model_matrix * vec4<f32>(model.position, 1.0);
-    // Use instance_color instead of model.color for the final block color
-    out.color = instance.instance_color;
+    // Vertex position is already in world space (or chunk-local world space).
+    // Transform directly by view_proj matrix.
+    out.clip_position = camera.view_proj * vec4<f32>(model.position, 1.0);
+    // Color comes directly from the vertex data.
+    out.color = model.color;
     return out;
 }
 
