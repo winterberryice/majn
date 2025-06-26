@@ -102,10 +102,10 @@ impl Player {
 
 
         if self.movement_intention.left {
-            intended_horizontal_velocity -= horizontal_right;
+            intended_horizontal_velocity += horizontal_right;
         }
         if self.movement_intention.right {
-            intended_horizontal_velocity += horizontal_right;
+            intended_horizontal_velocity -= horizontal_right;
         }
 
         if intended_horizontal_velocity.length_squared() > 0.0 {
