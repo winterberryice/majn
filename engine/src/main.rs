@@ -452,8 +452,8 @@ impl State { // Removed lifetime 'a
         let mut camera_uniform = CameraUniform::new();
         camera_uniform.update_view_proj(&camera);
 
-        // Adjusted mouse_sensitivity to 0.02 for testing
-        let camera_controller = CameraController::new(10.0, 0.02);
+        // Further adjusted mouse_sensitivity to 0.005 for testing
+        let camera_controller = CameraController::new(10.0, 0.005);
 
         let camera_buffer = device.create_buffer_init(
             &wgpu::util::BufferInitDescriptor {
