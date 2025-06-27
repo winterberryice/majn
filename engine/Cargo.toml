@@ -10,3 +10,5 @@ pollster = "0.4.0"
 wgpu = "25.0.2"
 winit = "0.30.11"
 glam = "0.30.4" # For vector and matrix math
+chrono = "0.4"
+wgpu_text = "0.9.3"

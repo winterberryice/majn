@@ -5,6 +5,7 @@ mod camera;
 mod instance;
 pub mod physics;
 pub mod player;
+mod debug_overlay;
 
 use std::sync::Arc; // Added for Arc<Window>
 use wgpu::Trace;
@@ -260,6 +261,7 @@ use crate::cube_geometry::CubeFace; // Import CubeFace
 use crate::player::Player; // Import Player
 use crate::physics::PLAYER_EYE_HEIGHT; // For camera positioning
 use glam::Mat4; // For view/projection matrix calculation
+use crate::debug_overlay::DebugOverlay; // Added for DebugOverlay
 
 // The State struct holds all of our wgpu-related objects.
 struct State {
@@ -286,6 +288,7 @@ struct State {
 
     depth_texture: wgpu::Texture,
     depth_texture_view: wgpu::TextureView,
+    debug_overlay: DebugOverlay,
 }
 
 impl State {
@@ -469,6 +472,8 @@ impl State {
         let depth_texture = device.create_texture(&depth_texture_desc);
         let depth_texture_view = depth_texture.create_view(&wgpu::TextureViewDescriptor::default());
 
+        let debug_overlay = DebugOverlay::new(&device, &config);
+
         let mut state = Self {
             surface,
             device,
@@ -487,6 +492,7 @@ impl State {
             num_chunk_indices: 0,
             depth_texture,
             depth_texture_view,
+            debug_overlay,
         };
 
         state.build_chunk_mesh(); // Build the initial mesh
@@ -616,6 +622,7 @@ impl State {
             self.depth_texture_view = self.depth_texture.create_view(&wgpu::TextureViewDescriptor::default());
 
             self.surface.configure(&self.device, &self.config);
+            self.debug_overlay.resize(new_size.width, new_size.height, &self.queue); // Added &self.queue
         }
     }
 
@@ -661,6 +668,10 @@ impl State {
                         false // Or handle as sprint/crouch if implemented
                     }
                     KeyCode::Escape => false, // Escape is handled by App for mouse grab
+                    KeyCode::F3 => {
+                        self.debug_overlay.toggle_visibility();
+                        true // Event handled
+                    }
                     _ => false,
                 }
             }
@@ -705,9 +716,19 @@ impl State {
 
         // Chunk mesh is static for now after initial build.
         // If blocks could change, we would call self.build_chunk_mesh() here or when a change occurs.
+
+        // Update debug overlay
+        self.debug_overlay.update(self.player.position);
     }
 
     fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
+        // Prepare debug overlay text before getting the current texture
+        // This is important because brush.queue() might involve GPU operations
+        if let Err(e) = self.debug_overlay.prepare(&self.device, &self.queue) {
+            eprintln!("Failed to prepare debug overlay: {:?}", e);
+            // Decide if this error is critical. For a debug overlay, maybe not.
+        }
+
         let output = self.surface.get_current_texture()?;
         let view = output
             .texture
@@ -756,6 +777,10 @@ impl State {
                     render_pass.draw_indexed(0..self.num_chunk_indices, 0, 0..1); // Draw 1 instance of the combined mesh
                 }
             }
+
+            // Render debug overlay
+            self.debug_overlay.render(&mut render_pass); // Removed error handling
+
         }
 
         self.queue.submit(Some(encoder.finish()));
