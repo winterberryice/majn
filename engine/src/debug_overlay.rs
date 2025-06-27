@@ -1,10 +1,8 @@
-// Use wgpu_text types directly, not through a 'section' module
+// Corrected use statement based on glyph_brush re-exports
 use wgpu_text::{
-    glyph_brush::ab_glyph::FontArc,
+    glyph_brush::{ab_glyph::FontArc, Section, Text}, // Import Section and Text from glyph_brush
     BrushBuilder,
-    Section, // Import Section directly
-    Text,    // Import Text directly
-    TextBrush
+    TextBrush,
 };
 use std::time::Instant;
 use glam::Vec3;
@@ -15,7 +13,7 @@ const FONT_BYTES: &[u8] = include_bytes!("Roboto-Regular.ttf");
 
 pub struct DebugOverlay {
     brush: TextBrush,
-    // The type is now just 'Section', not 'section::Section'
+    // The type is now just 'Section', but we imported it from glyph_brush
     section: Section<'static>,
     visible: bool,
     last_frame_time: Instant,
@@ -31,7 +29,7 @@ impl DebugOverlay {
         let brush = BrushBuilder::using_font(font.clone())
             .build(device, config.width, config.height, config.format);
 
-        // Use 'Section' and 'Text' directly
+        // We don't need to prefix with a module name here because we `use`d them directly
         let section = Section::default()
             .add_text(Text::new("").with_scale(20.0).with_color([1.0, 1.0, 1.0, 1.0]))
             .with_screen_position((10.0, 10.0))
@@ -88,7 +86,7 @@ impl DebugOverlay {
             player_position.z
         );
 
-        // Update the section's text. Use 'Text' directly.
+        // Update the section's text.
         self.section.text = vec![Text::new(&text_content)
             .with_scale(20.0)
             .with_color([1.0, 1.0, 1.0, 1.0])];
