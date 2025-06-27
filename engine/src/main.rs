@@ -669,8 +669,10 @@ impl State {
                     }
                     KeyCode::Escape => false, // Escape is handled by App for mouse grab
                     KeyCode::F3 => {
-                        self.debug_overlay.toggle_visibility();
-                        true // Event handled
+                        if is_pressed { // Only toggle on press
+                            self.debug_overlay.toggle_visibility();
+                        }
+                        true // Event handled regardless of press/release to consume it
                     }
                     _ => false,
                 }
