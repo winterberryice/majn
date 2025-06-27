@@ -1,6 +1,6 @@
-// Corrected use statement based on glyph_brush re-exports
+// Use wgpu_text types directly, not through a 'section' module
 use wgpu_text::{
-    glyph_brush::{ab_glyph::FontArc, Section, Text}, // Import Section and Text from glyph_brush
+    glyph_brush::{ab_glyph::FontArc, Section, Text}, // Corrected import path
     BrushBuilder,
     TextBrush,
 };
@@ -86,8 +86,9 @@ impl DebugOverlay {
             player_position.z
         );
 
-        // Update the section's text.
-        self.section.text = vec![Text::new(&text_content)
+        // THE FIX IS HERE: Remove the '&' to move ownership of the String
+        // into the Text object, giving it a 'static lifetime.
+        self.section.text = vec![Text::new(text_content)
             .with_scale(20.0)
             .with_color([1.0, 1.0, 1.0, 1.0])];
     }
