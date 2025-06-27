@@ -42,10 +42,11 @@ This section should be updated as we make progress.
     * A debug overlay using `wgpu_text` is functional.
     * It displays FPS and the player's 3D coordinates.
     * Visibility can be toggled with the F3 key.
+    * A 2D crosshair is implemented and rendered in the center of the screen.
   * **World / Chunk:**
     * A single chunk with a flat terrain of dirt and grass is generated.
     * Mesh generation includes basic culling of hidden faces.
-  * **Current Task Focus:** The initial implementation of the grounded player controller and debug overlay is largely complete. Next steps could involve refining player physics (e.g., implementing "collide and slide"), starting procedural world generation, or adding texture mapping.
+  * **Current Task Focus:** The crosshair implementation is complete. Next steps could involve refining player physics (e.g., implementing "collide and slide"), starting procedural world generation, or adding texture mapping.
 
 ## 3. Best Practices for Interaction
 
@@ -89,6 +90,6 @@ This is our high-level plan. We will tackle these items one by one.
     * [/] Continue refactoring code into logical modules (`player`, `world`, `renderer`, `physics`, `debug_overlay` etc. - Good progress made).
 5.  **UI**
     * [x] Basic debug overlay (FPS, coordinates).
-    * [ ] Implement a crosshair.
+    * [x] Implement a crosshair.
 
 By following this guide, our collaboration will be smooth and productive. Let's build a great engine!
