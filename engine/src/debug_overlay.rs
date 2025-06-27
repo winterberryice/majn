@@ -1,6 +1,6 @@
 // Corrected use statement based on glyph_brush re-exports
 use wgpu_text::{
-    glyph_brush::{ab_glyph::FontArc, Section, Text}, // Import Section and Text from glyph_brush
+    glyph_brush::{ab_glyph::FontArc, Extra, OwnedSection, OwnedText}, // Import Section and Text from glyph_brush
     BrushBuilder,
     TextBrush,
 };
@@ -14,7 +14,7 @@ const FONT_BYTES: &[u8] = include_bytes!("Roboto-Regular.ttf");
 pub struct DebugOverlay {
     brush: TextBrush,
     // The type is now just 'Section', but we imported it from glyph_brush
-    section: Section<'static>,
+    section: OwnedSection<Extra>,
     visible: bool,
     last_frame_time: Instant,
     frame_count: u32,
@@ -30,8 +30,8 @@ impl DebugOverlay {
             .build(device, config.width, config.height, config.format);
 
         // We don't need to prefix with a module name here because we `use`d them directly
-        let section = Section::default()
-            .add_text(Text::new("").with_scale(20.0).with_color([1.0, 1.0, 1.0, 1.0]))
+        let section = OwnedSection::default()
+            .add_text(OwnedText::new("").with_scale(20.0).with_color([1.0, 1.0, 1.0, 1.0]))
             .with_screen_position((10.0, 10.0))
             .with_bounds((config.width as f32, config.height as f32));
 
@@ -87,7 +87,7 @@ impl DebugOverlay {
         );
 
         // Update the section's text.
-        self.section.text = vec![Text::new(&text_content)
+        self.section.text = vec![OwnedText::new(text_content)
             .with_scale(20.0)
             .with_color([1.0, 1.0, 1.0, 1.0])];
     }
@@ -96,7 +96,8 @@ impl DebugOverlay {
     pub fn prepare(&mut self, device: &wgpu::Device, queue: &wgpu::Queue) -> Result<(), wgpu_text::BrushError>{
         if self.visible {
             // Queue the section for drawing. The brush needs a slice of sections.
-            self.brush.queue(device, queue, &[&self.section])?;
+            let borrowed_section = self.section.to_borrowed();
+            self.brush.queue(device, queue, std::slice::from_ref(&borrowed_section))?;
         }
         Ok(())
     }
