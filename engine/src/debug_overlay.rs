@@ -4,6 +4,7 @@ use wgpu_text::{
     BrushBuilder,
     TextBrush,
 };
+use wgpu::TextureFormat; // Import TextureFormat
 use std::time::Instant;
 use glam::Vec3;
 
@@ -27,6 +28,13 @@ impl DebugOverlay {
     pub fn new(device: &wgpu::Device, config: &wgpu::SurfaceConfiguration) -> Self {
         let font = FontArc::try_from_slice(FONT_BYTES).expect("Failed to load font. Make sure Roboto-Regular.ttf is in the correct location.");
         let brush = BrushBuilder::using_font(font.clone())
+            .with_depth_stencil(Some(wgpu::DepthStencilState {
+                format: TextureFormat::Depth32Float,
+                depth_write_enabled: true, // Text should probably write to depth buffer
+                depth_compare: wgpu::CompareFunction::Less, // Match main pipeline's comparison
+                stencil: wgpu::StencilState::default(),
+                bias: wgpu::DepthBiasState::default(),
+            }))
             .build(device, config.width, config.height, config.format);
 
         // We don't need to prefix with a module name here because we `use`d them directly
