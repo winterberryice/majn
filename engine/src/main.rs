@@ -6,6 +6,7 @@ mod instance;
 pub mod physics;
 pub mod player;
 mod debug_overlay;
+mod world; // Add world module
 
 use std::sync::Arc; // Added for Arc<Window>
 use wgpu::Trace;
@@ -256,12 +257,21 @@ impl Vertex {
 // ];
 // use crate::cube_geometry;
 use crate::camera::CameraUniform; // Camera and CameraController removed
-use crate::chunk::{Chunk, CHUNK_WIDTH, CHUNK_HEIGHT, CHUNK_DEPTH}; // Import chunk dimensions
+use crate::chunk::{CHUNK_WIDTH, CHUNK_HEIGHT, CHUNK_DEPTH}; // Import chunk dimensions, Chunk itself is not directly used in State anymore
 use crate::cube_geometry::CubeFace; // Import CubeFace
 use crate::player::Player; // Import Player
 use crate::physics::PLAYER_EYE_HEIGHT; // For camera positioning
 use glam::Mat4; // For view/projection matrix calculation
 use crate::debug_overlay::DebugOverlay; // Added for DebugOverlay
+use crate::world::World; // Import World
+use std::collections::HashMap; // For storing chunk render data
+
+// Struct to hold GPU buffers for a single chunk's mesh
+struct ChunkRenderData {
+    vertex_buffer: wgpu::Buffer,
+    index_buffer: wgpu::Buffer,
+    num_indices: u32,
+}
 
 // The State struct holds all of our wgpu-related objects.
 struct State {
@@ -280,11 +290,14 @@ struct State {
     camera_buffer: wgpu::Buffer,
     camera_bind_group: wgpu::BindGroup,
 
-    chunk: Chunk,
-    // New fields for the combined chunk mesh
-    chunk_vertex_buffer: Option<wgpu::Buffer>,
-    chunk_index_buffer: Option<wgpu::Buffer>,
-    num_chunk_indices: u32,
+    // chunk: Chunk, // Replaced by world
+    world: World,
+    // New fields for managing multiple chunk meshes
+    // chunk_vertex_buffer: Option<wgpu::Buffer>, // Removed
+    // chunk_index_buffer: Option<wgpu::Buffer>, // Removed
+    // num_chunk_indices: u32, // Removed
+    chunk_render_data: HashMap<(i32, i32), ChunkRenderData>, // Stores VBs/IBs per chunk coord
+    active_chunk_coords: Vec<(i32, i32)>, // Coords of chunks to render
 
     depth_texture: wgpu::Texture,
     depth_texture_view: wgpu::TextureView,
@@ -450,9 +463,9 @@ impl State {
             label: Some("camera_bind_group"),
         });
 
-        // Chunk initialization
-        let mut chunk = Chunk::new();
-        chunk.generate_terrain();
+        // World initialization
+        let world = World::new(); // Create an empty world
+        // Initial chunk generation and meshing will happen in the first `State::update()` call.
 
         // Depth texture
         let depth_texture_desc = wgpu::TextureDescriptor {
@@ -474,7 +487,7 @@ impl State {
 
         let debug_overlay = DebugOverlay::new(&device, &config);
 
-        let mut state = Self {
+        let state = Self {
             surface,
             device,
             queue,
@@ -486,74 +499,112 @@ impl State {
             camera_buffer,
             camera_bind_group,
             // camera and camera_controller removed
-            chunk,
-            chunk_vertex_buffer: None,
-            chunk_index_buffer: None,
-            num_chunk_indices: 0,
+            // chunk, // Replaced by world
+            world,
+            // chunk_vertex_buffer: None, // Removed
+            // chunk_index_buffer: None, // Removed
+            // num_chunk_indices: 0, // Removed
+            chunk_render_data: HashMap::new(),
+            active_chunk_coords: Vec::new(),
             depth_texture,
             depth_texture_view,
             debug_overlay,
         };
 
-        state.build_chunk_mesh(); // Build the initial mesh
+        // Initial chunk loading and meshing will be handled by the first `update` call.
+        // state.build_chunk_mesh(); // Old call for single chunk
 
         state
     }
 
-    fn build_chunk_mesh(&mut self) {
+    // fn build_chunk_mesh(&mut self) { // Old signature for single chunk
+    // New signature: takes chunk coords, and accesses World to get chunk data
+    fn build_or_rebuild_chunk_mesh(&mut self, chunk_cx: i32, chunk_cz: i32) {
         let mut chunk_mesh_vertices: Vec<Vertex> = Vec::new();
         let mut chunk_mesh_indices: Vec<u16> = Vec::new();
         let mut current_vertex_offset: u16 = 0;
 
-        // The chunk is generated with block coordinates (0,0,0) to (CHUNK_WIDTH-1, CHUNK_HEIGHT-1, CHUNK_DEPTH-1).
-        // The cube templates are unit cubes centered at origin [-0.5, 0.5].
-        // To place a block at integer coordinates (x,y,z) such that its corner is at (x,y,z)
-        // and it extends to (x+1, y+1, z+1), its center will be (x+0.5, y+0.5, z+0.5).
-        // This is the position we add to the template's local vertex positions.
+        // Get the specific chunk from the world
+        // We might need a mutable borrow of world here if get_chunk isn't sufficient
+        // or if we want to generate the chunk if it doesn't exist (though get_or_create_chunk is for that)
+        // For mesh building, we assume the chunk exists and has its block data.
+        let chunk_opt = self.world.get_chunk(chunk_cx, chunk_cz);
+        if chunk_opt.is_none() {
+            // This case should ideally be handled by the caller:
+            // ensure chunk exists and is generated before trying to mesh it.
+            // For now, if it doesn't exist, we can't mesh it.
+            // Or, we could use get_or_create_chunk if world was mut.
+            // Let's assume `update` ensures chunks are loaded before calling this.
+            eprintln!("Attempted to build mesh for non-existent or non-generated chunk ({}, {})", chunk_cx, chunk_cz);
+            // Remove any existing render data if we decide to "unload" it visually
+            self.chunk_render_data.remove(&(chunk_cx, chunk_cz));
+            return;
+        }
+        let chunk = chunk_opt.unwrap(); // Safe due to check above
 
-        for x_idx in 0..CHUNK_WIDTH {
-            for y_idx in 0..CHUNK_HEIGHT {
-                for z_idx in 0..CHUNK_DEPTH {
-                    if let Some(block) = self.chunk.get_block(x_idx, y_idx, z_idx) {
+        // Vertex positions need to be relative to the chunk's origin in world space.
+        // A block at local chunk coords (lx, ly, lz) for a chunk at (cx, cz)
+        // will have its base corner at world coords:
+        // (cx * CHUNK_WIDTH + lx, ly, cz * CHUNK_DEPTH + lz)
+        let chunk_world_origin_x = chunk_cx as f32 * CHUNK_WIDTH as f32;
+        let chunk_world_origin_z = chunk_cz as f32 * CHUNK_DEPTH as f32;
+
+
+        for lx in 0..CHUNK_WIDTH {
+            for ly in 0..CHUNK_HEIGHT {
+                for lz in 0..CHUNK_DEPTH {
+                    if let Some(block) = chunk.get_block(lx, ly, lz) {
                         if block.is_solid() {
                             let block_color = match block.block_type {
                                 crate::block::BlockType::Dirt => [0.5, 0.25, 0.05],
                                 crate::block::BlockType::Grass => [0.0, 0.8, 0.1],
-                                crate::block::BlockType::Air => continue, // Should be caught by is_solid
+                                crate::block::BlockType::Air => continue,
                             };
 
+                            // Calculate the world center of the current block
+                            // Local center is (lx+0.5, ly+0.5, lz+0.5)
+                            // World center is (chunk_world_origin_x + lx + 0.5, ly + 0.5, chunk_world_origin_z + lz + 0.5)
                             let current_block_world_center = glam::Vec3::new(
-                                x_idx as f32 + 0.5,
-                                y_idx as f32 + 0.5,
-                                z_idx as f32 + 0.5
+                                chunk_world_origin_x + lx as f32 + 0.5,
+                                ly as f32 + 0.5, // Y is absolute block coordinate
+                                chunk_world_origin_z + lz as f32 + 0.5
                             );
 
+                            // Face culling logic: Check neighbors
+                            // Neighbors can be in the same chunk or adjacent chunks.
                             let face_definitions: [(CubeFace, (i32, i32, i32)); 6] = [
-                                (CubeFace::Front,  (0, 0, -1)), // Check block at (x, y, z-1) for Front face of current block
-                                (CubeFace::Back,   (0, 0, 1)),
-                                (CubeFace::Right,  (1, 0, 0)),
-                                (CubeFace::Left,   (-1, 0, 0)),
-                                (CubeFace::Top,    (0, 1, 0)),
-                                (CubeFace::Bottom, (0, -1, 0)),
+                                (CubeFace::Front,  (0, 0, -1)), // Relative to current block: (lx, ly, lz-1)
+                                (CubeFace::Back,   (0, 0, 1)),  // (lx, ly, lz+1)
+                                (CubeFace::Right,  (1, 0, 0)),  // (lx+1, ly, lz)
+                                (CubeFace::Left,   (-1, 0, 0)), // (lx-1, ly, lz)
+                                (CubeFace::Top,    (0, 1, 0)),  // (lx, ly+1, lz)
+                                (CubeFace::Bottom, (0, -1, 0)), // (lx, ly-1, lz)
                             ];
 
                             for (face_type, offset) in face_definitions.iter() {
-                                let neighbor_x = x_idx as i32 + offset.0;
-                                let neighbor_y = y_idx as i32 + offset.1;
-                                let neighbor_z = z_idx as i32 + offset.2;
+                                // Calculate absolute world coordinates of the neighbor block to check
+                                let neighbor_world_bx = chunk_world_origin_x as i32 + lx as i32 + offset.0;
+                                let neighbor_world_by = ly as i32 + offset.1; // Y is absolute
+                                let neighbor_world_bz = chunk_world_origin_z as i32 + lz as i32 + offset.2;
 
                                 let mut is_face_visible = true;
-                                if neighbor_x >= 0 && neighbor_x < CHUNK_WIDTH as i32 &&
-                                   neighbor_y >= 0 && neighbor_y < CHUNK_HEIGHT as i32 &&
-                                   neighbor_z >= 0 && neighbor_z < CHUNK_DEPTH as i32 {
-                                    if let Some(neighbor_block) = self.chunk.get_block(
-                                        neighbor_x as usize, neighbor_y as usize, neighbor_z as usize
+                                // Check if neighbor is outside world bounds (e.g. y < 0 or y >= CHUNK_HEIGHT)
+                                if neighbor_world_by < 0 || neighbor_world_by >= CHUNK_HEIGHT as i32 {
+                                    // Neighbor is outside vertical build limit, face is visible
+                                } else {
+                                    // Query the world for the neighbor block
+                                    if let Some(neighbor_block) = self.world.get_block_at_world(
+                                        neighbor_world_bx as f32,
+                                        neighbor_world_by as f32,
+                                        neighbor_world_bz as f32
                                     ) {
                                         if neighbor_block.is_solid() {
                                             is_face_visible = false;
                                         }
                                     }
+                                    // If neighbor_block is None (e.g. chunk not loaded), face is visible.
                                 }
+
 
                                 if is_face_visible {
                                     let vertices_template = face_type.get_vertices_template();
@@ -561,6 +612,8 @@ impl State {
 
                                     for v_template in vertices_template {
                                         chunk_mesh_vertices.push(Vertex {
+                                            // Vertex positions are already relative to block center.
+                                            // We add the block's world center to get final world vertex positions.
                                             position: (current_block_world_center + glam::Vec3::from(v_template.position)).into(),
                                             color: block_color,
                                         });
@@ -577,25 +630,30 @@ impl State {
             }
         }
 
-        if !chunk_mesh_vertices.is_empty() {
+        if !chunk_mesh_vertices.is_empty() && !chunk_mesh_indices.is_empty() {
             use wgpu::util::DeviceExt;
-            self.chunk_vertex_buffer = Some(self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("Chunk Vertex Buffer"),
+            let vertex_buffer = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some(&format!("Chunk VB ({}, {})", chunk_cx, chunk_cz)),
                 contents: bytemuck::cast_slice(&chunk_mesh_vertices),
                 usage: wgpu::BufferUsages::VERTEX,
-            }));
-            self.chunk_index_buffer = Some(self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("Chunk Index Buffer"),
+            });
+            let index_buffer = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some(&format!("Chunk IB ({}, {})", chunk_cx, chunk_cz)),
                 contents: bytemuck::cast_slice(&chunk_mesh_indices),
                 usage: wgpu::BufferUsages::INDEX,
-            }));
-            self.num_chunk_indices = chunk_mesh_indices.len() as u32;
+            });
+
+            self.chunk_render_data.insert((chunk_cx, chunk_cz), ChunkRenderData {
+                vertex_buffer,
+                index_buffer,
+                num_indices: chunk_mesh_indices.len() as u32,
+            });
         } else {
-            self.chunk_vertex_buffer = None;
-            self.chunk_index_buffer = None;
-            self.num_chunk_indices = 0;
+            // No visible faces, or chunk is empty. Remove existing render data if any.
+            self.chunk_render_data.remove(&(chunk_cx, chunk_cz));
         }
     }
+
 
     pub fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) {
         if new_size.width > 0 && new_size.height > 0 {
@@ -685,10 +743,74 @@ impl State {
         // TODO: Calculate actual delta time instead of fixed value
         let dt_secs = 1.0 / 60.0; // Using f32 directly for physics
 
-        // 1. Update player physics and collision
-        self.player.update_physics_and_collision(dt_secs, &self.chunk);
+        // 1. Determine current and required chunks
+        let player_pos = self.player.position;
+        let current_chunk_x = (player_pos.x / CHUNK_WIDTH as f32).floor() as i32;
+        let current_chunk_z = (player_pos.z / CHUNK_DEPTH as f32).floor() as i32;
 
-        // 2. Update camera view based on player state
+        let mut new_active_chunk_coords = Vec::new();
+        let render_distance = 1; // Render 1 chunk around current = 3x3 grid (current +/- 1)
+        for dx in -render_distance..=render_distance {
+            for dz in -render_distance..=render_distance {
+                let target_cx = current_chunk_x + dx;
+                let target_cz = current_chunk_z + dz;
+                new_active_chunk_coords.push((target_cx, target_cz));
+
+                // Ensure chunk data exists (generate if new)
+                // Note: get_or_create_chunk needs &mut self.world
+                let _ = self.world.get_or_create_chunk(target_cx, target_cz);
+
+                // Ensure mesh exists (build if new or outdated)
+                // We only rebuild if it's not in chunk_render_data.
+                // A more sophisticated system would track "dirty" chunks.
+                if !self.chunk_render_data.contains_key(&(target_cx, target_cz)) {
+                    // This needs to borrow `self` mutably, which `world.get_or_create_chunk` also does.
+                    // This is tricky. We might need to collect coords first, then iterate again for meshing.
+                    // For now, let's assume get_or_create_chunk doesn't invalidate references needed by build_or_rebuild_chunk_mesh
+                    // or that build_or_rebuild_chunk_mesh fetches its own chunk reference.
+                    // The current build_or_rebuild_chunk_mesh fetches its own immutable chunk reference from self.world.
+                    // So, the mutable borrow of self.world for get_or_create_chunk must end before build_or_rebuild_chunk_mesh
+                    // borrows self.world immutably.
+                    // This implies a two-pass approach or careful management.
+
+                    // Let's try a simplified approach for now:
+                    // Pass 1: Ensure all chunks in `world.chunks` are generated.
+                    // Pass 2: Iterate `new_active_chunk_coords` and build meshes if not present in `chunk_render_data`.
+                    // This is what's implicitly happening as `get_or_create_chunk` is called above,
+                    // and then `build_or_rebuild_chunk_mesh` is called below if needed.
+                    // The main issue is `build_or_rebuild_chunk_mesh` needs `&mut self` to store render data.
+                }
+            }
+        }
+
+        // Update the list of active chunk coordinates for rendering
+        self.active_chunk_coords = new_active_chunk_coords; // No need to clone here if new_active_chunk_coords is already a new Vec
+
+        // Pass 2: Build meshes for newly activated chunks or those needing an update
+        let mut coords_to_mesh: Vec<(i32, i32)> = Vec::new();
+        for &(cx, cz) in &self.active_chunk_coords { // Iterate over self.active_chunk_coords immutably
+            if !self.chunk_render_data.contains_key(&(cx, cz)) {
+                coords_to_mesh.push((cx, cz)); // Collect coordinates
+            }
+        }
+
+        // Now iterate over the separate Vec, allowing mutable borrows of self
+        for (cx, cz) in coords_to_mesh {
+            // Since world.get_or_create_chunk was called earlier for (cx,cz),
+            // the chunk data should exist in self.world.
+            // Now call build_or_rebuild_chunk_mesh which takes &mut self.
+            self.build_or_rebuild_chunk_mesh(cx, cz);
+        }
+
+        // (Future: Unload meshes for chunks no longer in active_chunk_coords)
+        // self.chunk_render_data.retain(|coord, _| self.active_chunk_coords.contains(coord));
+
+
+        // 2. Update player physics and collision (now using self.world)
+        self.player.update_physics_and_collision(dt_secs, &self.world);
+
+
+        // 3. Update camera view based on player state
         let camera_eye = self.player.position + glam::Vec3::new(0.0, PLAYER_EYE_HEIGHT, 0.0);
 
         // Calculate target based on player's yaw and pitch
@@ -770,13 +892,14 @@ impl State {
             render_pass.set_pipeline(&self.render_pipeline);
             render_pass.set_bind_group(0, &self.camera_bind_group, &[]);
 
-            if let (Some(vertex_buffer), Some(index_buffer)) =
-                (&self.chunk_vertex_buffer, &self.chunk_index_buffer)
-            {
-                if self.num_chunk_indices > 0 {
-                    render_pass.set_vertex_buffer(0, vertex_buffer.slice(..));
-                    render_pass.set_index_buffer(index_buffer.slice(..), wgpu::IndexFormat::Uint16);
-                    render_pass.draw_indexed(0..self.num_chunk_indices, 0, 0..1); // Draw 1 instance of the combined mesh
+            // Iterate over active chunks and render them
+            for chunk_coord in &self.active_chunk_coords {
+                if let Some(render_data) = self.chunk_render_data.get(chunk_coord) {
+                    if render_data.num_indices > 0 {
+                        render_pass.set_vertex_buffer(0, render_data.vertex_buffer.slice(..));
+                        render_pass.set_index_buffer(render_data.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
+                        render_pass.draw_indexed(0..render_data.num_indices, 0, 0..1);
+                    }
                 }
             }
 

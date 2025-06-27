@@ -5,11 +5,12 @@ pub const CHUNK_HEIGHT: usize = 32; // Reduced height for now
 pub const CHUNK_DEPTH: usize = 16;
 
 pub struct Chunk {
+    pub coord: (i32, i32), // Add world coordinates (x, z) for the chunk
     blocks: Vec<Vec<Vec<Block>>>, // Stored as [x][y][z]
 }
 
 impl Chunk {
-    pub fn new() -> Self {
+    pub fn new(coord_x: i32, coord_z: i32) -> Self {
         // Initialize with Air blocks
         let blocks = vec![
             vec![
@@ -18,11 +19,29 @@ impl Chunk {
             ];
             CHUNK_WIDTH
         ];
-        Chunk { blocks }
+        Chunk {
+            coord: (coord_x, coord_z),
+            blocks,
+        }
     }
 
+    // generate_terrain might later take self.coord into account for varied terrain
     pub fn generate_terrain(&mut self) {
-        let surface_level = CHUNK_HEIGHT / 2; // Grass will be at this Y level
+        // Use chunk's X coordinate to vary the surface level slightly.
+        // self.coord.0 is the chunk's X coordinate.
+        // We'll make a simple step-like variation.
+        let base_surface_level = CHUNK_HEIGHT / 2;
+        let variation = (self.coord.0 % 3 - 1) * 2; // Results in -2, 0, or 2 block height difference
+
+        // Ensure surface_level doesn't go too low or too high
+        let mut surface_level = (base_surface_level as i32 + variation) as usize;
+        if surface_level < 1 { // Ensure at least one layer of dirt
+            surface_level = 1;
+        }
+        if surface_level >= CHUNK_HEIGHT -1 { // Ensure there's air above grass
+             surface_level = CHUNK_HEIGHT - 2;
+        }
+
 
         for x in 0..CHUNK_WIDTH {
             for z in 0..CHUNK_DEPTH {
@@ -60,8 +79,10 @@ impl Chunk {
 }
 
 // Default implementation for Chunk, useful for initialization
-impl Default for Chunk {
-    fn default() -> Self {
-        Self::new()
-    }
-}
+// Now requires coordinates, so a generic default might not make sense
+// unless we default to (0,0). For now, let's remove it or make it explicit.
+// impl Default for Chunk {
+//     fn default() -> Self {
+//         Self::new(0, 0) // Default to chunk at (0,0)
+//     }
+// }
