@@ -6,6 +6,7 @@ mod instance;
 pub mod physics;
 pub mod player;
 mod debug_overlay;
+mod ui; // Added for Crosshair
 mod world; // Add world module
 
 use std::sync::Arc; // Added for Arc<Window>
@@ -302,6 +303,7 @@ struct State {
     depth_texture: wgpu::Texture,
     depth_texture_view: wgpu::TextureView,
     debug_overlay: DebugOverlay,
+    crosshair: ui::crosshair::Crosshair,
 }
 
 impl State {
@@ -486,6 +488,7 @@ impl State {
         let depth_texture_view = depth_texture.create_view(&wgpu::TextureViewDescriptor::default());
 
         let debug_overlay = DebugOverlay::new(&device, &config);
+        let crosshair = ui::crosshair::Crosshair::new(&device, &config);
 
         let state = Self {
             surface,
@@ -509,6 +512,7 @@ impl State {
             depth_texture,
             depth_texture_view,
             debug_overlay,
+            crosshair,
         };
 
         // Initial chunk loading and meshing will be handled by the first `update` call.
@@ -681,6 +685,7 @@ impl State {
 
             self.surface.configure(&self.device, &self.config);
             self.debug_overlay.resize(new_size.width, new_size.height, &self.queue); // Added &self.queue
+            self.crosshair.resize(new_size, &self.queue);
         }
     }
 
@@ -904,9 +909,57 @@ impl State {
             }
 
             // Render debug overlay
-            self.debug_overlay.render(&mut render_pass); // Removed error handling
+            // self.debug_overlay.render(&mut render_pass); // Moved to its own pass
+        } // Main 3D render pass ends
 
-        }
+        // Crosshair Pass
+        {
+            let mut crosshair_render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("Crosshair Render Pass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Load, // Load results of 3D pass
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: None, // No depth for crosshair
+                timestamp_writes: None,
+                occlusion_query_set: None,
+            });
+            self.crosshair.draw(&mut crosshair_render_pass);
+        } // Crosshair pass ends
+
+        // Debug Text Pass
+        // The debug_overlay.prepare() was called at the beginning of render()
+        // Now, draw it in its own pass.
+        {
+            let mut debug_text_render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("Debug Text Render Pass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &view, // Use the same texture view
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Load, // Load results of crosshair pass
+                        store: wgpu::StoreOp::Store, // Store the debug text
+                    },
+                })],
+                // Debug text DOES use depth testing, as per its pipeline setup
+                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                    view: &self.depth_texture_view, // Reuse main depth texture
+                    depth_ops: Some(wgpu::Operations {
+                        load: wgpu::LoadOp::Load, // Load depth from main pass
+                        store: wgpu::StoreOp::Store, // Text can write to depth if needed
+                    }),
+                    stencil_ops: None,
+                }),
+                timestamp_writes: None,
+                occlusion_query_set: None,
+            });
+            self.debug_overlay.render(&mut debug_text_render_pass);
+        } // Debug text pass ends
+
 
         self.queue.submit(Some(encoder.finish()));
         output.present();
