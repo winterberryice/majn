@@ -1,5 +1,6 @@
 use wgpu::util::DeviceExt;
-use glam::{Mat4, IVec3}; // Import IVec3, remove Vec3 for now to test warning
+use glam::{Mat4, IVec3, Vec3};
+// use lazy_static::lazy_static; // Removed to test warning - macro might handle scope
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
@@ -23,28 +24,69 @@ impl WireframeVertex {
     }
 }
 
-// Vertices for a 1x1x1 cube centered at (0.5, 0.5, 0.5) to align with block coords
-// Blocks are from (0,0,0) to (1,1,1) in their local space.
-// Wireframe will be slightly larger to avoid z-fighting, or rendered with depth bias/offset.
-// For now, let's define it from 0.0 to 1.0.
-const WIREFRAME_VERTICES: &[WireframeVertex] = &[
-    // Bottom face
-    WireframeVertex { position: [0.0, 0.0, 0.0] }, // 0
-    WireframeVertex { position: [1.0, 0.0, 0.0] }, // 1
-    WireframeVertex { position: [1.0, 0.0, 1.0] }, // 2
-    WireframeVertex { position: [0.0, 0.0, 1.0] }, // 3
-    // Top face
-    WireframeVertex { position: [0.0, 1.0, 0.0] }, // 4
-    WireframeVertex { position: [1.0, 1.0, 0.0] }, // 5
-    WireframeVertex { position: [1.0, 1.0, 1.0] }, // 6
-    WireframeVertex { position: [0.0, 1.0, 1.0] }, // 7
-];
+const LINE_THICKNESS: f32 = 0.05; // Control thickness here
 
-const WIREFRAME_INDICES: &[u16] = &[
-    0, 1, 1, 2, 2, 3, 3, 0, // Bottom face
-    4, 5, 5, 6, 6, 7, 7, 4, // Top face
-    0, 4, 1, 5, 2, 6, 3, 7, // Connecting lines
-];
+fn create_quad(p1: Vec3, p2: Vec3, offset_axis: Vec3, thickness_half: f32) -> (Vec<WireframeVertex>, Vec<u16>) {
+    let mut quad_vertices = Vec::with_capacity(4);
+    let mut quad_indices = Vec::with_capacity(6);
+
+    let offset = offset_axis * thickness_half;
+
+    quad_vertices.push(WireframeVertex { position: (p1 - offset).into() }); // 0
+    quad_vertices.push(WireframeVertex { position: (p2 - offset).into() }); // 1
+    quad_vertices.push(WireframeVertex { position: (p2 + offset).into() }); // 2
+    quad_vertices.push(WireframeVertex { position: (p1 + offset).into() }); // 3
+
+    quad_indices.extend_from_slice(&[0, 1, 2, 0, 2, 3]);
+
+    (quad_vertices, quad_indices)
+}
+
+
+fn generate_thick_line_cube_geometry() -> (Vec<WireframeVertex>, Vec<u16>) {
+    let mut all_vertices = Vec::new();
+    let mut all_indices = Vec::new();
+    let ht = LINE_THICKNESS / 2.0;
+
+    let corners_raw: [[f32; 3]; 8] = [
+        [0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [1.0, 0.0, 1.0], [0.0, 0.0, 1.0], // Bottom
+        [0.0, 1.0, 0.0], [1.0, 1.0, 0.0], [1.0, 1.0, 1.0], [0.0, 1.0, 1.0], // Top
+    ];
+    let corners: Vec<Vec3> = corners_raw.iter().map(|&arr| Vec3::from(arr)).collect();
+
+    let edges: [(usize, usize); 12] = [
+        (0, 1), (1, 2), (2, 3), (3, 0), // Bottom face
+        (4, 5), (5, 6), (6, 7), (7, 4), // Top face
+        (0, 4), (1, 5), (2, 6), (3, 7), // Vertical edges
+    ];
+
+    for &(idx1, idx2) in edges.iter() {
+        let p1 = corners[idx1];
+        let p2 = corners[idx2];
+        let current_vertex_offset = all_vertices.len() as u16;
+
+        let line_direction = (p2 - p1).normalize_or_zero();
+        let offset_axis: Vec3;
+
+        if line_direction.x.abs() > 0.9 { // Line along X-axis
+            offset_axis = Vec3::Y; // Expand quad in Y direction
+        } else if line_direction.y.abs() > 0.9 { // Line along Y-axis
+            offset_axis = Vec3::X; // Expand quad in X direction
+        } else { // Line along Z-axis (or diagonal, though cube edges are axis-aligned)
+            offset_axis = Vec3::X; // Expand quad in X direction (arbitrary for Z-lines)
+        }
+
+        let (quad_verts, quad_idxs) = create_quad(p1, p2, offset_axis, ht);
+        all_vertices.extend(quad_verts);
+        all_indices.extend(quad_idxs.into_iter().map(|i| i + current_vertex_offset));
+    }
+    (all_vertices, all_indices)
+}
+
+
+lazy_static::lazy_static! {
+    static ref THICK_LINE_CUBE_GEOMETRY: (Vec<WireframeVertex>, Vec<u16>) = generate_thick_line_cube_geometry();
+}
 
 pub struct ModelUniformData {
     model_matrix: Mat4,
@@ -115,17 +157,17 @@ impl WireframeRenderer {
                 entry_point: Some("fs_main"),
                 targets: &[Some(wgpu::ColorTargetState {
                     format: config.format,
-                    blend: Some(wgpu::BlendState::ALPHA_BLENDING), // Use alpha blending for wireframe
+                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
                     write_mask: wgpu::ColorWrites::ALL,
                 })],
                 compilation_options: wgpu::PipelineCompilationOptions::default(),
             }),
             primitive: wgpu::PrimitiveState {
-                topology: wgpu::PrimitiveTopology::LineList,
+                topology: wgpu::PrimitiveTopology::TriangleList, // Changed to TriangleList
                 strip_index_format: None,
                 front_face: wgpu::FrontFace::Ccw,
-                cull_mode: None, // No culling for wireframes
-                polygon_mode: wgpu::PolygonMode::Fill, // Does not apply to LineList
+                cull_mode: None, // No culling for simple quads, or Some(wgpu::Face::Back) if normals are consistent
+                polygon_mode: wgpu::PolygonMode::Fill,
                 unclipped_depth: false,
                 conservative: false,
             },
@@ -145,18 +187,20 @@ impl WireframeRenderer {
             cache: None,
         });
 
+        let (vertices, indices) = THICK_LINE_CUBE_GEOMETRY.clone(); // Clone from lazy_static
+
         let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Wireframe Vertex Buffer"),
-            contents: bytemuck::cast_slice(WIREFRAME_VERTICES),
+            label: Some("Wireframe Vertex Buffer (Thick Lines)"),
+            contents: bytemuck::cast_slice(&vertices),
             usage: wgpu::BufferUsages::VERTEX,
         });
 
         let index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Wireframe Index Buffer"),
-            contents: bytemuck::cast_slice(WIREFRAME_INDICES),
+            label: Some("Wireframe Index Buffer (Thick Lines)"),
+            contents: bytemuck::cast_slice(&indices),
             usage: wgpu::BufferUsages::INDEX,
         });
-        let num_indices = WIREFRAME_INDICES.len() as u32;
+        let num_indices = indices.len() as u32;
 
         let model_data = ModelUniformData::new();
         let model_uniform_buffer = device.create_buffer_init(
