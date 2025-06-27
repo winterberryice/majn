@@ -2,7 +2,7 @@ use wgpu_text::{glyph_brush::ab_glyph::FontArc, section, BrushBuilder, TextBrush
 use std::time::Instant;
 use glam::Vec3;
 
-const FONT_BYTES: &[u8] = include_bytes!("fonts/Roboto-Regular.ttf");
+const FONT_BYTES: &[u8] = include_bytes!("Roboto-Regular.ttf"); // Path updated
 
 pub struct DebugOverlay {
     brush: TextBrush,
