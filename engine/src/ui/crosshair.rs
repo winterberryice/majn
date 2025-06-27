@@ -72,14 +72,14 @@ impl Crosshair {
         let num_vertices = vertices.len() as u32;
 
         // Orthographic projection matrix
-        // Y is flipped (height to 0) to match typical screen coordinate systems where (0,0) is top-left
+        // Adjusted to center coordinates: (0,0) in UI space will be screen center.
         let projection_matrix = glam::Mat4::orthographic_rh(
-            0.0,
-            config.width as f32,
-            config.height as f32, // Bottom
-            0.0,                  // Top
-            -1.0,                 // Near
-            1.0,                  // Far
+            -config.width as f32 / 2.0, // left
+            config.width as f32 / 2.0,  // right
+            config.height as f32 / 2.0, // bottom (maps to NDC -1, bottom of screen)
+            -config.height as f32 / 2.0, // top (maps to NDC +1, top of screen)
+            -1.0,                       // znear
+            1.0,                        // zfar
         );
 
         let projection_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -170,12 +170,12 @@ impl Crosshair {
     pub fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>, queue: &wgpu::Queue) {
         if new_size.width > 0 && new_size.height > 0 {
             self.projection_matrix = glam::Mat4::orthographic_rh(
-                0.0,
-                new_size.width as f32,
-                new_size.height as f32, // Bottom
-                0.0,                   // Top
-                -1.0,                  // Near
-                1.0,                   // Far
+                -new_size.width as f32 / 2.0, // left
+                new_size.width as f32 / 2.0,  // right
+                new_size.height as f32 / 2.0, // bottom
+                -new_size.height as f32 / 2.0, // top
+                -1.0,                         // znear
+                1.0,                          // zfar
             );
             queue.write_buffer(
                 &self.projection_buffer,
