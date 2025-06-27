@@ -3,7 +3,6 @@ mod camera;
 mod chunk;
 mod cube_geometry;
 mod debug_overlay;
-mod instance;
 pub mod physics;
 pub mod player;
 mod raycast; // Add raycast module
