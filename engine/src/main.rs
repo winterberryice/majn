@@ -7,6 +7,8 @@ pub mod physics;
 pub mod player;
 mod debug_overlay;
 mod world; // Add world module
+mod raycast; // Add raycast module
+mod wireframe_renderer; // Add wireframe_renderer module
 
 use std::sync::Arc; // Added for Arc<Window>
 use wgpu::Trace;
@@ -262,8 +264,11 @@ use crate::cube_geometry::CubeFace; // Import CubeFace
 use crate::player::Player; // Import Player
 use crate::physics::PLAYER_EYE_HEIGHT; // For camera positioning
 use glam::Mat4; // For view/projection matrix calculation
-use crate::debug_overlay::DebugOverlay; // Added for DebugOverlay
-use crate::world::World; // Import World
+use crate::debug_overlay::DebugOverlay;
+use crate::world::World;
+use crate::raycast::BlockFace;
+use glam::IVec3;
+use crate::wireframe_renderer::WireframeRenderer; // Import WireframeRenderer
 use std::collections::HashMap; // For storing chunk render data
 
 // Struct to hold GPU buffers for a single chunk's mesh
@@ -302,6 +307,9 @@ struct State {
     depth_texture: wgpu::Texture,
     depth_texture_view: wgpu::TextureView,
     debug_overlay: DebugOverlay,
+    wireframe_renderer: WireframeRenderer, // For selected block outline
+
+    selected_block: Option<(IVec3, BlockFace)>, // For raycasting result
 }
 
 impl State {
@@ -486,6 +494,7 @@ impl State {
         let depth_texture_view = depth_texture.create_view(&wgpu::TextureViewDescriptor::default());
 
         let debug_overlay = DebugOverlay::new(&device, &config);
+        let wireframe_renderer = WireframeRenderer::new(&device, &config, &camera_bind_group_layout);
 
         let state = Self {
             surface,
@@ -509,6 +518,8 @@ impl State {
             depth_texture,
             depth_texture_view,
             debug_overlay,
+            wireframe_renderer,
+            selected_block: None,
         };
 
         // Initial chunk loading and meshing will be handled by the first `update` call.
@@ -809,6 +820,14 @@ impl State {
         // 2. Update player physics and collision (now using self.world)
         self.player.update_physics_and_collision(dt_secs, &self.world);
 
+        // New: Perform raycasting
+        const RAYCAST_MAX_DISTANCE: f32 = 5.0;
+        self.selected_block = crate::raycast::cast_ray(&self.player, &self.world, RAYCAST_MAX_DISTANCE);
+        // For debugging:
+        // if let Some((pos, face)) = self.selected_block {
+        //     println!("Selected block: {:?} at face {:?}", pos, face);
+        // }
+
 
         // 3. Update camera view based on player state
         let camera_eye = self.player.position + glam::Vec3::new(0.0, PLAYER_EYE_HEIGHT, 0.0);
@@ -901,6 +920,14 @@ impl State {
                         render_pass.draw_indexed(0..render_data.num_indices, 0, 0..1);
                     }
                 }
+            }
+
+            // New: Render selected block wireframe
+            if let Some((block_coords, _)) = self.selected_block {
+                self.wireframe_renderer.update_model_matrix(block_coords);
+                // The camera bind group (group 0) is already set by the main world render pass.
+                // The WireframeRenderer's draw method will set its own pipeline and bind group 1.
+                self.wireframe_renderer.draw(&mut render_pass, &self.queue);
             }
 
             // Render debug overlay
