@@ -5,43 +5,23 @@ pub const CHUNK_HEIGHT: usize = 32; // Reduced height for now
 pub const CHUNK_DEPTH: usize = 16;
 
 pub struct Chunk {
-    pub coord: (i32, i32), // Add world coordinates (x, z) for the chunk
+    pub coord: (i32, i32),        // Add world coordinates (x, z) for the chunk
     blocks: Vec<Vec<Vec<Block>>>, // Stored as [x][y][z]
 }
 
 impl Chunk {
     pub fn new(coord_x: i32, coord_z: i32) -> Self {
         // Initialize with Air blocks
-        let blocks = vec![
-            vec![
-                vec![Block::new(BlockType::Air); CHUNK_DEPTH];
-                CHUNK_HEIGHT
-            ];
-            CHUNK_WIDTH
-        ];
+        let blocks =
+            vec![vec![vec![Block::new(BlockType::Air); CHUNK_DEPTH]; CHUNK_HEIGHT]; CHUNK_WIDTH];
         Chunk {
             coord: (coord_x, coord_z),
             blocks,
         }
     }
 
-    // generate_terrain might later take self.coord into account for varied terrain
     pub fn generate_terrain(&mut self) {
-        // Use chunk's X coordinate to vary the surface level slightly.
-        // self.coord.0 is the chunk's X coordinate.
-        // We'll make a simple step-like variation.
-        let base_surface_level = CHUNK_HEIGHT / 2;
-        let variation = (self.coord.0 % 3 - 1) * 2; // Results in -2, 0, or 2 block height difference
-
-        // Ensure surface_level doesn't go too low or too high
-        let mut surface_level = (base_surface_level as i32 + variation) as usize;
-        if surface_level < 1 { // Ensure at least one layer of dirt
-            surface_level = 1;
-        }
-        if surface_level >= CHUNK_HEIGHT -1 { // Ensure there's air above grass
-             surface_level = CHUNK_HEIGHT - 2;
-        }
-
+        let surface_level = CHUNK_HEIGHT / 2; // Grass will be at this Y level
 
         for x in 0..CHUNK_WIDTH {
             for z in 0..CHUNK_DEPTH {
@@ -68,7 +48,13 @@ impl Chunk {
 
     // Helper to set a block at a given coordinate
     // Returns Result<(), &str> to indicate success or out-of-bounds error
-    pub fn set_block(&mut self, x: usize, y: usize, z: usize, block_type: BlockType) -> Result<(), &'static str> {
+    pub fn set_block(
+        &mut self,
+        x: usize,
+        y: usize,
+        z: usize,
+        block_type: BlockType,
+    ) -> Result<(), &'static str> {
         if x < CHUNK_WIDTH && y < CHUNK_HEIGHT && z < CHUNK_DEPTH {
             self.blocks[x][y][z] = Block::new(block_type);
             Ok(())
