@@ -5,20 +5,19 @@ pub const CHUNK_HEIGHT: usize = 32; // Reduced height for now
 pub const CHUNK_DEPTH: usize = 16;
 
 pub struct Chunk {
+    pub coord: (i32, i32),        // Add world coordinates (x, z) for the chunk
     blocks: Vec<Vec<Vec<Block>>>, // Stored as [x][y][z]
 }
 
 impl Chunk {
-    pub fn new() -> Self {
+    pub fn new(coord_x: i32, coord_z: i32) -> Self {
         // Initialize with Air blocks
-        let blocks = vec![
-            vec![
-                vec![Block::new(BlockType::Air); CHUNK_DEPTH];
-                CHUNK_HEIGHT
-            ];
-            CHUNK_WIDTH
-        ];
-        Chunk { blocks }
+        let blocks =
+            vec![vec![vec![Block::new(BlockType::Air); CHUNK_DEPTH]; CHUNK_HEIGHT]; CHUNK_WIDTH];
+        Chunk {
+            coord: (coord_x, coord_z),
+            blocks,
+        }
     }
 
     pub fn generate_terrain(&mut self) {
@@ -49,7 +48,13 @@ impl Chunk {
 
     // Helper to set a block at a given coordinate
     // Returns Result<(), &str> to indicate success or out-of-bounds error
-    pub fn set_block(&mut self, x: usize, y: usize, z: usize, block_type: BlockType) -> Result<(), &'static str> {
+    pub fn set_block(
+        &mut self,
+        x: usize,
+        y: usize,
+        z: usize,
+        block_type: BlockType,
+    ) -> Result<(), &'static str> {
         if x < CHUNK_WIDTH && y < CHUNK_HEIGHT && z < CHUNK_DEPTH {
             self.blocks[x][y][z] = Block::new(block_type);
             Ok(())
@@ -60,8 +65,10 @@ impl Chunk {
 }
 
 // Default implementation for Chunk, useful for initialization
-impl Default for Chunk {
-    fn default() -> Self {
-        Self::new()
-    }
-}
+// Now requires coordinates, so a generic default might not make sense
+// unless we default to (0,0). For now, let's remove it or make it explicit.
+// impl Default for Chunk {
+//     fn default() -> Self {
+//         Self::new(0, 0) // Default to chunk at (0,0)
+//     }
+// }

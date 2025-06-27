@@ -1,6 +1,8 @@
-use glam::Vec3; // Removed Mat3
+use glam::Vec3;
 use crate::physics::{AABB, PLAYER_HEIGHT, PLAYER_HALF_WIDTH, GRAVITY, JUMP_FORCE, WALK_SPEED, FRICTION_COEFFICIENT};
-use crate::chunk::Chunk; // For type hint
+// Remove direct dependency on Chunk, will use World instead
+// use crate::chunk::Chunk;
+use crate::world::World; // Import World
 
 // Input state for player movement intentions
 // This will be populated by the input handling system
@@ -65,7 +67,8 @@ impl Player {
 
     // Placeholder for the main physics update logic
     // pub fn update_physics_and_collision(&mut self, dt: f32, chunk: &crate::chunk::Chunk) {
-    pub fn update_physics_and_collision(&mut self, dt: f32, chunk: &Chunk) {
+    // pub fn update_physics_and_collision(&mut self, dt: f32, chunk: &Chunk) { // Old signature
+    pub fn update_physics_and_collision(&mut self, dt: f32, world: &World) { // New signature with World
         // 1. Apply Inputs & Intentions
         let mut intended_horizontal_velocity = Vec3::ZERO;
         // let forward_direction = Vec3::new(self.yaw.cos(), 0.0, self.yaw.sin()).normalize_or_zero(); // Unused
@@ -149,7 +152,8 @@ impl Player {
         // --- Y-AXIS COLLISION ---
         self.position.y += desired_move.y;
         let mut player_world_box = self.get_world_bounding_box();
-        let nearby_y_blocks = get_nearby_block_aabbs(&player_world_box, chunk);
+        // let nearby_y_blocks = get_nearby_block_aabbs(&player_world_box, chunk); // Old call
+        let nearby_y_blocks = get_nearby_block_aabbs(&player_world_box, world); // New call with world
 
         for block_box in nearby_y_blocks {
             if player_world_box.intersects(&block_box) {
@@ -170,7 +174,8 @@ impl Player {
         // --- X-AXIS COLLISION ---
         self.position.x += desired_move.x;
         player_world_box = self.get_world_bounding_box(); // Update box for X-movement, using Y-resolved position
-        let nearby_x_blocks = get_nearby_block_aabbs(&player_world_box, chunk);
+        // let nearby_x_blocks = get_nearby_block_aabbs(&player_world_box, chunk); // Old call
+        let nearby_x_blocks = get_nearby_block_aabbs(&player_world_box, world); // New call with world
 
         for block_box in nearby_x_blocks {
             if player_world_box.intersects(&block_box) {
@@ -190,7 +195,8 @@ impl Player {
         // --- Z-AXIS COLLISION ---
         self.position.z += desired_move.z;
         player_world_box = self.get_world_bounding_box(); // Update box for Z-movement
-        let nearby_z_blocks = get_nearby_block_aabbs(&player_world_box, chunk);
+        // let nearby_z_blocks = get_nearby_block_aabbs(&player_world_box, chunk); // Old call
+        let nearby_z_blocks = get_nearby_block_aabbs(&player_world_box, world); // New call with world
 
         for block_box in nearby_z_blocks {
             if player_world_box.intersects(&block_box) {
@@ -215,34 +221,37 @@ impl Player {
 }
 
 // Helper function to get AABBs of solid blocks near the player
-// This could be in physics.rs or player.rs. For now, here for locality.
-fn get_nearby_block_aabbs(player_world_box: &AABB, chunk: &crate::chunk::Chunk) -> Vec<AABB> {
+// This function now queries the World instead of a single Chunk.
+fn get_nearby_block_aabbs(player_world_box: &AABB, world: &World) -> Vec<AABB> {
     let mut nearby_blocks = Vec::new();
 
-    // Determine the range of block indices that the player's AABB might overlap.
-    // Add a small buffer (e.g., 1 block) just in case, though strict overlap should be enough.
-    let min_block_x = (player_world_box.min.x - 1.0).floor() as i32;
-    let max_block_x = (player_world_box.max.x + 1.0).ceil() as i32;
-    let min_block_y = (player_world_box.min.y - 1.0).floor() as i32;
-    let max_block_y = (player_world_box.max.y + 1.0).ceil() as i32;
-    let min_block_z = (player_world_box.min.z - 1.0).floor() as i32;
-    let max_block_z = (player_world_box.max.z + 1.0).ceil() as i32;
+    // Determine the range of world block coordinates that the player's AABB might overlap.
+    // Add a small buffer (e.g., 1 block) just in case.
+    // These are absolute world block coordinates.
+    let min_world_block_x = (player_world_box.min.x - 1.0).floor() as i32;
+    let max_world_block_x = (player_world_box.max.x + 1.0).ceil() as i32;
+    let min_world_block_y = (player_world_box.min.y - 1.0).floor() as i32;
+    let max_world_block_y = (player_world_box.max.y + 1.0).ceil() as i32;
+    let min_world_block_z = (player_world_box.min.z - 1.0).floor() as i32;
+    let max_world_block_z = (player_world_box.max.z + 1.0).ceil() as i32;
 
-    for ix in min_block_x..max_block_x {
-        for iy in min_block_y..max_block_y {
-            for iz in min_block_z..max_block_z {
-                // Ensure indices are within chunk bounds before trying to access
-                if ix < 0 || iy < 0 || iz < 0 ||
-                   ix >= crate::chunk::CHUNK_WIDTH as i32 ||
-                   iy >= crate::chunk::CHUNK_HEIGHT as i32 ||
-                   iz >= crate::chunk::CHUNK_DEPTH as i32 {
+    for world_bx in min_world_block_x..max_world_block_x {
+        for world_by in min_world_block_y..max_world_block_y {
+            for world_bz in min_world_block_z..max_world_block_z {
+                // Y coordinates for blocks are absolute from 0 upwards.
+                // We can pre-filter Y here if it's outside the general world height,
+                // though world.get_block_at_world also handles Y bounds.
+                if world_by < 0 || world_by >= crate::chunk::CHUNK_HEIGHT as i32 {
                     continue;
                 }
 
-                if let Some(block) = chunk.get_block(ix as usize, iy as usize, iz as usize) {
+                // Use world.get_block_at_world to get block data
+                // This method handles chunk boundaries internally.
+                if let Some(block) = world.get_block_at_world(world_bx as f32, world_by as f32, world_bz as f32) {
                     if block.is_solid() {
-                        let block_min_corner = Vec3::new(ix as f32, iy as f32, iz as f32);
-                        let block_max_corner = Vec3::new(ix as f32 + 1.0, iy as f32 + 1.0, iz as f32 + 1.0);
+                        // The AABB for the block should be in world coordinates
+                        let block_min_corner = Vec3::new(world_bx as f32, world_by as f32, world_bz as f32);
+                        let block_max_corner = Vec3::new(world_bx as f32 + 1.0, world_by as f32 + 1.0, world_bz as f32 + 1.0);
                         nearby_blocks.push(AABB::new(block_min_corner, block_max_corner));
                     }
                 }
