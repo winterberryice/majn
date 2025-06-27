@@ -1,17 +1,22 @@
+// Use wgpu_text types directly, not through a 'section' module
 use wgpu_text::{
     glyph_brush::ab_glyph::FontArc,
-    section, // Import the 'section' module
     BrushBuilder,
+    Section, // Import Section directly
+    Text,    // Import Text directly
     TextBrush
 };
 use std::time::Instant;
 use glam::Vec3;
 
-const FONT_BYTES: &[u8] = include_bytes!("Roboto-Regular.ttf"); // Assuming Roboto-Regular.ttf is next to this file
+// This line assumes a font file named "Roboto-Regular.ttf" is in your src/ directory
+// or configured in your project's root. Make sure the path is correct for your setup.
+const FONT_BYTES: &[u8] = include_bytes!("Roboto-Regular.ttf");
 
 pub struct DebugOverlay {
     brush: TextBrush,
-    section: section::Section<'static>, // Use section::Section
+    // The type is now just 'Section', not 'section::Section'
+    section: Section<'static>,
     visible: bool,
     last_frame_time: Instant,
     frame_count: u32,
@@ -22,16 +27,15 @@ pub struct DebugOverlay {
 
 impl DebugOverlay {
     pub fn new(device: &wgpu::Device, config: &wgpu::SurfaceConfiguration) -> Self {
-        let font = FontArc::try_from_slice(FONT_BYTES).expect("Failed to load font");
+        let font = FontArc::try_from_slice(FONT_BYTES).expect("Failed to load font. Make sure Roboto-Regular.ttf is in the correct location.");
         let brush = BrushBuilder::using_font(font.clone())
             .build(device, config.width, config.height, config.format);
 
-        // Use section::Section and section::Text
-        let section = section::Section::default()
-            .add_text(section::Text::new("").with_scale(20.0).with_color([1.0, 1.0, 1.0, 1.0]))
+        // Use 'Section' and 'Text' directly
+        let section = Section::default()
+            .add_text(Text::new("").with_scale(20.0).with_color([1.0, 1.0, 1.0, 1.0]))
             .with_screen_position((10.0, 10.0))
             .with_bounds((config.width as f32, config.height as f32));
-
 
         Self {
             brush,
@@ -55,6 +59,7 @@ impl DebugOverlay {
 
     pub fn update(&mut self, player_position: Vec3) {
         if !self.visible {
+            // Reset FPS calculation when not visible to avoid large delta_time on re-enabling
             self.last_frame_time = Instant::now();
             self.frame_count = 0;
             self.accumulated_time = 0.0;
@@ -68,6 +73,7 @@ impl DebugOverlay {
         self.accumulated_time += delta_time;
         self.frame_count += 1;
 
+        // Update FPS counter once per second
         if self.accumulated_time >= 1.0 {
             self.fps = self.frame_count;
             self.frame_count = 0;
@@ -82,27 +88,33 @@ impl DebugOverlay {
             player_position.z
         );
 
-        self.section.text = vec![section::Text::new(&text_content) // Use section::Text
+        // Update the section's text. Use 'Text' directly.
+        self.section.text = vec![Text::new(&text_content)
             .with_scale(20.0)
             .with_color([1.0, 1.0, 1.0, 1.0])];
     }
 
+    // This function prepares the text for rendering
     pub fn prepare(&mut self, device: &wgpu::Device, queue: &wgpu::Queue) -> Result<(), wgpu_text::BrushError>{
         if self.visible {
-            // Ensure the section is passed as a slice of references
-            self.brush.queue(device, queue, vec![&self.section])?;
+            // Queue the section for drawing. The brush needs a slice of sections.
+            self.brush.queue(device, queue, &[&self.section])?;
         }
         Ok(())
     }
 
+    // This function performs the actual drawing. It must be called within a RenderPass.
     pub fn render<'pass>(&'pass self, render_pass: &mut wgpu::RenderPass<'pass>) {
         if self.visible {
             self.brush.draw(render_pass);
         }
     }
 
+    // Call this when the window is resized
     pub fn resize(&mut self, width: u32, height: u32, queue: &wgpu::Queue) {
+        // Update the brush's view projection
         self.brush.resize_view(width as f32, height as f32, queue);
+        // Update the text section's bounds
         self.section.bounds = (width as f32, height as f32);
     }
 }
