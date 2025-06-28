@@ -1,6 +1,7 @@
 mod block;
 mod camera;
 mod chunk;
+mod texture;
 mod cube_geometry;
 mod debug_overlay;
 pub mod physics;
@@ -255,6 +256,7 @@ pub struct Vertex {
     // Made public
     pub position: [f32; 3], // Made public
     pub color: [f32; 3],    // Made public
+    pub uv: [f32; 2],       // Added for texture coordinates
 }
 
 impl Vertex {
@@ -267,13 +269,18 @@ impl Vertex {
             attributes: &[
                 wgpu::VertexAttribute {
                     offset: 0,
-                    shader_location: 0, // Corresponds to `layout(location = 0)` in shader
+                    shader_location: 0, // position
                     format: wgpu::VertexFormat::Float32x3,
                 },
                 wgpu::VertexAttribute {
                     offset: std::mem::size_of::<[f32; 3]>() as wgpu::BufferAddress,
-                    shader_location: 1, // Corresponds to `layout(location = 1)` in shader
+                    shader_location: 1, // color
                     format: wgpu::VertexFormat::Float32x3,
+                },
+                wgpu::VertexAttribute {
+                    offset: (std::mem::size_of::<[f32; 3]>() * 2) as wgpu::BufferAddress, // After position and color
+                    shader_location: 2, // uv
+                    format: wgpu::VertexFormat::Float32x2,
                 },
             ],
         }
@@ -339,6 +346,11 @@ struct State {
     crosshair: ui::crosshair::Crosshair,
     wireframe_renderer: WireframeRenderer, // For selected block outline
     selected_block: Option<(IVec3, BlockFace)>, // For raycasting result
+
+    // Texture related fields
+    diffuse_texture: crate::texture::Texture,
+    texture_bind_group_layout: wgpu::BindGroupLayout,
+    diffuse_bind_group: wgpu::BindGroup,
 }
 
 impl State {
@@ -396,6 +408,59 @@ impl State {
             source: wgpu::ShaderSource::Wgsl(include_str!("shader.wgsl").into()),
         });
 
+        // Load diffuse texture
+        let diffuse_texture = match crate::texture::Texture::load(
+            &device,
+            &queue,
+            "assets/resources/terrain.png",
+        ) {
+            Ok(tex) => tex,
+            Err(e) => {
+                eprintln!("Failed to load terrain.png: {}. Using placeholder.", e);
+                crate::texture::Texture::create_placeholder(&device, &queue, Some("Placeholder Terrain"))
+            }
+        };
+
+        // Create texture bind group layout
+        let texture_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                entries: &[
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Texture {
+                            multisampled: false,
+                            view_dimension: wgpu::TextureViewDimension::D2,
+                            sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        },
+                        count: None,
+                    },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 1,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                        count: None,
+                    },
+                ],
+                label: Some("texture_bind_group_layout"),
+            });
+
+        // Create texture bind group
+        let diffuse_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            layout: &texture_bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&diffuse_texture.view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&diffuse_texture.sampler),
+                },
+            ],
+            label: Some("diffuse_bind_group"),
+        });
+
         let camera_bind_group_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                 entries: &[wgpu::BindGroupLayoutEntry {
@@ -414,7 +479,7 @@ impl State {
         let render_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("Render Pipeline Layout"),
-                bind_group_layouts: &[&camera_bind_group_layout],
+                bind_group_layouts: &[&camera_bind_group_layout, &texture_bind_group_layout], // Added texture_bind_group_layout
                 push_constant_ranges: &[],
             });
 
@@ -550,6 +615,9 @@ impl State {
             wireframe_renderer,
             selected_block: None,
             crosshair,
+            diffuse_texture, // Added
+            texture_bind_group_layout, // Added
+            diffuse_bind_group, // Added
         };
 
         // Initial chunk loading and meshing will be handled by the first `update` call.
@@ -633,12 +701,10 @@ impl State {
                                     chunk_world_origin_z as i32 + lz as i32 + offset.2;
 
                                 let mut is_face_visible = true;
-                                // Check if neighbor is outside world bounds (e.g. y < 0 or y >= CHUNK_HEIGHT)
                                 if neighbor_world_by < 0 || neighbor_world_by >= CHUNK_HEIGHT as i32
                                 {
                                     // Neighbor is outside vertical build limit, face is visible
                                 } else {
-                                    // Query the world for the neighbor block
                                     if let Some(neighbor_block) = self.world.get_block_at_world(
                                         neighbor_world_bx as f32,
                                         neighbor_world_by as f32,
@@ -648,21 +714,71 @@ impl State {
                                             is_face_visible = false;
                                         }
                                     }
-                                    // If neighbor_block is None (e.g. chunk not loaded), face is visible.
                                 }
 
                                 if is_face_visible {
                                     let vertices_template = face_type.get_vertices_template();
                                     let local_indices = face_type.get_local_indices();
 
-                                    for v_template in vertices_template {
+                                    // Texture atlas properties
+                                    const ATLAS_COLS: f32 = 16.0;
+                                    const ATLAS_ROWS: f32 = 16.0;
+                                    let tex_size_x = 1.0 / ATLAS_COLS;
+                                    let tex_size_y = 1.0 / ATLAS_ROWS;
+
+                                    // Determine texture coordinates based on block type and face
+                                    let (tex_x_idx, tex_y_idx) = match block.block_type {
+                                        crate::block::BlockType::Grass => match face_type {
+                                            CubeFace::Top => (0.0, 0.0),    // Grass top
+                                            CubeFace::Bottom => (2.0, 0.0), // Dirt
+                                            _ => (1.0, 0.0),                // Grass side
+                                        },
+                                        crate::block::BlockType::Dirt => (2.0, 0.0), // Dirt for all faces
+                                        _ => (15.0, 15.0), // Default to a distinctive "missing" texture index if not specified (e.g. bottom right)
+                                    };
+
+                                    let u_min = tex_x_idx * tex_size_x;
+                                    let v_min = tex_y_idx * tex_size_y;
+                                    let u_max = u_min + tex_size_x;
+                                    let v_max = v_min + tex_size_y;
+
+                                    // Define UVs for a quad. The order should match vertex order for the face.
+                                    // Standard quad UVs (counter-clockwise starting bottom-left for many conventions):
+                                    // (0,0), (1,0), (1,1), (0,1)
+                                    // We need to map these to the correct corners of the texture region.
+                                    // The get_vertices_template() returns vertices in a specific order.
+                                    // We'll assume a common mapping:
+                                    // Vertex 0 (e.g., bottom-left-front) -> (u_min, v_max)
+                                    // Vertex 1 (e.g., bottom-right-front) -> (u_max, v_max)
+                                    // Vertex 2 (e.g., top-right-front) -> (u_max, v_min)
+                                    // Vertex 3 (e.g., top-left-front) -> (u_min, v_min)
+                                    // This might need adjustment depending on how vertices are defined per face in cube_geometry.
+                                    // For now, let's use a direct mapping based on typical quad UVs.
+                                    // The order of vertices_template is:
+                                    // (-0.5, -0.5, z_sign * 0.5) bottom-left
+                                    // ( 0.5, -0.5, z_sign * 0.5) bottom-right
+                                    // ( 0.5,  0.5, z_sign * 0.5) top-right
+                                    // (-0.5,  0.5, z_sign * 0.5) top-left
+                                    // So UVs should be:
+                                    // (u_min, v_max) for bottom-left
+                                    // (u_max, v_max) for bottom-right
+                                    // (u_max, v_min) for top-right
+                                    // (u_min, v_min) for top-left
+
+                                    let face_uvs = [
+                                        [u_min, v_max], // Corresponds to vertices_template[0]
+                                        [u_max, v_max], // Corresponds to vertices_template[1]
+                                        [u_max, v_min], // Corresponds to vertices_template[2]
+                                        [u_min, v_min], // Corresponds to vertices_template[3]
+                                    ];
+
+                                    for (i, v_template) in vertices_template.iter().enumerate() {
                                         chunk_mesh_vertices.push(Vertex {
-                                            // Vertex positions are already relative to block center.
-                                            // We add the block's world center to get final world vertex positions.
                                             position: (current_block_world_center
                                                 + glam::Vec3::from(v_template.position))
                                             .into(),
-                                            color: block_color,
+                                            color: block_color, // Keep color for now, might be useful for tinting or fallback
+                                            uv: face_uvs[i],
                                         });
                                     }
                                     for local_idx in local_indices {
@@ -971,6 +1087,7 @@ impl State {
 
             render_pass.set_pipeline(&self.render_pipeline);
             render_pass.set_bind_group(0, &self.camera_bind_group, &[]);
+            render_pass.set_bind_group(1, &self.diffuse_bind_group, &[]); // Set the diffuse texture bind group
 
             // Iterate over active chunks and render them
             for chunk_coord in &self.active_chunk_coords {
