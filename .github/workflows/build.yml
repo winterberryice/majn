@@ -67,3 +67,29 @@ jobs:
       with:
         name: engine-windows
         path: engine/target/release/engine.exe
+
+  build-macos:
+    name: Build for macOS
+    runs-on: macos-latest
+    defaults:
+      run:
+        working-directory: ./engine
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Install Rust toolchain
+      uses: actions-rust-lang/setup-rust-toolchain@v1
+      with:
+        toolchain: stable
+
+    - name: Build release executable (macOS)
+      env:
+        RUSTFLAGS: "-A dead_code"
+      run: cargo build --release --verbose
+
+    - name: Archive macOS executable
+      uses: actions/upload-artifact@v4
+      with:
+        name: engine-macos
+        path: engine/target/release/engine
