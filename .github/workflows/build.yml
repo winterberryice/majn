@@ -28,9 +28,6 @@ jobs:
         sudo apt-get install -y libvulkan-dev libxkbcommon-dev libwayland-dev libgtk-3-dev libudev-dev pkg-config
 
     - name: Build release executable (Linux)
-      # This 'env' block sets the RUSTFLAGS environment variable ONLY for this step.
-      # It tells the Rust compiler to specifically allow dead_code, overriding the
-      # CI environment's default of treating warnings as errors.
       env:
         RUSTFLAGS: "-A dead_code"
       run: cargo build --release --verbose
@@ -38,7 +35,7 @@ jobs:
     - name: Archive Linux executable
       uses: actions/upload-artifact@v4
       with:
-        name: engine-linux
+        name: engine-linux-x86_64
         path: engine/target/release/engine
 
   build-windows:
@@ -57,7 +54,6 @@ jobs:
         toolchain: stable
 
     - name: Build release executable (Windows)
-      # We apply the same fix here for the Windows build job.
       env:
         RUSTFLAGS: "-A dead_code"
       run: cargo build --release --verbose
@@ -65,5 +61,54 @@ jobs:
     - name: Archive Windows executable
       uses: actions/upload-artifact@v4
       with:
-        name: engine-windows
+        name: engine-windows-x86_64
         path: engine/target/release/engine.exe
+
+  build-macos-universal:
+    name: Build for macOS (Universal Binary)
+    runs-on: macos-latest # This runner is Apple Silicon (ARM64)
+    defaults:
+      run:
+        working-directory: ./engine
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Install Rust toolchain and targets
+      uses: actions-rust-lang/setup-rust-toolchain@v1
+      with:
+        toolchain: stable
+        # We need to install the toolchains for both architectures
+        target: |
+          aarch64-apple-darwin
+          x86_64-apple-darwin
+
+    - name: Build for Apple Silicon (ARM64)
+      env:
+        RUSTFLAGS: "-A dead_code"
+      run: cargo build --release --verbose --target aarch64-apple-darwin
+
+    - name: Build for Intel (x86_64)
+      env:
+        RUSTFLAGS: "-A dead_code"
+      run: cargo build --release --verbose --target x86_64-apple-darwin
+
+    - name: Combine into Universal Binary using lipo
+      run: |
+        # Define the path for the final universal executable
+        UNIVERSAL_OUTPUT_PATH="target/universal-release"
+        mkdir -p $UNIVERSAL_OUTPUT_PATH
+        
+        # Use Apple's 'lipo' tool to merge the two executables
+        lipo -create -output $UNIVERSAL_OUTPUT_PATH/engine \
+          "target/aarch64-apple-darwin/release/engine" \
+          "target/x86_64-apple-darwin/release/engine"
+        
+        # Verify the result (optional but good practice)
+        lipo -info $UNIVERSAL_OUTPUT_PATH/engine
+
+    - name: Archive macOS Universal executable
+      uses: actions/upload-artifact@v4
+      with:
+        name: engine-macos-universal
+        path: engine/target/universal-release/engine
