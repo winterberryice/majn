@@ -1,5 +1,5 @@
-use image::{GenericImageView, ImageError};
-use std::num::NonZeroU32;
+use image::GenericImageView;
+// Unused: ImageError, NonZeroU32
 use std::path::Path;
 
 pub struct Texture {
@@ -25,12 +25,12 @@ impl Texture {
                 e.to_string()
             )
         })?;
-        let dimensions = img.dimensions();
+        let dimensions = img.dimensions(); // dimensions are (usize, usize)
         let rgba = img.to_rgba8(); // Convert to RGBA8
 
         let size = wgpu::Extent3d {
-            width: dimensions.0,
-            height: dimensions.1,
+            width: dimensions.0 as u32, // Cast to u32
+            height: dimensions.1 as u32, // Cast to u32
             depth_or_array_layers: 1,
         };
 
@@ -46,17 +46,17 @@ impl Texture {
         });
 
         queue.write_texture(
-            wgpu::ImageCopyTexture {
+            wgpu::ImageCopyTexture { // Struct name seems correct for wgpu 0.19-0.20 / 25.0.x
                 texture: &texture,
                 mip_level: 0,
                 origin: wgpu::Origin3d::ZERO,
                 aspect: wgpu::TextureAspect::All,
             },
             &rgba,
-            wgpu::ImageDataLayout {
+            wgpu::ImageDataLayout { // Struct name seems correct for wgpu 0.19-0.20 / 25.0.x
                 offset: 0,
-                bytes_per_row: Some(4 * dimensions.0),
-                rows_per_image: Some(dimensions.1),
+                bytes_per_row: Some(4 * dimensions.0 as u32), // Cast to u32
+                rows_per_image: Some(dimensions.1 as u32),   // Cast to u32
             },
             size,
         );
@@ -85,12 +85,12 @@ impl Texture {
         queue: &wgpu::Queue,
         label: Option<&str>,
     ) -> Self {
-        let dimensions = (16, 16); // Standard missing texture size
+        let dimensions = (16u32, 16u32); // Standard missing texture size, ensure u32
         let mut rgba_data = vec![0u8; (4 * dimensions.0 * dimensions.1) as usize];
         // Create a checkerboard pattern (purple and black)
-        for y in 0..dimensions.1 {
-            for x in 0..dimensions.0 {
-                let idx = (y * dimensions.0 + x) * 4;
+        for y in 0..dimensions.1 { // dimensions.1 is u32
+            for x in 0..dimensions.0 { // dimensions.0 is u32
+                let idx = ((y * dimensions.0 + x) * 4) as usize; // Calculate index as usize
                 if (x / 4 + y / 4) % 2 == 0 {
                     rgba_data[idx] = 255; // R
                     rgba_data[idx + 1] = 0;   // G
@@ -106,8 +106,8 @@ impl Texture {
         }
 
         let size = wgpu::Extent3d {
-            width: dimensions.0,
-            height: dimensions.1,
+            width: dimensions.0, // Already u32
+            height: dimensions.1, // Already u32
             depth_or_array_layers: 1,
         };
 
@@ -123,17 +123,17 @@ impl Texture {
         });
 
         queue.write_texture(
-            wgpu::ImageCopyTexture {
+            wgpu::ImageCopyTexture { // Struct name is correct
                 texture: &texture,
                 mip_level: 0,
                 origin: wgpu::Origin3d::ZERO,
                 aspect: wgpu::TextureAspect::All,
             },
             &rgba_data,
-            wgpu::ImageDataLayout {
+            wgpu::ImageDataLayout { // Struct name is correct
                 offset: 0,
-                bytes_per_row: Some(4 * dimensions.0),
-                rows_per_image: Some(dimensions.1),
+                bytes_per_row: Some(4 * dimensions.0), // dimensions.0 is u32
+                rows_per_image: Some(dimensions.1),   // dimensions.1 is u32
             },
             size,
         );
