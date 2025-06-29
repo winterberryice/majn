@@ -65,7 +65,7 @@ pub fn cast_ray(
 
 
     let mut current_distance = 0.0;
-    let mut last_face = BlockFace::PosY; // Placeholder, will be updated before first use
+    let mut last_face: BlockFace; // Declare, will be assigned in loop before use if a block is hit
 
     // Initial check for the block the player is standing in
     // (or rather, the block the eye is in)
@@ -84,33 +84,33 @@ pub fn cast_ray(
 
 
     while current_distance < max_distance {
-        let entered_face;
+        //let entered_face; // This variable is removed
         if t_max_x < t_max_y {
             if t_max_x < t_max_z {
                 current_distance = t_max_x;
                 current_voxel_coord.x += step_x;
                 t_max_x += t_delta_x;
-                entered_face = if step_x > 0 { BlockFace::NegX } else { BlockFace::PosX };
+                last_face = if step_x > 0 { BlockFace::NegX } else { BlockFace::PosX }; // Assign directly
             } else {
                 current_distance = t_max_z;
                 current_voxel_coord.z += step_z;
                 t_max_z += t_delta_z;
-                entered_face = if step_z > 0 { BlockFace::NegZ } else { BlockFace::PosZ };
+                last_face = if step_z > 0 { BlockFace::NegZ } else { BlockFace::PosZ }; // Assign directly
             }
         } else {
             if t_max_y < t_max_z {
                 current_distance = t_max_y;
                 current_voxel_coord.y += step_y;
                 t_max_y += t_delta_y;
-                entered_face = if step_y > 0 { BlockFace::NegY } else { BlockFace::PosY };
+                last_face = if step_y > 0 { BlockFace::NegY } else { BlockFace::PosY }; // Assign directly
             } else {
                 current_distance = t_max_z;
                 current_voxel_coord.z += step_z;
                 t_max_z += t_delta_z;
-                entered_face = if step_z > 0 { BlockFace::NegZ } else { BlockFace::PosZ };
+                last_face = if step_z > 0 { BlockFace::NegZ } else { BlockFace::PosZ }; // Assign directly
             }
         }
-        last_face = entered_face; // Store the face through which we entered the current_voxel_coord
+        // last_face = entered_face; // This line is now removed
 
         if current_distance > max_distance {
             return None;
