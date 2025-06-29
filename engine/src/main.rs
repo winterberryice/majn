@@ -10,6 +10,7 @@ mod raycast; // Add raycast module
 mod ui; // Added for Crosshair
 mod wireframe_renderer;
 mod world; // Add world module // Add wireframe_renderer module
+mod input;
 
 use std::sync::Arc; // Added for Arc<Window>
 use wgpu::Trace;
@@ -26,6 +27,7 @@ struct App {
     // Removed lifetime 'a
     window: Option<Arc<Window>>, // Changed to Option<Arc<Window>>
     state: Option<State>,        // Changed to Option<State> (State will also not have 'a)
+    // input_state: input::InputState, // REMOVED: Will be part of State
     mouse_grabbed: bool,         // Added to track mouse grab state
     last_mouse_position: Option<winit::dpi::PhysicalPosition<f64>>, // Added to track last mouse position
 }
@@ -36,6 +38,7 @@ impl App {
         Self {
             window: None,
             state: None,
+            // input_state: input::InputState::new(), // REMOVED
             mouse_grabbed: false,
             last_mouse_position: None,
         }
@@ -82,14 +85,17 @@ impl App {
                     return; // Early return, no further processing of this event
                 }
             }
-            WindowEvent::MouseInput {
-                state: ElementState::Pressed,
-                ..
-            } => {
-                if !self.mouse_grabbed {
-                    self.set_mouse_grab(true); // Modifies self directly
-                    // Optionally, mark as consumed if clicking to grab shouldn't also trigger game actions
-                    // event_consumed_by_grab_logic = true;
+            WindowEvent::MouseInput { button, state: mouse_element_state, .. } => { // Capture button and state, renamed state to mouse_element_state to avoid conflict
+                // Pass mouse input to State's InputState handler
+                if let Some(s) = self.state.as_mut() {
+                    s.input_state.on_mouse_input(button, mouse_element_state);
+                }
+
+                if mouse_element_state == ElementState::Pressed { // Existing logic for mouse grab
+                    if !self.mouse_grabbed {
+                        self.set_mouse_grab(true); // Modifies self directly
+                        // event_consumed_by_grab_logic = true; // Potentially consume this click for grabbing only
+                    }
                 }
             }
             _ => {}
@@ -100,7 +106,7 @@ impl App {
         // or if grab logic doesn't preclude state processing.
 
         // We need `state` for most other event handling.
-        let state = match self.state.as_mut() {
+        let state = match self.state.as_mut() { // state needs to be mutable here
             Some(s) => s,
             // If state is None (e.g., after Resumed failed or before it ran),
             // most window events can't be processed meaningfully.
@@ -159,7 +165,62 @@ impl App {
                 }
                 WindowEvent::RedrawRequested => {
                     // This is the correct place for rendering logic triggered by the system.
-                    state.update();
+                    // We need to borrow input_state mutably here, separate from state.
+                    // This is tricky because state also comes from self.
+                    // Let's try to call update with input_state from self.
+                    // This might require restructuring if Rust's borrow checker complains.
+                    // For now, let's assume we can pass `&mut self.input_state`.
+
+                    // The issue: `state` is `&mut self.state.unwrap()`.
+                    // `self.input_state` is another field of `self`.
+                    // We cannot have two mutable borrows of `self` or parts of `self` simultaneously
+                    // if `state.update` takes `&mut self`, and we pass `&mut self.input_state`.
+                    // However, `state.update` takes `&mut self` (referring to `State` instance)
+                    // and `&mut input_state` as a separate argument.
+
+                    // Let's try to get `input_state` first, then `state`.
+                    // This won't work as `self.state.as_mut()` borrows `self` mutably.
+
+                    // The most straightforward way is to temporarily take `input_state` out of `self`,
+                    // then call `state.update()`, then put `input_state` back.
+                    // This is not ideal.
+                    // A better way: `State::update` should not take `&mut self` if it also needs `&mut InputState` from `App`.
+                    // Or, `InputState` becomes part of `State`.
+
+                    // Let's make InputState part of State for simplicity.
+                    // This requires changes in:
+                    // 1. App struct: remove input_state
+                    // 2. App::new(): remove input_state init
+                    // 3. App::handle_window_event (MouseInput): call state.input_state.on_mouse_input()
+                    // 4. State struct: add input_state field
+                    // 5. State::new(): init input_state
+                    // 6. State::update(): access self.input_state directly
+                    // This seems like a more Rusty way to handle ownership.
+
+                    // === REVISED PLAN FOR THIS STEP ===
+                    // 1. Move InputState ownership to the State struct.
+                    // 2. Update App event handling to call state.input_state.on_mouse_input().
+                    // 3. Update State::update() to use its own input_state.
+
+                    // For now, I will proceed with the original plan and see if the borrow checker complains.
+                    // If it does, I will refactor to move InputState into State.
+                    // The current signature of state.update is `fn update(&mut self, input_state: &mut input::InputState)`
+                    // `state` here is `&mut State`.
+                    // `self` in `App::handle_window_event` is `&mut App`.
+                    // So we'd be calling `state.update(&mut self.input_state)`.
+                    // This means `state` (which is `self.state.as_mut().unwrap()`) is one mutable borrow.
+                    // `&mut self.input_state` is another mutable borrow from `self`.
+                    // This is a conflict.
+
+                    // Refactoring to move InputState into State is the way.
+
+                    // --- START REFACTOR ---
+                    // This change is larger than just this location.
+                    // I will make the necessary changes across files for this refactor.
+                    // I will start by removing input_state from App and adding it to State.
+
+                    // The call will become: state.update() and State::update will internally use self.input_state.
+                    state.update(); // State::update will be changed to use its own InputState
                     match state.render() {
                         Ok(_) => {}
                         Err(wgpu::SurfaceError::Lost) => state.resize(state.size), // Use existing size
@@ -299,6 +360,8 @@ use crate::world::World;
 use glam::IVec3;
 use glam::Mat4;
 use std::collections::HashMap;
+use crate::block::BlockType; // For block placement/removal
+use crate::physics::AABB; // For collision checking
 
 struct ChunkRenderData {
     vertex_buffer: wgpu::Buffer,
@@ -329,6 +392,7 @@ struct State {
     diffuse_texture: crate::texture::Texture,
     texture_bind_group_layout: wgpu::BindGroupLayout,
     diffuse_bind_group: wgpu::BindGroup,
+    input_state: input::InputState, // Added InputState here
 }
 
 impl State {
@@ -581,6 +645,7 @@ impl State {
             diffuse_texture,
             texture_bind_group_layout,
             diffuse_bind_group,
+            input_state: input::InputState::new(), // Initialize InputState
         }
     }
 
@@ -840,7 +905,10 @@ impl State {
         }
     }
 
-    fn update(&mut self) {
+    fn update(&mut self) { // Removed input_state from parameters
+        // Handle block interactions first
+        self.handle_block_interactions(); // Will now use self.input_state
+
         let dt_secs = 1.0 / 60.0;
 
         let player_pos = self.player.position;
@@ -901,7 +969,86 @@ impl State {
             bytemuck::cast_slice(&[self.camera_uniform]),
         );
         self.debug_overlay.update(self.player.position);
+
+        // Clear per-frame input flags
+        self.input_state.clear_frame_state(); // Use self.input_state
     }
+
+    // New function to handle block interactions based on input
+    // Changed to use self.input_state
+    fn handle_block_interactions(&mut self) {
+        // Block Removal (Left-Click)
+        if self.input_state.left_mouse_pressed_this_frame {
+            if let Some((block_pos, _face)) = self.selected_block {
+                match self.world.set_block(block_pos, BlockType::Air) {
+                    Ok(chunk_coord) => {
+                        // Mark chunk as dirty by removing its render data
+                        self.chunk_render_data.remove(&chunk_coord);
+                        // Also, if the removed block was on a boundary, the adjacent chunk might need updating
+                        // This is complex; for now, just rebuild the primary chunk.
+                        // A more robust solution would check neighbors if block is on edge.
+                        // We might also need to rebuild neighbors if a block *removal* exposes their faces.
+                        // For simplicity, we'll rely on the existing active chunk meshing logic to pick up
+                        // changes when the player moves, or we can force rebuilds of neighbors.
+                        // Let's check and rebuild neighbors of the modified chunk as well.
+                        self.build_or_rebuild_chunk_mesh(chunk_coord.0, chunk_coord.1); // Rebuild the main chunk
+                        // And its direct neighbors, as face visibility might change
+                        self.build_or_rebuild_chunk_mesh(chunk_coord.0 + 1, chunk_coord.1);
+                        self.build_or_rebuild_chunk_mesh(chunk_coord.0 - 1, chunk_coord.1);
+                        self.build_or_rebuild_chunk_mesh(chunk_coord.0, chunk_coord.1 + 1);
+                        self.build_or_rebuild_chunk_mesh(chunk_coord.0, chunk_coord.1 - 1);
+                    }
+                    Err(e) => {
+                        eprintln!("Error removing block: {}", e);
+                    }
+                }
+            }
+        }
+
+        // Block Placement (Right-Click)
+        if self.input_state.right_mouse_pressed_this_frame { // Use self.input_state
+            if let Some((selected_block_pos, hit_face)) = self.selected_block {
+                let mut offset = IVec3::ZERO;
+                match hit_face {
+                    BlockFace::PosX => offset.x = 1,
+                    BlockFace::NegX => offset.x = -1,
+                    BlockFace::PosY => offset.y = 1,
+                    BlockFace::NegY => offset.y = -1,
+                    BlockFace::PosZ => offset.z = 1,
+                    BlockFace::NegZ => offset.z = -1,
+                }
+                let new_block_pos = selected_block_pos + offset;
+
+                // Collision Check with player
+                let player_aabb = self.player.get_world_bounding_box();
+                let new_block_aabb = AABB {
+                    min: new_block_pos.as_vec3(),
+                    max: new_block_pos.as_vec3() + glam::Vec3::ONE, // Assuming 1x1x1 block
+                };
+
+                if player_aabb.intersects(&new_block_aabb) {
+                    // eprintln!("Cannot place block: intersects with player.");
+                } else {
+                    match self.world.set_block(new_block_pos, BlockType::Grass) {
+                        Ok(chunk_coord) => {
+                            // Mark chunk as dirty by removing its render data
+                            self.chunk_render_data.remove(&chunk_coord);
+                             // Rebuild the potentially new chunk and its neighbors
+                            self.build_or_rebuild_chunk_mesh(chunk_coord.0, chunk_coord.1);
+                            self.build_or_rebuild_chunk_mesh(chunk_coord.0 + 1, chunk_coord.1);
+                            self.build_or_rebuild_chunk_mesh(chunk_coord.0 - 1, chunk_coord.1);
+                            self.build_or_rebuild_chunk_mesh(chunk_coord.0, chunk_coord.1 + 1);
+                            self.build_or_rebuild_chunk_mesh(chunk_coord.0, chunk_coord.1 - 1);
+                        }
+                        Err(e) => {
+                            eprintln!("Error placing block: {}", e);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
 
     fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
         if let Err(e) = self.debug_overlay.prepare(&self.device, &self.queue) {
