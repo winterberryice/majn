@@ -1,12 +1,12 @@
 // Corrected use statement based on glyph_brush re-exports
+use glam::Vec3;
+use std::time::Instant;
+use wgpu::TextureFormat; // Import TextureFormat
 use wgpu_text::{
-    glyph_brush::{ab_glyph::FontArc, Extra, OwnedSection, OwnedText}, // Import Section and Text from glyph_brush
     BrushBuilder,
     TextBrush,
+    glyph_brush::{Extra, OwnedSection, OwnedText, ab_glyph::FontArc}, // Import Section and Text from glyph_brush
 };
-use wgpu::TextureFormat; // Import TextureFormat
-use std::time::Instant;
-use glam::Vec3;
 
 // This line assumes a font file named "Roboto-Regular.ttf" is in your src/ directory
 // or configured in your project's root. Make sure the path is correct for your setup.
@@ -21,12 +21,13 @@ pub struct DebugOverlay {
     frame_count: u32,
     accumulated_time: f32,
     fps: u32,
-    font: FontArc,
 }
 
 impl DebugOverlay {
     pub fn new(device: &wgpu::Device, config: &wgpu::SurfaceConfiguration) -> Self {
-        let font = FontArc::try_from_slice(FONT_BYTES).expect("Failed to load font. Make sure Roboto-Regular.ttf is in the correct location.");
+        let font = FontArc::try_from_slice(FONT_BYTES).expect(
+            "Failed to load font. Make sure Roboto-Regular.ttf is in the correct location.",
+        );
         let brush = BrushBuilder::using_font(font.clone())
             .with_depth_stencil(Some(wgpu::DepthStencilState {
                 format: TextureFormat::Depth32Float,
@@ -39,7 +40,11 @@ impl DebugOverlay {
 
         // We don't need to prefix with a module name here because we `use`d them directly
         let section = OwnedSection::default()
-            .add_text(OwnedText::new("").with_scale(20.0).with_color([1.0, 1.0, 1.0, 1.0]))
+            .add_text(
+                OwnedText::new("")
+                    .with_scale(20.0)
+                    .with_color([1.0, 1.0, 1.0, 1.0]),
+            )
             .with_screen_position((10.0, 10.0))
             .with_bounds((config.width as f32, config.height as f32));
 
@@ -51,7 +56,6 @@ impl DebugOverlay {
             frame_count: 0,
             accumulated_time: 0.0,
             fps: 0,
-            font,
         }
     }
 
@@ -59,9 +63,9 @@ impl DebugOverlay {
         self.visible = !self.visible;
     }
 
-    pub fn is_visible(&self) -> bool {
-        self.visible
-    }
+    // pub fn is_visible(&self) -> bool {
+    //     self.visible
+    // }
 
     pub fn update(&mut self, player_position: Vec3) {
         if !self.visible {
@@ -88,24 +92,28 @@ impl DebugOverlay {
 
         let text_content = format!(
             "FPS: {}\nPosition: {:.2}, {:.2}, {:.2}",
-            self.fps,
-            player_position.x,
-            player_position.y,
-            player_position.z
+            self.fps, player_position.x, player_position.y, player_position.z
         );
 
         // Update the section's text.
-        self.section.text = vec![OwnedText::new(text_content)
-            .with_scale(20.0)
-            .with_color([1.0, 1.0, 1.0, 1.0])];
+        self.section.text = vec![
+            OwnedText::new(text_content)
+                .with_scale(20.0)
+                .with_color([1.0, 1.0, 1.0, 1.0]),
+        ];
     }
 
     // This function prepares the text for rendering
-    pub fn prepare(&mut self, device: &wgpu::Device, queue: &wgpu::Queue) -> Result<(), wgpu_text::BrushError>{
+    pub fn prepare(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+    ) -> Result<(), wgpu_text::BrushError> {
         if self.visible {
             // Queue the section for drawing. The brush needs a slice of sections.
             let borrowed_section = self.section.to_borrowed();
-            self.brush.queue(device, queue, std::slice::from_ref(&borrowed_section))?;
+            self.brush
+                .queue(device, queue, std::slice::from_ref(&borrowed_section))?;
         }
         Ok(())
     }

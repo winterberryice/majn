@@ -61,16 +61,30 @@ impl World {
 
     // Note: A `set_block_at_world` method would be similar but would need mutable access
     // and potentially create the chunk if it doesn't exist.
-    // pub fn set_block_at_world(&mut self, world_x: f32, world_y: f32, world_z: f32, block_type: BlockType) -> Result<(), &'static str> {
-    //     let ((chunk_x, chunk_z), (local_x, local_y, local_z)) = World::world_to_chunk_coords(world_x, world_y, world_z);
+    // pub fn set_block_at_world(&mut self, world_x: f32, world_y: f32, world_z: f32, block_type: BlockType) -> Result<(), &'static str> { // Old signature
+    // New set_block method using IVec3 and returning modified chunk coordinates
+    // Returns the world chunk coordinates (cx, cz) of the modified chunk if successful.
+    pub fn set_block(&mut self, world_block_pos: glam::IVec3, block_type: crate::block::BlockType) -> Result<(i32, i32), &'static str> {
+        if world_block_pos.y < 0 || world_block_pos.y >= CHUNK_HEIGHT as i32 {
+            return Err("Y coordinate out of world bounds");
+        }
 
-    //     if local_y >= CHUNK_HEIGHT {
-    //         return Err("Y coordinate out of bounds");
-    //     }
+        let ((chunk_x, chunk_z), (local_x, local_y, local_z)) =
+            World::world_to_chunk_coords(world_block_pos.x as f32, world_block_pos.y as f32, world_block_pos.z as f32);
 
-    //     let chunk = self.get_or_create_chunk(chunk_x, chunk_z);
-    //     chunk.set_block(local_x, local_y, local_z, block_type)
-    // }
+        // Ensure local_y is also valid after conversion, though the initial check should mostly cover it.
+        if local_y >= CHUNK_HEIGHT {
+             // This case should ideally not be hit if the initial Y check is correct
+             // and world_to_chunk_coords handles y correctly.
+            return Err("Calculated local Y coordinate out of chunk bounds");
+        }
+
+        let chunk = self.get_or_create_chunk(chunk_x, chunk_z);
+        match chunk.set_block(local_x, local_y, local_z, block_type) {
+            Ok(_) => Ok((chunk_x, chunk_z)),
+            Err(e) => Err(e), // Propagate error from chunk.set_block
+        }
+    }
 }
 
 // Default implementation for World
