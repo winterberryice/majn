@@ -727,14 +727,17 @@ impl State {
                                     let tex_size_y = 1.0 / ATLAS_ROWS;
 
                                     // Determine texture coordinates based on block type and face
+                                    // User specification:
+                                    // Dirt: Row 1, Column 3  => (idx_col = 2, idx_row = 0)
+                                    // Grass: Row 1, Column 4 => (idx_col = 3, idx_row = 0)
                                     let (tex_x_idx, tex_y_idx) = match block.block_type {
                                         crate::block::BlockType::Grass => match face_type {
-                                            CubeFace::Top => (0.0, 0.0),    // Grass top
-                                            CubeFace::Bottom => (2.0, 0.0), // Dirt
-                                            _ => (1.0, 0.0),                // Grass side
+                                            CubeFace::Top => (3.0, 0.0),    // Grass texture (col 4, row 1)
+                                            CubeFace::Bottom => (2.0, 0.0), // Dirt texture (col 3, row 1)
+                                            _ => (3.0, 0.0),                // Grass texture for sides (col 4, row 1)
                                         },
-                                        crate::block::BlockType::Dirt => (2.0, 0.0), // Dirt for all faces
-                                        _ => (15.0, 15.0), // Default to a distinctive "missing" texture index if not specified (e.g. bottom right)
+                                        crate::block::BlockType::Dirt => (2.0, 0.0), // Dirt texture (col 3, row 1)
+                                        _ => (15.0, 15.0), // Default to a distinctive "missing" texture index (e.g. bottom right of 16x16)
                                     };
 
                                     let u_min = tex_x_idx * tex_size_x;
