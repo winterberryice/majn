@@ -14,7 +14,11 @@ impl InputState {
     }
 
     // Called from the winit event loop for MouseInput events
-    pub fn on_mouse_input(&mut self, button: winit::event::MouseButton, state: winit::event::ElementState) {
+    pub fn on_mouse_input(
+        &mut self,
+        button: winit::event::MouseButton,
+        state: winit::event::ElementState,
+    ) {
         let is_pressed = state == winit::event::ElementState::Pressed;
         match button {
             winit::event::MouseButton::Left => {
@@ -40,10 +44,10 @@ impl InputState {
     }
 
     // Optional: if we want to reset the "was_pressed_event" on focus loss or similar
-    pub fn reset_all_presses(&mut self) {
-        self.left_mouse_pressed_this_frame = false;
-        self.right_mouse_pressed_this_frame = false;
-        self.left_mouse_was_pressed_event = false;
-        self.right_mouse_was_pressed_event = false;
-    }
+    // pub fn reset_all_presses(&mut self) {
+    //     self.left_mouse_pressed_this_frame = false;
+    //     self.right_mouse_pressed_this_frame = false;
+    //     self.left_mouse_was_pressed_event = false;
+    //     self.right_mouse_was_pressed_event = false;
+    // }
 }

@@ -1,16 +1,16 @@
 mod block;
 mod camera;
 mod chunk;
-mod texture;
 mod cube_geometry;
 mod debug_overlay;
+mod input;
 pub mod physics;
 pub mod player;
 mod raycast; // Add raycast module
+mod texture;
 mod ui; // Added for Crosshair
 mod wireframe_renderer;
 mod world; // Add world module // Add wireframe_renderer module
-mod input;
 
 use std::sync::Arc; // Added for Arc<Window>
 use wgpu::Trace;
@@ -28,7 +28,7 @@ struct App {
     window: Option<Arc<Window>>, // Changed to Option<Arc<Window>>
     state: Option<State>,        // Changed to Option<State> (State will also not have 'a)
     // input_state: input::InputState, // REMOVED: Will be part of State
-    mouse_grabbed: bool,         // Added to track mouse grab state
+    mouse_grabbed: bool, // Added to track mouse grab state
     last_mouse_position: Option<winit::dpi::PhysicalPosition<f64>>, // Added to track last mouse position
 }
 
@@ -85,13 +85,19 @@ impl App {
                     return; // Early return, no further processing of this event
                 }
             }
-            WindowEvent::MouseInput { button, state: mouse_element_state, .. } => { // Capture button and state, renamed state to mouse_element_state to avoid conflict
+            WindowEvent::MouseInput {
+                button,
+                state: mouse_element_state,
+                ..
+            } => {
+                // Capture button and state, renamed state to mouse_element_state to avoid conflict
                 // Pass mouse input to State's InputState handler
                 if let Some(s) = self.state.as_mut() {
                     s.input_state.on_mouse_input(button, mouse_element_state);
                 }
 
-                if mouse_element_state == ElementState::Pressed { // Existing logic for mouse grab
+                if mouse_element_state == ElementState::Pressed {
+                    // Existing logic for mouse grab
                     if !self.mouse_grabbed {
                         self.set_mouse_grab(true); // Modifies self directly
                         // event_consumed_by_grab_logic = true; // Potentially consume this click for grabbing only
@@ -106,7 +112,8 @@ impl App {
         // or if grab logic doesn't preclude state processing.
 
         // We need `state` for most other event handling.
-        let state = match self.state.as_mut() { // state needs to be mutable here
+        let state = match self.state.as_mut() {
+            // state needs to be mutable here
             Some(s) => s,
             // If state is None (e.g., after Resumed failed or before it ran),
             // most window events can't be processed meaningfully.
@@ -340,7 +347,7 @@ impl Vertex {
                 },
                 wgpu::VertexAttribute {
                     offset: (std::mem::size_of::<[f32; 3]>() * 2) as wgpu::BufferAddress, // After position and color
-                    shader_location: 2, // uv
+                    shader_location: 2,                                                   // uv
                     format: wgpu::VertexFormat::Float32x2,
                 },
             ],
@@ -348,10 +355,12 @@ impl Vertex {
     }
 }
 
+use crate::block::BlockType; // For block placement/removal
 use crate::camera::CameraUniform;
 use crate::chunk::{CHUNK_DEPTH, CHUNK_HEIGHT, CHUNK_WIDTH};
 use crate::cube_geometry::CubeFace;
 use crate::debug_overlay::DebugOverlay;
+use crate::physics::AABB;
 use crate::physics::PLAYER_EYE_HEIGHT;
 use crate::player::Player;
 use crate::raycast::BlockFace;
@@ -359,9 +368,7 @@ use crate::wireframe_renderer::WireframeRenderer;
 use crate::world::World;
 use glam::IVec3;
 use glam::Mat4;
-use std::collections::HashMap;
-use crate::block::BlockType; // For block placement/removal
-use crate::physics::AABB; // For collision checking
+use std::collections::HashMap; // For collision checking
 
 struct ChunkRenderData {
     vertex_buffer: wgpu::Buffer,
@@ -389,8 +396,8 @@ struct State {
     crosshair: ui::crosshair::Crosshair,
     wireframe_renderer: WireframeRenderer,
     selected_block: Option<(IVec3, BlockFace)>,
-    diffuse_texture: crate::texture::Texture,
-    texture_bind_group_layout: wgpu::BindGroupLayout,
+    // diffuse_texture: crate::texture::Texture,
+    // texture_bind_group_layout: wgpu::BindGroupLayout,
     diffuse_bind_group: wgpu::BindGroup,
     input_state: input::InputState, // Added InputState here
 }
@@ -460,8 +467,15 @@ impl State {
         ) {
             Ok(tex) => tex,
             Err(e) => {
-                eprintln!("Failed to load embedded terrain.png from memory: {}. Using placeholder.", e);
-                crate::texture::Texture::create_placeholder(&device, &queue, Some("Placeholder Terrain"))
+                eprintln!(
+                    "Failed to load embedded terrain.png from memory: {}. Using placeholder.",
+                    e
+                );
+                crate::texture::Texture::create_placeholder(
+                    &device,
+                    &queue,
+                    Some("Placeholder Terrain"),
+                )
             }
         };
 
@@ -642,8 +656,8 @@ impl State {
             wireframe_renderer,
             selected_block: None,
             crosshair,
-            diffuse_texture,
-            texture_bind_group_layout,
+            // diffuse_texture,
+            // texture_bind_group_layout,
             diffuse_bind_group,
             input_state: input::InputState::new(), // Initialize InputState
         }
@@ -704,7 +718,8 @@ impl State {
 
                                 let mut is_face_visible = true;
                                 if neighbor_world_by < 0 || neighbor_world_by >= CHUNK_HEIGHT as i32
-                                {} else {
+                                {
+                                } else {
                                     if let Some(neighbor_block) = self.world.get_block_at_world(
                                         neighbor_world_bx as f32,
                                         neighbor_world_by as f32,
@@ -733,14 +748,15 @@ impl State {
                                             current_vertex_color = [0.0, 0.8, 0.1]; // Default for grass sides
                                             match face_type {
                                                 CubeFace::Top => {
-                                                    tex_coords_idx = (0.0, 0.0);    // Grass Top (grayscale)
+                                                    tex_coords_idx = (0.0, 0.0); // Grass Top (grayscale)
                                                     current_vertex_color = [0.1, 0.9, 0.1]; // Sentinel for tinting
                                                 }
                                                 CubeFace::Bottom => {
                                                     tex_coords_idx = (2.0, 0.0); // Dirt texture
                                                     current_vertex_color = [0.5, 0.25, 0.05]; // Standard Dirt color
                                                 }
-                                                _ => { // Sides
+                                                _ => {
+                                                    // Sides
                                                     tex_coords_idx = (3.0, 0.0); // Grass Side texture
                                                     // current_vertex_color remains [0.0, 0.8, 0.1] (standard grass color)
                                                 }
@@ -888,9 +904,7 @@ impl State {
                         self.player.movement_intention.jump = is_pressed;
                         true
                     }
-                    KeyCode::ShiftLeft | KeyCode::ShiftRight => {
-                        false
-                    }
+                    KeyCode::ShiftLeft | KeyCode::ShiftRight => false,
                     KeyCode::Escape => false,
                     KeyCode::F3 => {
                         if is_pressed {
@@ -905,7 +919,8 @@ impl State {
         }
     }
 
-    fn update(&mut self) { // Removed input_state from parameters
+    fn update(&mut self) {
+        // Removed input_state from parameters
         // Handle block interactions first
         self.handle_block_interactions(); // Will now use self.input_state
 
@@ -923,8 +938,7 @@ impl State {
                 let target_cz = current_chunk_z + dz;
                 new_active_chunk_coords.push((target_cx, target_cz));
                 let _ = self.world.get_or_create_chunk(target_cx, target_cz);
-                if !self.chunk_render_data.contains_key(&(target_cx, target_cz)) {
-                }
+                if !self.chunk_render_data.contains_key(&(target_cx, target_cz)) {}
             }
         }
         self.active_chunk_coords = new_active_chunk_coords;
@@ -1006,7 +1020,8 @@ impl State {
         }
 
         // Block Placement (Right-Click)
-        if self.input_state.right_mouse_pressed_this_frame { // Use self.input_state
+        if self.input_state.right_mouse_pressed_this_frame {
+            // Use self.input_state
             if let Some((selected_block_pos, hit_face)) = self.selected_block {
                 let mut offset = IVec3::ZERO;
                 match hit_face {
@@ -1033,7 +1048,7 @@ impl State {
                         Ok(chunk_coord) => {
                             // Mark chunk as dirty by removing its render data
                             self.chunk_render_data.remove(&chunk_coord);
-                             // Rebuild the potentially new chunk and its neighbors
+                            // Rebuild the potentially new chunk and its neighbors
                             self.build_or_rebuild_chunk_mesh(chunk_coord.0, chunk_coord.1);
                             self.build_or_rebuild_chunk_mesh(chunk_coord.0 + 1, chunk_coord.1);
                             self.build_or_rebuild_chunk_mesh(chunk_coord.0 - 1, chunk_coord.1);
@@ -1048,7 +1063,6 @@ impl State {
             }
         }
     }
-
 
     fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
         if let Err(e) = self.debug_overlay.prepare(&self.device, &self.queue) {
