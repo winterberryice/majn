@@ -408,15 +408,22 @@ impl State {
             source: wgpu::ShaderSource::Wgsl(include_str!("shader.wgsl").into()),
         });
 
-        // Load diffuse texture
-        let diffuse_texture = match crate::texture::Texture::load(
+        // --- End Path Diagnostics --- // (Removing old diagnostics)
+
+        // Embed texture bytes at compile time
+        // Path is relative to the current source file (main.rs in src/)
+        const TERRAIN_ATLAS_BYTES: &[u8] = include_bytes!("../assets/resources/terrain.png");
+
+        // Load diffuse texture from memory
+        let diffuse_texture = match crate::texture::Texture::load_from_memory(
             &device,
             &queue,
-            "assets/resources/terrain.png",
+            TERRAIN_ATLAS_BYTES,
+            "terrain_atlas_from_memory",
         ) {
             Ok(tex) => tex,
             Err(e) => {
-                eprintln!("Failed to load terrain.png: {}. Using placeholder.", e);
+                eprintln!("Failed to load embedded terrain.png from memory: {}. Using placeholder.", e);
                 crate::texture::Texture::create_placeholder(&device, &queue, Some("Placeholder Terrain"))
             }
         };
