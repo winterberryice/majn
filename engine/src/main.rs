@@ -361,7 +361,7 @@ impl State {
                     memory_hints: wgpu::MemoryHints::default(),
                     trace: Trace::Off,
                 },
-                None,
+                // None, // trace_path argument removed
             )
             .await
             .unwrap();
@@ -660,7 +660,7 @@ impl State {
                                     let tex_size_x = 1.0 / ATLAS_COLS;
                                     let tex_size_y = 1.0 / ATLAS_ROWS;
 
-                                    let mut tex_coords_idx: (f32, f32);
+                                    let tex_coords_idx: (f32, f32); // Removed mut
                                     let mut current_vertex_color: [f32; 3];
 
                                     match block.block_type {
