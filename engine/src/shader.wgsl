@@ -41,10 +41,25 @@ struct FragmentInput {
 
 @fragment
 fn fs_main(in: FragmentInput) -> @location(0) vec4<f32> {
-    // Sample the texture
-    let texture_color = textureSample(t_diffuse, s_sampler, in.tex_coords);
+    let sampled_color = textureSample(t_diffuse, s_sampler, in.tex_coords);
 
-    // For now, just use the texture color.
-    // We could multiply by in.original_color for tinting: texture_color * vec4<f32>(in.original_color, 1.0)
-    return texture_color;
+    // Check for sentinel color indicating Grass Top that needs tinting
+    // Sentinel color set in main.rs: [0.1, 0.9, 0.1]
+    let grass_top_sentinel = vec3<f32>(0.1, 0.9, 0.1);
+
+    // Compare floating point colors with a small epsilon for precision issues
+    let color_diff = abs(in.original_color - grass_top_sentinel);
+    let is_grass_top = color_diff.x < 0.01 && color_diff.y < 0.01 && color_diff.z < 0.01;
+
+    if (is_grass_top) {
+        // Texture at (0,0) is grayscale, use its intensity (e.g., from red channel)
+        let intensity = sampled_color.r;
+        // Apply a greenish tint. Adjust factors for desired green hue.
+        // Example: (R: low, G: high, B: medium-low)
+        let tinted_color = vec3<f32>(intensity * 0.4, intensity * 0.9, intensity * 0.35);
+        return vec4<f32>(tinted_color, sampled_color.a);
+    } else {
+        // For all other blocks/faces, use the sampled texture color directly.
+        return sampled_color;
+    }
 }
