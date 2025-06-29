@@ -46,7 +46,7 @@ This section should be updated as we make progress.
   * **World / Chunk:**
     * A single chunk with a flat terrain of dirt and grass is generated.
     * Mesh generation includes basic culling of hidden faces.
-  * **Current Task Focus:** The crosshair implementation is complete. Next steps could involve refining player physics (e.g., implementing "collide and slide"), starting procedural world generation, or adding texture mapping.
+  * **Current Task Focus:** Grass block side texture orientation has been corrected. Next steps could involve refining player physics (e.g., implementing "collide and slide") or starting procedural world generation.
 
 ## 3. Best Practices for Interaction
 
@@ -81,7 +81,7 @@ This is our high-level plan. We will tackle these items one by one.
     * [x] Implement gravity and velocity.
     * [/] Implement "collide and stop" physics (slide mechanics pending).
 2.  **Visuals & World**
-    * [ ] Texture blocks using a texture atlas.
+    * [x] Texture blocks using a texture atlas. (Grass block side texture orientation fixed)
     * [ ] Implement procedural world generation with a noise function. (Current generation is flat)
 3.  **Interaction**
     * [ ] Implement raycasting for block selection.

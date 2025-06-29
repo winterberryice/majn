@@ -777,12 +777,29 @@ impl State {
                                     let u_max = u_min + tex_size_x;
                                     let v_max = v_min + tex_size_y;
 
-                                    let face_uvs = [
-                                        [u_min, v_max],
-                                        [u_max, v_max],
-                                        [u_max, v_min],
-                                        [u_min, v_min],
+                                    // Define the two potential UV mappings based on face vertex order
+                                    let uvs_for_bl_br_tr_tl_order = [ // Used for Back, Top
+                                        [u_min, v_max], // BL_tex for V0 (BL_vert)
+                                        [u_max, v_max], // BR_tex for V1 (BR_vert)
+                                        [u_max, v_min], // TR_tex for V2 (TR_vert)
+                                        [u_min, v_min], // TL_tex for V3 (TL_vert)
                                     ];
+
+                                    let uvs_for_bl_tl_tr_br_order = [ // Used for Front, Right, Left, Bottom
+                                        [u_min, v_max], // BL_tex for V0 (BL_vert)
+                                        [u_min, v_min], // TL_tex for V1 (TL_vert)
+                                        [u_max, v_min], // TR_tex for V2 (TR_vert)
+                                        [u_max, v_max], // BR_tex for V3 (BR_vert)
+                                    ];
+
+                                    let selected_face_uvs = match face_type {
+                                        CubeFace::Front | CubeFace::Right | CubeFace::Left | CubeFace::Bottom => {
+                                            &uvs_for_bl_tl_tr_br_order
+                                        }
+                                        CubeFace::Back | CubeFace::Top => {
+                                            &uvs_for_bl_br_tr_tl_order
+                                        }
+                                    };
 
                                     for (i, v_template) in vertices_template.iter().enumerate() {
                                         chunk_mesh_vertices.push(Vertex {
@@ -790,7 +807,7 @@ impl State {
                                                 + glam::Vec3::from(v_template.position))
                                             .into(),
                                             color: current_vertex_color,
-                                            uv: face_uvs[i],
+                                            uv: selected_face_uvs[i],
                                         });
                                     }
                                     for local_idx in local_indices {
