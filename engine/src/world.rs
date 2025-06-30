@@ -2,13 +2,6 @@ use std::collections::HashMap;
 use crate::chunk::{Chunk, CHUNK_WIDTH, CHUNK_HEIGHT, CHUNK_DEPTH};
 use crate::block::Block; // Removed BlockType as it's unused
 
-#[derive(Debug, PartialEq)] // Added derive for Debug and PartialEq
-pub enum SetBlockError {
-    OutOfBounds,
-    IsBedrock,
-    ChunkUpdateFailed(&'static str),
-}
-
 pub struct World {
     chunks: HashMap<(i32, i32), Chunk>,
 }
@@ -71,9 +64,9 @@ impl World {
     // pub fn set_block_at_world(&mut self, world_x: f32, world_y: f32, world_z: f32, block_type: BlockType) -> Result<(), &'static str> { // Old signature
     // New set_block method using IVec3 and returning modified chunk coordinates
     // Returns the world chunk coordinates (cx, cz) of the modified chunk if successful.
-    pub fn set_block(&mut self, world_block_pos: glam::IVec3, block_type: crate::block::BlockType) -> Result<(i32, i32), SetBlockError> {
+    pub fn set_block(&mut self, world_block_pos: glam::IVec3, block_type: crate::block::BlockType) -> Result<(i32, i32), &'static str> {
         if world_block_pos.y < 0 || world_block_pos.y >= CHUNK_HEIGHT as i32 {
-            return Err(SetBlockError::OutOfBounds);
+            return Err("Y coordinate out of world bounds");
         }
 
         let ((chunk_x, chunk_z), (local_x, local_y, local_z)) =
@@ -83,26 +76,22 @@ impl World {
         if local_y >= CHUNK_HEIGHT {
              // This case should ideally not be hit if the initial Y check is correct
              // and world_to_chunk_coords handles y correctly.
-            return Err(SetBlockError::OutOfBounds);
+            return Err("Calculated local Y coordinate out of chunk bounds");
         }
 
         // Check if the block being replaced is Bedrock
-        // Need to get the chunk first (without creating it if it doesn't exist for a read-only check)
-        if let Some(chunk_ro) = self.get_chunk(chunk_x, chunk_z) { // Read-only access
-            if let Some(existing_block) = chunk_ro.get_block(local_x, local_y, local_z) {
-                if existing_block.block_type == crate::block::BlockType::Bedrock && block_type != crate::block::BlockType::Bedrock { // Allow placing bedrock on bedrock (e.g. world gen)
-                    return Err(SetBlockError::IsBedrock);
+        if let Some(chunk) = self.get_chunk(chunk_x, chunk_z) {
+            if let Some(existing_block) = chunk.get_block(local_x, local_y, local_z) {
+                if existing_block.block_type == crate::block::BlockType::Bedrock {
+                    return Err("Cannot replace Bedrock");
                 }
             }
         }
-        // If the chunk doesn't exist yet, get_or_create_chunk will generate it,
-        // including the bedrock layer at y=0. If the attempt is to modify y=0
-        // to non-Bedrock, the above check will eventually catch it after chunk creation.
 
         let chunk = self.get_or_create_chunk(chunk_x, chunk_z);
         match chunk.set_block(local_x, local_y, local_z, block_type) {
             Ok(_) => Ok((chunk_x, chunk_z)),
-            Err(e) => Err(SetBlockError::ChunkUpdateFailed(e)), // Propagate error from chunk.set_block
+            Err(e) => Err(e), // Propagate error from chunk.set_block
         }
     }
 }
