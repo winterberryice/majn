@@ -79,6 +79,15 @@ impl World {
             return Err("Calculated local Y coordinate out of chunk bounds");
         }
 
+        // Check if the block being replaced is Bedrock
+        if let Some(chunk) = self.get_chunk(chunk_x, chunk_z) {
+            if let Some(existing_block) = chunk.get_block(local_x, local_y, local_z) {
+                if existing_block.block_type == crate::block::BlockType::Bedrock {
+                    return Err("Cannot replace Bedrock");
+                }
+            }
+        }
+
         let chunk = self.get_or_create_chunk(chunk_x, chunk_z);
         match chunk.set_block(local_x, local_y, local_z, block_type) {
             Ok(_) => Ok((chunk_x, chunk_z)),
