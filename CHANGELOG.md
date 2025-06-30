@@ -18,7 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - Player Axis-Aligned Bounding Box (AABB).
     - Gravity and velocity implementation.
     - Jumping functionality.
-    - Basic "collide and stop" physics (axis-by-axis resolution against block world).
+    - "Collide and Slide" physics: Implemented via axis-by-axis AABB resolution, allowing smoother movement along walls when colliding at an angle.
     - Rudimentary friction for horizontal movement.
 - **UI / Debug:**
     - Debug overlay (`wgpu_text`) displaying FPS and player 3D coordinates.
@@ -36,9 +36,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - Player controller from fly-cam to a grounded walking controller.
+- Physics collision response from "collide and stop" to "collide and slide".
 
 ### Fixed
-- Grass block side texture orientation. *(Duplicated in "Added" as it was a specific fix leading to a feature state)*
+- Grass block side texture orientation.
 
 [Unreleased]: https://github.com/placeholder-username/placeholder-repo/compare/v0.1.0...HEAD
 <!-- Possible future release link -->

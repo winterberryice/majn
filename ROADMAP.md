@@ -11,7 +11,7 @@ This version represents the current, functional state of the engine. The goal of
 * - [x] **Player Controller:**
     * Grounded "walking" controller with AABB.
     * Gravity, velocity, and jump mechanics.
-    * "Collide and stop" physics.
+    * "Collide and Slide" physics (axis-by-axis AABB resolution).
 * - [x] **Rendering & Visuals:**
     * Static chunk rendering with basic face culling.
     * Texture mapping support via a texture atlas.
@@ -32,7 +32,6 @@ This version represents the current, functional state of the engine. The goal of
 The primary goal of this version is to refine the existing gameplay loop and improve the overall feel and visual consistency of the core experience.
 
 * - [ ] **Player Physics:**
-    * Implement "collide and slide" physics for smoother movement along walls.
     * Refine player movement values (acceleration, friction, jump height) for better game feel.
 * - [ ] **Visual Polish:**
     * Implement biome tints (e.g., for grass, foliage) in the shader to add color variety to the world.
