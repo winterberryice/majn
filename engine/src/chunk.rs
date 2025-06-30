@@ -25,7 +25,10 @@ impl Chunk {
 
         for x in 0..CHUNK_WIDTH {
             for z in 0..CHUNK_DEPTH {
-                for y in 0..CHUNK_HEIGHT {
+                // Place bedrock at y = 0
+                self.blocks[x][0][z] = Block::new(BlockType::Bedrock);
+
+                for y in 1..CHUNK_HEIGHT { // Start from y = 1 since y = 0 is bedrock
                     if y < surface_level {
                         self.blocks[x][y][z] = Block::new(BlockType::Dirt);
                     } else if y == surface_level {

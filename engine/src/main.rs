@@ -691,6 +691,7 @@ impl State {
                             let default_block_color = match block.block_type {
                                 crate::block::BlockType::Dirt => [0.5, 0.25, 0.05],
                                 crate::block::BlockType::Grass => [0.0, 0.8, 0.1], // Default grass color
+                                crate::block::BlockType::Bedrock => [0.5, 0.5, 0.5], // Default bedrock color
                                 crate::block::BlockType::Air => continue,
                             };
 
@@ -740,40 +741,44 @@ impl State {
                                     let tex_size_x = 1.0 / ATLAS_COLS;
                                     let tex_size_y = 1.0 / ATLAS_ROWS;
 
-                                    let tex_coords_idx: (f32, f32); // Removed mut
-                                    let mut current_vertex_color: [f32; 3];
+                                    let all_face_atlas_indices = block.get_texture_atlas_indices();
+                                    let mut current_vertex_color = default_block_color; // Start with default from outer match
 
-                                    match block.block_type {
-                                        crate::block::BlockType::Grass => {
-                                            current_vertex_color = [0.0, 0.8, 0.1]; // Default for grass sides
-                                            match face_type {
-                                                CubeFace::Top => {
-                                                    tex_coords_idx = (0.0, 0.0); // Grass Top (grayscale)
-                                                    current_vertex_color = [0.1, 0.9, 0.1]; // Sentinel for tinting
-                                                }
-                                                CubeFace::Bottom => {
-                                                    tex_coords_idx = (2.0, 0.0); // Dirt texture
-                                                    current_vertex_color = [0.5, 0.25, 0.05]; // Standard Dirt color
-                                                }
-                                                _ => {
-                                                    // Sides
-                                                    tex_coords_idx = (3.0, 0.0); // Grass Side texture
-                                                    // current_vertex_color remains [0.0, 0.8, 0.1] (standard grass color)
-                                                }
-                                            }
-                                        }
-                                        crate::block::BlockType::Dirt => {
-                                            tex_coords_idx = (2.0, 0.0); // Dirt texture
-                                            current_vertex_color = [0.5, 0.25, 0.05]; // Standard Dirt color
-                                        }
-                                        _ => {
-                                            tex_coords_idx = (15.0, 15.0);
-                                            current_vertex_color = default_block_color;
-                                        }
+                                    let face_specific_atlas_indices: [f32; 2] = match face_type {
+                                        CubeFace::Front => all_face_atlas_indices[0],
+                                        CubeFace::Back => all_face_atlas_indices[1],
+                                        CubeFace::Right => all_face_atlas_indices[2],
+                                        CubeFace::Left => all_face_atlas_indices[3],
+                                        CubeFace::Top => all_face_atlas_indices[4],
+                                        CubeFace::Bottom => all_face_atlas_indices[5],
                                     };
 
-                                    let u_min = tex_coords_idx.0 * tex_size_x;
-                                    let v_min = tex_coords_idx.1 * tex_size_y;
+                                    // Apply specific color changes after selecting texture, using default_block_color as a base
+                                    match block.block_type {
+                                        crate::block::BlockType::Grass => {
+                                            if *face_type == CubeFace::Top {
+                                                current_vertex_color = [0.1, 0.9, 0.1]; // Sentinel for tinting grass top
+                                            } else if *face_type == CubeFace::Bottom {
+                                                // Bottom of grass uses Dirt texture (already set by all_face_atlas_indices)
+                                                // and should have dirt color
+                                                current_vertex_color = [0.5, 0.25, 0.05];
+                                            } else {
+                                                // Sides of grass
+                                                current_vertex_color = [0.0, 0.8, 0.1];
+                                            }
+                                        }
+                                        crate::block::BlockType::Bedrock => {
+                                            // Bedrock uses its specific texture (set by all_face_atlas_indices)
+                                            // and its default color was already set by the outer match
+                                            // current_vertex_color = [0.4, 0.4, 0.4]; // Or a specific color if different from default
+                                        }
+                                        // Dirt's color is already set by default_block_color
+                                        // Air is skipped earlier
+                                        _ => {}
+                                    }
+
+                                    let u_min = face_specific_atlas_indices[0] * tex_size_x;
+                                    let v_min = face_specific_atlas_indices[1] * tex_size_y;
                                     let u_max = u_min + tex_size_x;
                                     let v_max = v_min + tex_size_y;
 
