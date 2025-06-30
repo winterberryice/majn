@@ -691,6 +691,7 @@ impl State {
                             let default_block_color = match block.block_type {
                                 crate::block::BlockType::Dirt => [0.5, 0.25, 0.05],
                                 crate::block::BlockType::Grass => [0.0, 0.8, 0.1], // Default grass color
+                                crate::block::BlockType::Bedrock => [0.5, 0.5, 0.5], // Default bedrock color
                                 crate::block::BlockType::Air => continue,
                             };
 
