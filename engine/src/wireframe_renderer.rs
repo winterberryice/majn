@@ -1,10 +1,9 @@
+use glam::{IVec3, Mat4, Vec3};
 use wgpu::util::DeviceExt;
-use glam::{Mat4, IVec3, Vec3};
 
 // Imports for culling
-use crate::world::World;
-use crate::block::BlockType; // Assuming BlockType::Air is defined
-use crate::raycast::BlockFace; // To identify faces
+use crate::raycast::BlockFace;
+use crate::world::World; // To identify faces
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
@@ -17,30 +16,47 @@ impl WireframeVertex {
         wgpu::VertexBufferLayout {
             array_stride: std::mem::size_of::<WireframeVertex>() as wgpu::BufferAddress,
             step_mode: wgpu::VertexStepMode::Vertex,
-            attributes: &[
-                wgpu::VertexAttribute {
-                    offset: 0,
-                    shader_location: 0, // Corresponds to layout(location = 0) in shader
-                    format: wgpu::VertexFormat::Float32x3,
-                },
-            ],
+            attributes: &[wgpu::VertexAttribute {
+                offset: 0,
+                shader_location: 0, // Corresponds to layout(location = 0) in shader
+                format: wgpu::VertexFormat::Float32x3,
+            }],
         }
     }
 }
 
-const MARGIN: f32 = 0.05; // Distance from the edge of the face
-const QUAD_THICKNESS: f32 = 0.03; // Thickness of the quad strips
+const MARGIN: f32 = 0.00; // Distance from the edge of the face
+const QUAD_THICKNESS: f32 = 0.02; // Thickness of the quad strips
 
 // Helper function to create a single quad given 4 corner points
-fn create_strip_quad(p0: Vec3, p1: Vec3, p2: Vec3, p3: Vec3, vertices: &mut Vec<WireframeVertex>, indices: &mut Vec<u16>) {
+fn create_strip_quad(
+    p0: Vec3,
+    p1: Vec3,
+    p2: Vec3,
+    p3: Vec3,
+    vertices: &mut Vec<WireframeVertex>,
+    indices: &mut Vec<u16>,
+) {
     let base_vertex_index = vertices.len() as u16;
-    vertices.push(WireframeVertex { position: p0.into() });
-    vertices.push(WireframeVertex { position: p1.into() });
-    vertices.push(WireframeVertex { position: p2.into() });
-    vertices.push(WireframeVertex { position: p3.into() });
+    vertices.push(WireframeVertex {
+        position: p0.into(),
+    });
+    vertices.push(WireframeVertex {
+        position: p1.into(),
+    });
+    vertices.push(WireframeVertex {
+        position: p2.into(),
+    });
+    vertices.push(WireframeVertex {
+        position: p3.into(),
+    });
     indices.extend_from_slice(&[
-        base_vertex_index, base_vertex_index + 1, base_vertex_index + 2,
-        base_vertex_index, base_vertex_index + 2, base_vertex_index + 3,
+        base_vertex_index,
+        base_vertex_index + 1,
+        base_vertex_index + 2,
+        base_vertex_index,
+        base_vertex_index + 2,
+        base_vertex_index + 3,
     ]);
 }
 
@@ -65,52 +81,58 @@ fn generate_quads_for_face(
 
     // Quad 1 (along axis1, min end of axis2)
     let q1p0 = face_center_offset - axis2 * h2 + axis1 * (-h1 + m) + axis2 * m;
-    let q1p1 = face_center_offset - axis2 * h2 + axis1 * (h1 - m)  + axis2 * m;
-    let q1p2 = face_center_offset - axis2 * h2 + axis1 * (h1 - m)  + axis2 * (m + t);
+    let q1p1 = face_center_offset - axis2 * h2 + axis1 * (h1 - m) + axis2 * m;
+    let q1p2 = face_center_offset - axis2 * h2 + axis1 * (h1 - m) + axis2 * (m + t);
     let q1p3 = face_center_offset - axis2 * h2 + axis1 * (-h1 + m) + axis2 * (m + t);
     create_strip_quad(q1p0, q1p1, q1p2, q1p3, vertices, indices);
 
     // Quad 2 (along axis1, max end of axis2)
     let q2p0 = face_center_offset + axis2 * h2 + axis1 * (-h1 + m) - axis2 * (m + t);
-    let q2p1 = face_center_offset + axis2 * h2 + axis1 * (h1 - m)  - axis2 * (m + t);
-    let q2p2 = face_center_offset + axis2 * h2 + axis1 * (h1 - m)  - axis2 * m;
+    let q2p1 = face_center_offset + axis2 * h2 + axis1 * (h1 - m) - axis2 * (m + t);
+    let q2p2 = face_center_offset + axis2 * h2 + axis1 * (h1 - m) - axis2 * m;
     let q2p3 = face_center_offset + axis2 * h2 + axis1 * (-h1 + m) - axis2 * m;
     create_strip_quad(q2p0, q2p1, q2p2, q2p3, vertices, indices);
 
     // Quad 3 (along axis2, min end of axis1)
     // Adjusted to avoid overlap and use full inner length
     let q3p0 = face_center_offset - axis1 * h1 + axis2 * (-h2 + m + t) + axis1 * m; // Start after quad1's thickness
-    let q3p1 = face_center_offset - axis1 * h1 + axis2 * (h2 - m - t)  + axis1 * m; // End before quad2's thickness
-    let q3p2 = face_center_offset - axis1 * h1 + axis2 * (h2 - m - t)  + axis1 * (m + t);
+    let q3p1 = face_center_offset - axis1 * h1 + axis2 * (h2 - m - t) + axis1 * m; // End before quad2's thickness
+    let q3p2 = face_center_offset - axis1 * h1 + axis2 * (h2 - m - t) + axis1 * (m + t);
     let q3p3 = face_center_offset - axis1 * h1 + axis2 * (-h2 + m + t) + axis1 * (m + t);
     create_strip_quad(q3p0, q3p1, q3p2, q3p3, vertices, indices);
 
     // Quad 4 (along axis2, max end of axis1)
     // Adjusted to avoid overlap and use full inner length
-    let q4p0 = face_center_offset + axis1 * h1 + axis2 * (-h2 + m + t) - axis1 * (m+t);
-    let q4p1 = face_center_offset + axis1 * h1 + axis2 * (h2 - m - t)  - axis1 * (m+t);
-    let q4p2 = face_center_offset + axis1 * h1 + axis2 * (h2 - m - t)  - axis1 * m;
+    let q4p0 = face_center_offset + axis1 * h1 + axis2 * (-h2 + m + t) - axis1 * (m + t);
+    let q4p1 = face_center_offset + axis1 * h1 + axis2 * (h2 - m - t) - axis1 * (m + t);
+    let q4p2 = face_center_offset + axis1 * h1 + axis2 * (h2 - m - t) - axis1 * m;
     let q4p3 = face_center_offset + axis1 * h1 + axis2 * (-h2 + m + t) - axis1 * m;
     create_strip_quad(q4p0, q4p1, q4p2, q4p3, vertices, indices);
 }
 
-
-fn generate_face_quads_cube_geometry() -> (Vec<WireframeVertex>, Vec<u16>, Vec<(BlockFace, u32, u32)>) {
+fn generate_face_quads_cube_geometry()
+-> (Vec<WireframeVertex>, Vec<u16>, Vec<(BlockFace, u32, u32)>) {
     let mut all_vertices = Vec::new();
     let mut all_indices = Vec::new();
     let mut face_render_info = Vec::new(); // Stores (BlockFace, index_offset, num_indices_for_face)
 
     let mut generate_and_record = |face: BlockFace, center_offset, axis1, axis2| {
         let start_index_count = all_indices.len() as u32;
-        let start_vertex_count = all_vertices.len();
-        generate_quads_for_face(center_offset, axis1, axis2, &mut all_vertices, &mut all_indices);
+        generate_quads_for_face(
+            center_offset,
+            axis1,
+            axis2,
+            &mut all_vertices,
+            &mut all_indices,
+        );
 
         // Correct indices to be relative to the start of *this face's* vertices, then add global offset
         // This is complex if create_strip_quad adds global indices.
         // Let's assume create_strip_quad correctly uses current all_vertices.len()
         let num_new_indices = (all_indices.len() as u32) - start_index_count;
-        if num_new_indices > 0 { // Only add if quads were actually generated
-             face_render_info.push((face, start_index_count, num_new_indices));
+        if num_new_indices > 0 {
+            // Only add if quads were actually generated
+            face_render_info.push((face, start_index_count, num_new_indices));
         }
     };
 
@@ -130,7 +152,6 @@ fn generate_face_quads_cube_geometry() -> (Vec<WireframeVertex>, Vec<u16>, Vec<(
 
     (all_vertices, all_indices, face_render_info)
 }
-
 
 lazy_static::lazy_static! {
     static ref FACE_QUADS_CUBE_GEOMETRY: (Vec<WireframeVertex>, Vec<u16>, Vec<(BlockFace, u32, u32)>) =
@@ -165,15 +186,19 @@ pub struct WireframeRenderer {
 }
 
 impl WireframeRenderer {
-    pub fn new(device: &wgpu::Device, config: &wgpu::SurfaceConfiguration, camera_bind_group_layout: &wgpu::BindGroupLayout) -> Self {
+    pub fn new(
+        device: &wgpu::Device,
+        config: &wgpu::SurfaceConfiguration,
+        camera_bind_group_layout: &wgpu::BindGroupLayout,
+    ) -> Self {
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("Wireframe Shader"),
             source: wgpu::ShaderSource::Wgsl(include_str!("wireframe_shader.wgsl").into()),
         });
 
-        let model_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            entries: &[
-                wgpu::BindGroupLayoutEntry {
+        let model_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                entries: &[wgpu::BindGroupLayoutEntry {
                     binding: 0,
                     visibility: wgpu::ShaderStages::VERTEX,
                     ty: wgpu::BindingType::Buffer {
@@ -182,16 +207,16 @@ impl WireframeRenderer {
                         min_binding_size: None,
                     },
                     count: None,
-                }
-            ],
-            label: Some("wireframe_model_bind_group_layout"),
-        });
+                }],
+                label: Some("wireframe_model_bind_group_layout"),
+            });
 
-        let render_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("Wireframe Render Pipeline Layout"),
-            bind_group_layouts: &[camera_bind_group_layout, &model_bind_group_layout],
-            push_constant_ranges: &[],
-        });
+        let render_pipeline_layout =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("Wireframe Render Pipeline Layout"),
+                bind_group_layouts: &[camera_bind_group_layout, &model_bind_group_layout],
+                push_constant_ranges: &[],
+            });
 
         let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("Wireframe Render Pipeline"),
@@ -252,22 +277,18 @@ impl WireframeRenderer {
         });
 
         let model_data = ModelUniformData::new();
-        let model_uniform_buffer = device.create_buffer_init(
-            &wgpu::util::BufferInitDescriptor {
-                label: Some("Wireframe Model Uniform Buffer"),
-                contents: bytemuck::cast_slice(&[model_data.model_matrix.to_cols_array_2d()]),
-                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-            }
-        );
+        let model_uniform_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Wireframe Model Uniform Buffer"),
+            contents: bytemuck::cast_slice(&[model_data.model_matrix.to_cols_array_2d()]),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        });
 
         let model_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             layout: &model_bind_group_layout,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: model_uniform_buffer.as_entire_binding(),
-                }
-            ],
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: model_uniform_buffer.as_entire_binding(),
+            }],
             label: Some("wireframe_model_bind_group"),
         });
 
@@ -302,7 +323,12 @@ impl WireframeRenderer {
         }
     }
 
-    pub fn draw<'rp>(&'rp self, render_pass: &mut wgpu::RenderPass<'rp>, queue: &wgpu::Queue, world: &World) {
+    pub fn draw<'rp>(
+        &'rp self,
+        render_pass: &mut wgpu::RenderPass<'rp>,
+        queue: &wgpu::Queue,
+        world: &World,
+    ) {
         if self.current_selected_block_pos.is_none() {
             return; // Nothing selected, nothing to draw
         }
@@ -329,8 +355,13 @@ impl WireframeRenderer {
             let neighbor_pos = selected_pos + neighbor_offset;
 
             let mut should_draw_face = true;
-            if let Some(neighbor_block) = world.get_block_at_world(neighbor_pos.x as f32, neighbor_pos.y as f32, neighbor_pos.z as f32) {
-                if neighbor_block.is_solid() { // Assuming Block has is_solid() method
+            if let Some(neighbor_block) = world.get_block_at_world(
+                neighbor_pos.x as f32,
+                neighbor_pos.y as f32,
+                neighbor_pos.z as f32,
+            ) {
+                if neighbor_block.is_solid() {
+                    // Assuming Block has is_solid() method
                     should_draw_face = false;
                 }
             }

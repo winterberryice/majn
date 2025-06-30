@@ -32,5 +32,5 @@ fn vs_main(
 
 @fragment
 fn fs_main() -> @location(0) vec4<f32> {
-    return vec4<f32>(0.0, 0.0, 0.0, 1.0); // Black color for the wireframe
+    return vec4<f32>(0.0, 0.0, 0.0, 0.9); // Black color for the wireframe
 }
