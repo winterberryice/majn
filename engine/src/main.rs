@@ -691,7 +691,6 @@ impl State {
                             let default_block_color = match block.block_type {
                                 crate::block::BlockType::Dirt => [0.5, 0.25, 0.05],
                                 crate::block::BlockType::Grass => [0.0, 0.8, 0.1], // Default grass color
-                                crate::block::BlockType::Bedrock => [0.5, 0.5, 0.5], // Default bedrock color
                                 crate::block::BlockType::Air => continue,
                             };
 
@@ -741,44 +740,40 @@ impl State {
                                     let tex_size_x = 1.0 / ATLAS_COLS;
                                     let tex_size_y = 1.0 / ATLAS_ROWS;
 
-                                    let all_face_atlas_indices = block.get_texture_atlas_indices();
-                                    let mut current_vertex_color = default_block_color; // Start with default from outer match
+                                    let tex_coords_idx: (f32, f32); // Removed mut
+                                    let mut current_vertex_color: [f32; 3];
 
-                                    let face_specific_atlas_indices: [f32; 2] = match face_type {
-                                        CubeFace::Front => all_face_atlas_indices[0],
-                                        CubeFace::Back => all_face_atlas_indices[1],
-                                        CubeFace::Right => all_face_atlas_indices[2],
-                                        CubeFace::Left => all_face_atlas_indices[3],
-                                        CubeFace::Top => all_face_atlas_indices[4],
-                                        CubeFace::Bottom => all_face_atlas_indices[5],
-                                    };
-
-                                    // Apply specific color changes after selecting texture, using default_block_color as a base
                                     match block.block_type {
                                         crate::block::BlockType::Grass => {
-                                            if *face_type == CubeFace::Top {
-                                                current_vertex_color = [0.1, 0.9, 0.1]; // Sentinel for tinting grass top
-                                            } else if *face_type == CubeFace::Bottom {
-                                                // Bottom of grass uses Dirt texture (already set by all_face_atlas_indices)
-                                                // and should have dirt color
-                                                current_vertex_color = [0.5, 0.25, 0.05];
-                                            } else {
-                                                // Sides of grass
-                                                current_vertex_color = [0.0, 0.8, 0.1];
+                                            current_vertex_color = [0.0, 0.8, 0.1]; // Default for grass sides
+                                            match face_type {
+                                                CubeFace::Top => {
+                                                    tex_coords_idx = (0.0, 0.0); // Grass Top (grayscale)
+                                                    current_vertex_color = [0.1, 0.9, 0.1]; // Sentinel for tinting
+                                                }
+                                                CubeFace::Bottom => {
+                                                    tex_coords_idx = (2.0, 0.0); // Dirt texture
+                                                    current_vertex_color = [0.5, 0.25, 0.05]; // Standard Dirt color
+                                                }
+                                                _ => {
+                                                    // Sides
+                                                    tex_coords_idx = (3.0, 0.0); // Grass Side texture
+                                                    // current_vertex_color remains [0.0, 0.8, 0.1] (standard grass color)
+                                                }
                                             }
                                         }
-                                        crate::block::BlockType::Bedrock => {
-                                            // Bedrock uses its specific texture (set by all_face_atlas_indices)
-                                            // and its default color was already set by the outer match
-                                            // current_vertex_color = [0.4, 0.4, 0.4]; // Or a specific color if different from default
+                                        crate::block::BlockType::Dirt => {
+                                            tex_coords_idx = (2.0, 0.0); // Dirt texture
+                                            current_vertex_color = [0.5, 0.25, 0.05]; // Standard Dirt color
                                         }
-                                        // Dirt's color is already set by default_block_color
-                                        // Air is skipped earlier
-                                        _ => {}
-                                    }
+                                        _ => {
+                                            tex_coords_idx = (15.0, 15.0);
+                                            current_vertex_color = default_block_color;
+                                        }
+                                    };
 
-                                    let u_min = face_specific_atlas_indices[0] * tex_size_x;
-                                    let v_min = face_specific_atlas_indices[1] * tex_size_y;
+                                    let u_min = tex_coords_idx.0 * tex_size_x;
+                                    let v_min = tex_coords_idx.1 * tex_size_y;
                                     let u_max = u_min + tex_size_x;
                                     let v_max = v_min + tex_size_y;
 
@@ -1025,24 +1020,21 @@ impl State {
             if let Some((block_pos, _face)) = self.selected_block {
                 match self.world.set_block(block_pos, BlockType::Air) {
                     Ok(chunk_coord) => {
-                        // Mark chunk as dirty by removing its render data
                         self.chunk_render_data.remove(&chunk_coord);
-                        // Also, if the removed block was on a boundary, the adjacent chunk might need updating
-                        // This is complex; for now, just rebuild the primary chunk.
-                        // A more robust solution would check neighbors if block is on edge.
-                        // We might also need to rebuild neighbors if a block *removal* exposes their faces.
-                        // For simplicity, we'll rely on the existing active chunk meshing logic to pick up
-                        // changes when the player moves, or we can force rebuilds of neighbors.
-                        // Let's check and rebuild neighbors of the modified chunk as well.
-                        self.build_or_rebuild_chunk_mesh(chunk_coord.0, chunk_coord.1); // Rebuild the main chunk
-                        // And its direct neighbors, as face visibility might change
+                        self.build_or_rebuild_chunk_mesh(chunk_coord.0, chunk_coord.1);
                         self.build_or_rebuild_chunk_mesh(chunk_coord.0 + 1, chunk_coord.1);
                         self.build_or_rebuild_chunk_mesh(chunk_coord.0 - 1, chunk_coord.1);
                         self.build_or_rebuild_chunk_mesh(chunk_coord.0, chunk_coord.1 + 1);
                         self.build_or_rebuild_chunk_mesh(chunk_coord.0, chunk_coord.1 - 1);
                     }
-                    Err(e) => {
-                        eprintln!("Error removing block: {}", e);
+                    Err(crate::world::SetBlockError::IsBedrock) => { // Qualified path
+                        // Silent no-op for trying to mine bedrock
+                    }
+                    Err(crate::world::SetBlockError::OutOfBounds) => { // Qualified path
+                        eprintln!("Error removing block: Out of bounds");
+                    }
+                    Err(crate::world::SetBlockError::ChunkUpdateFailed(e)) => { // Qualified path
+                        eprintln!("Error removing block - chunk update failed: {}", e);
                     }
                 }
             }
@@ -1050,7 +1042,6 @@ impl State {
 
         // Block Placement (Right-Click)
         if self.input_state.right_mouse_pressed_this_frame {
-            // Use self.input_state
             if let Some((selected_block_pos, hit_face)) = self.selected_block {
                 let mut offset = IVec3::ZERO;
                 match hit_face {
@@ -1063,29 +1054,32 @@ impl State {
                 }
                 let new_block_pos = selected_block_pos + offset;
 
-                // Collision Check with player
                 let player_aabb = self.player.get_world_bounding_box();
                 let new_block_aabb = AABB {
                     min: new_block_pos.as_vec3(),
-                    max: new_block_pos.as_vec3() + glam::Vec3::ONE, // Assuming 1x1x1 block
+                    max: new_block_pos.as_vec3() + glam::Vec3::ONE,
                 };
 
                 if player_aabb.intersects(&new_block_aabb) {
                     // eprintln!("Cannot place block: intersects with player.");
                 } else {
-                    match self.world.set_block(new_block_pos, BlockType::Grass) {
+                    match self.world.set_block(new_block_pos, BlockType::Grass) { // TODO: Use selected block type from inventory
                         Ok(chunk_coord) => {
-                            // Mark chunk as dirty by removing its render data
                             self.chunk_render_data.remove(&chunk_coord);
-                            // Rebuild the potentially new chunk and its neighbors
                             self.build_or_rebuild_chunk_mesh(chunk_coord.0, chunk_coord.1);
                             self.build_or_rebuild_chunk_mesh(chunk_coord.0 + 1, chunk_coord.1);
                             self.build_or_rebuild_chunk_mesh(chunk_coord.0 - 1, chunk_coord.1);
                             self.build_or_rebuild_chunk_mesh(chunk_coord.0, chunk_coord.1 + 1);
                             self.build_or_rebuild_chunk_mesh(chunk_coord.0, chunk_coord.1 - 1);
                         }
-                        Err(e) => {
-                            eprintln!("Error placing block: {}", e);
+                        Err(crate::world::SetBlockError::IsBedrock) => { // Qualified path
+                            eprintln!("Error placing block: Target is Bedrock (should be rare)");
+                        }
+                        Err(crate::world::SetBlockError::OutOfBounds) => { // Qualified path
+                            eprintln!("Error placing block: Out of bounds");
+                        }
+                        Err(crate::world::SetBlockError::ChunkUpdateFailed(e)) => { // Qualified path
+                            eprintln!("Error placing block - chunk update failed: {}", e);
                         }
                     }
                 }
