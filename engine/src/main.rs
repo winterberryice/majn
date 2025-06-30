@@ -977,6 +977,13 @@ impl State {
         self.selected_block =
             crate::raycast::cast_ray(&self.player, &self.world, RAYCAST_MAX_DISTANCE);
 
+        // Update wireframe_renderer selection status
+        if let Some((block_pos, _)) = self.selected_block {
+            self.wireframe_renderer.update_selection(Some(block_pos));
+        } else {
+            self.wireframe_renderer.update_selection(None);
+        }
+
         let camera_eye = self.player.position + glam::Vec3::new(0.0, PLAYER_EYE_HEIGHT, 0.0);
         let camera_front = glam::Vec3::new(
             self.player.yaw.cos() * self.player.pitch.cos(),
@@ -1142,10 +1149,9 @@ impl State {
                 }
             }
 
-            if let Some((block_coords, _)) = self.selected_block {
-                self.wireframe_renderer.update_model_matrix(block_coords);
-                self.wireframe_renderer.draw(&mut render_pass, &self.queue);
-            }
+            // No need to check self.selected_block here again,
+            // wireframe_renderer.draw itself handles whether to draw or not based on its internal state.
+            self.wireframe_renderer.draw(&mut render_pass, &self.queue, &self.world);
         }
 
         {
