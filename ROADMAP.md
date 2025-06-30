@@ -8,20 +8,20 @@ This document outlines the planned features and high-level goals for the future 
 
 This version represents the current, functional state of the engine. The goal of this release is to have a solid base with a playable character in a static world.
 
-* ** [x] Player Controller:**
+* - [x] **Player Controller:**
     * Grounded "walking" controller with AABB.
     * Gravity, velocity, and jump mechanics.
     * "Collide and stop" physics.
-* ** [x] Rendering & Visuals:**
+* - [x] **Rendering & Visuals:**
     * Static chunk rendering with basic face culling.
     * Texture mapping support via a texture atlas.
-* ** [x] Interaction:**
+* - [x] **Interaction:**
     * Raycasting for block selection.
     * Block placement and removal.
-* ** [x] UI:**
+* - [x] **UI:**
     * Debug overlay (FPS, coordinates).
     * Static crosshair.
-* ** [x] Architecture & Build:**
+* - [x] **Architecture & Build:**
     * Modular code structure (`player`, `world`, `renderer`, etc.).
     * Automated builds for Windows, Linux, and macOS (Universal) via GitHub Actions.
 
@@ -31,13 +31,13 @@ This version represents the current, functional state of the engine. The goal of
 
 The primary goal of this version is to refine the existing gameplay loop and improve the overall feel and visual consistency of the core experience.
 
-* **[ ] Player Physics:**
+* - [ ] **Player Physics:**
     * Implement "collide and slide" physics for smoother movement along walls.
     * Refine player movement values (acceleration, friction, jump height) for better game feel.
-* **[ ] Visual Polish:**
+* - [ ] **Visual Polish:**
     * Implement biome tints (e.g., for grass, foliage) in the shader to add color variety to the world.
     * Add simple visual/audio feedback for block placement and removal.
-* **[ ] Engine Refinements:**
+* - [ ] **Engine Refinements:**
     * Improve the raycasting algorithm for more precision.
     * Refactor engine components as needed to support new features cleanly.
 
