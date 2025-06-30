@@ -611,6 +611,7 @@ dependencies = [
  "image",
  "lazy_static",
  "pollster",
+ "rand 0.9.1",
  "wgpu",
  "wgpu_text",
  "winit",

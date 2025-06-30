@@ -1,9 +1,11 @@
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BlockType {
-    Air,    // Optional, for empty spaces
+    Air, // Optional, for empty spaces
     Dirt,
     Grass,
     Bedrock,
+    OakLog,
+    OakLeaves,
     // Add more block types here later if needed
 }
 
@@ -42,7 +44,16 @@ impl Block {
                 [2.0, 0.0], // Bottom (Dirt)
             ],
             BlockType::Bedrock => [[1.0, 1.0]; 6], // Bedrock at (1,1)
-            BlockType::Air => [[15.0, 15.0]; 6], // Default/error texture (far corner of atlas)
+            BlockType::Air => [[15.0, 15.0]; 6],   // Default/error texture (far corner of atlas)
+            BlockType::OakLog => [
+                [4.0, 1.0],
+                [4.0, 1.0],
+                [4.0, 1.0],
+                [4.0, 1.0],
+                [5.0, 1.0],
+                [5.0, 1.0],
+            ],
+            BlockType::OakLeaves => [[4.0, 3.0]; 6],
         }
     }
 }
