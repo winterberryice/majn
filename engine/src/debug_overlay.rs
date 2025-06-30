@@ -8,9 +8,9 @@ use wgpu_text::{
     glyph_brush::{Extra, OwnedSection, OwnedText, ab_glyph::FontArc}, // Import Section and Text from glyph_brush
 };
 
-// This line assumes a font file named "Roboto-Regular.ttf" is in your src/ directory
+// This line assumes a font file named "Roboto-Regular.ttf" is in your assets/fonts/ directory
 // or configured in your project's root. Make sure the path is correct for your setup.
-const FONT_BYTES: &[u8] = include_bytes!("Roboto-Regular.ttf");
+const FONT_BYTES: &[u8] = include_bytes!("../assets/fonts/Roboto-Regular.ttf");
 
 pub struct DebugOverlay {
     brush: TextBrush,
