@@ -26,8 +26,8 @@ This section provides a high-level overview of the project.
   * **Graphics:** `wgpu`
   * **Windowing:** `winit` (using `ApplicationHandler`)
   * **Math:** `glam`
-* **Current Status:** For the detailed current status and a log of changes, please refer to `changelog.md`.
-* **Project Roadmap:** For the high-level project plan and future goals, please refer to `roadmap.md`.
+* **Current Status:** For the detailed current status and a log of changes, please refer to `CHANGELOG.md`.
+* **Project Roadmap:** For the high-level project plan and future goals, please refer to `ROADMAP.md`.
 
 ## 3. Best Practices for Interaction
 
@@ -40,8 +40,8 @@ To get the most effective help from me, please follow these guidelines:
   * **Conceptual:** "What's the next step after face culling?" or "How does collision detection work conceptually?"
   * **Implementation:** "Help me fix this lifetime error in my `update` function." or "Can you help me refactor this into a `Camera` struct?"
 * **State Your Goal Clearly:** Tell me what you are trying to achieve. For example, instead of just "my code doesn't work," say, "I'm trying to make the player stop when they hit a block, but they are falling through the floor. Here is my collision code and the error."
-* **Consult Key Documents:** Before asking about the current status or future plans, please review `changelog.md` and `roadmap.md`.
-* **Automatic Document Updates:** As part of any response that implements a new feature, fixes a major bug, or otherwise changes the project's status, I will update `changelog.md` and `roadmap.md` accordingly.
+* **Consult Key Documents:** Before asking about the current status or future plans, please review `CHANGELOG.md` and `ROADMAP.md`.
+* **Automatic Document Updates:** As part of any response that implements a new feature, fixes a major bug, or otherwise changes the project's status, I will update `CHANGELOG.md` and `ROADMAP.md` accordingly.
 
 ## 4. My Capabilities
 
