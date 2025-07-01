@@ -24,7 +24,7 @@ impl Block {
         match self.block_type {
             BlockType::Air => false,
             BlockType::OakLeaves => false, // Leaves are not solid for physics
-            _ => true,                     // All other current types are solid
+            _ => true, // All other current types are solid
         }
     }
 
@@ -61,14 +61,7 @@ impl Block {
                 [5.0, 1.0],
                 [5.0, 1.0],
             ],
-            BlockType::OakLeaves => [
-                [4.0, 3.0],
-                [4.0, 3.0],
-                [4.0, 3.0],
-                [5.0, 3.0],
-                [5.0, 3.0],
-                [5.0, 3.0],
-            ],
+            BlockType::OakLeaves => [[4.0, 3.0]; 6],
         }
     }
 }
