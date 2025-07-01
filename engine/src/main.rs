@@ -553,7 +553,18 @@ impl State {
                 entry_point: Some("fs_main"),
                 targets: &[Some(wgpu::ColorTargetState {
                     format: config.format,
-                    blend: Some(wgpu::BlendState::REPLACE),
+                    blend: Some(wgpu::BlendState {
+                        color: wgpu::BlendComponent {
+                            src_factor: wgpu::BlendFactor::SrcAlpha,
+                            dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
+                            operation: wgpu::BlendOperation::Add,
+                        },
+                        alpha: wgpu::BlendComponent {
+                            src_factor: wgpu::BlendFactor::One, // Or SrcAlpha
+                            dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha, // Or Zero
+                            operation: wgpu::BlendOperation::Add,
+                        },
+                    }),
                     write_mask: wgpu::ColorWrites::ALL,
                 })],
                 compilation_options: wgpu::PipelineCompilationOptions::default(),
@@ -728,11 +739,24 @@ impl State {
                                         neighbor_world_by as f32,
                                         neighbor_world_bz as f32,
                                     ) {
-                                        if neighbor_block.is_solid() {
+                                        // A face is not visible if it's adjacent to a solid, non-transparent block.
+                                        // If the neighbor is transparent, the face should still be visible.
+                                        if neighbor_block.is_solid() && !neighbor_block.is_transparent() {
                                             is_face_visible = false;
                                         }
+                                        // Also, if the current block is transparent, its faces should not be culled by other transparent blocks.
+                                        // However, this is more complex. The current rule is: if neighbor is solid AND NOT transparent, cull.
+                                        // This means if neighbor is transparent, face IS visible.
+                                        // If current block is transparent and neighbor is also transparent, face IS visible.
+                                        // If current block is solid and neighbor is transparent, face IS visible.
                                     }
                                 }
+                                // If the current block itself is transparent, we should always draw its faces,
+                                // unless the adjacent block is solid and opaque (which is covered by the above).
+                                // The crucial part is that a transparent block should not cull the face of an adjacent transparent block.
+                                // The current logic: is_face_visible = true initially.
+                                // It becomes false if neighbor_block.is_solid() && !neighbor_block.is_transparent().
+                                // So, if neighbor_block.is_transparent(), is_face_visible remains true. This is correct.
 
                                 if is_face_visible {
                                     let vertices_template = face_type.get_vertices_template();

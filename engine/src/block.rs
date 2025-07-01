@@ -23,7 +23,15 @@ impl Block {
     pub fn is_solid(&self) -> bool {
         match self.block_type {
             BlockType::Air => false,
+            BlockType::OakLeaves => false, // Leaves are not solid for physics
             _ => true, // All other current types are solid
+        }
+    }
+
+    pub fn is_transparent(&self) -> bool {
+        match self.block_type {
+            BlockType::OakLeaves => true,
+            _ => false,
         }
     }
 
