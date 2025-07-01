@@ -1,18 +1,21 @@
 use crate::block::{Block, BlockType};
-use rand::Rng; // Assuming block.rs is in the same directory
+use rand::Rng;
+use std::collections::VecDeque;
 
 pub const CHUNK_WIDTH: usize = 16;
 pub const CHUNK_HEIGHT: usize = 32; // Reduced height for now
 pub const CHUNK_DEPTH: usize = 16;
 
+const MAX_LIGHT: u8 = 15;
+
 pub struct Chunk {
-    pub coord: (i32, i32),        // Add world coordinates (x, z) for the chunk
+    pub coord: (i32, i32),
     blocks: Vec<Vec<Vec<Block>>>, // Stored as [x][y][z]
+    // TODO: Consider if dirty flags for meshing/lighting are needed here
 }
 
 impl Chunk {
     pub fn new(coord_x: i32, coord_z: i32) -> Self {
-        // Initialize with Air blocks
         let blocks =
             vec![vec![vec![Block::new(BlockType::Air); CHUNK_DEPTH]; CHUNK_HEIGHT]; CHUNK_WIDTH];
         Chunk {
@@ -20,6 +23,42 @@ impl Chunk {
             blocks,
         }
     }
+
+    // Initializes block light based on emission property
+    pub fn initialize_block_light(&mut self) {
+        for x in 0..CHUNK_WIDTH {
+            for y in 0..CHUNK_HEIGHT {
+                for z in 0..CHUNK_DEPTH {
+                    let emission = self.blocks[x][y][z].emission();
+                    if emission > 0 {
+                        self.blocks[x][y][z].block_light_level = emission;
+                    }
+                }
+            }
+        }
+    }
+
+    // Initial pass for skylight - straight down
+    pub fn calculate_initial_skylight(&mut self) {
+        for x in 0..CHUNK_WIDTH {
+            for z in 0..CHUNK_DEPTH {
+                let mut current_sky_light = MAX_LIGHT;
+                for y in (0..CHUNK_HEIGHT).rev() { // Iterate from top to bottom
+                    let block = &mut self.blocks[x][y][z];
+                    if block.opacity() >= MAX_LIGHT { // Opaque block
+                        current_sky_light = 0; // Sky light is blocked
+                    }
+                    block.sky_light_level = current_sky_light;
+                    if current_sky_light > 0 && block.opacity() > 0 && block.opacity() < MAX_LIGHT {
+                        // If light passes through a semi-transparent block, it might dim.
+                        // For simplicity now, direct skylight isn't reduced by semi-transparent blocks,
+                        // only by fully opaque ones. Spreading skylight will handle reduction.
+                    }
+                }
+            }
+        }
+    }
+
 
     pub fn generate_terrain(&mut self) {
         let surface_level = CHUNK_HEIGHT / 2; // Grass will be at this Y level
@@ -125,8 +164,19 @@ impl Chunk {
         }
     }
 
+    // Mutable version of get_block
+    pub fn get_block_mut(&mut self, x: usize, y: usize, z: usize) -> Option<&mut Block> {
+        if x < CHUNK_WIDTH && y < CHUNK_HEIGHT && z < CHUNK_DEPTH {
+            Some(&mut self.blocks[x][y][z])
+        } else {
+            None
+        }
+    }
+
+
     // Helper to set a block at a given coordinate
     // Returns Result<(), &str> to indicate success or out-of-bounds error
+    // This function should also trigger light updates.
     pub fn set_block(
         &mut self,
         x: usize,
@@ -135,19 +185,224 @@ impl Chunk {
         block_type: BlockType,
     ) -> Result<(), &'static str> {
         if x < CHUNK_WIDTH && y < CHUNK_HEIGHT && z < CHUNK_DEPTH {
+            // Get old properties for light update
+            // let old_block = self.blocks[x][y][z]; // This borrow would conflict
+            // let old_opacity = old_block.opacity();
+            // let old_emission = old_block.emission();
+
             self.blocks[x][y][z] = Block::new(block_type);
+            let new_emission = self.blocks[x][y][z].emission(); // Re-borrow after modification
+
+            // If new block is an emitter, set its base block_light_level.
+            // Actual spreading will be handled by propagate_light.
+            // If it's not an emitter, its block_light_level is already 0 from Block::new.
+            if new_emission > 0 {
+                self.blocks[x][y][z].block_light_level = new_emission;
+            }
+
+            // Skylight and further block light propagation are handled by World calling
+            // calculate_initial_skylight and propagate_light after block changes.
+            // For now, this function focuses on correctly initializing the new block's own light.
+
+            // TODO: The World will need to manage light update queues (add/remove)
+            // based on the difference between old and new block properties.
+
             Ok(())
         } else {
             Err("Coordinates out of chunk bounds")
         }
     }
-}
 
-// Default implementation for Chunk, useful for initialization
-// Now requires coordinates, so a generic default might not make sense
-// unless we default to (0,0). For now, let's remove it or make it explicit.
-// impl Default for Chunk {
-//     fn default() -> Self {
-//         Self::new(0, 0) // Default to chunk at (0,0)
-//     }
-// }
+    // Recalculates skylight for the entire chunk based on a new global skylight level.
+    // Adds affected blocks to world-level removal and propagation queues.
+    pub fn recalculate_skylight_based_on_global(
+        &mut self,
+        new_global_skylight_level: u8,
+        sky_light_removal_queue: &mut VecDeque<super::world::LightNode>,
+        sky_light_propagation_queue: &mut VecDeque<super::world::LightNode>,
+        chunk_world_x_offset: i32,
+        chunk_world_z_offset: i32,
+    ) {
+        for x in 0..CHUNK_WIDTH {
+            for z in 0..CHUNK_DEPTH {
+                let mut current_max_sky = new_global_skylight_level;
+                for y in (0..CHUNK_HEIGHT).rev() { // Iterate from top to bottom
+                    let block = &mut self.blocks[x][y][z];
+                    let world_pos = glam::ivec3(
+                        chunk_world_x_offset + x as i32,
+                        y as i32,
+                        chunk_world_z_offset + z as i32,
+                    );
+
+                    let old_sky_light = block.sky_light_level;
+
+                    if block.opacity() >= MAX_LIGHT_LEVEL { // Opaque block
+                        current_max_sky = 0; // Sky light is blocked below this
+                    }
+
+                    let new_sky_light_for_block = current_max_sky;
+
+                    if old_sky_light != new_sky_light_for_block {
+                        // When adding to removal queue, light_level is the *old* light value
+                        if old_sky_light > 0 {
+                            sky_light_removal_queue.push_back(super::world::LightNode {
+                                pos: world_pos,
+                                light_level: old_sky_light,
+                            });
+                        }
+                        block.sky_light_level = new_sky_light_for_block;
+                        // When adding to propagation queue, light_level is the *new* light value
+                        if new_sky_light_for_block > 0 {
+                            sky_light_propagation_queue.push_back(super::world::LightNode {
+                                pos: world_pos,
+                                light_level: new_sky_light_for_block,
+                            });
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+
+    // Propagates light within the chunk.
+    // This version is for intra-chunk propagation. Cross-chunk will be handled by World.
+    pub fn propagate_light_in_chunk(&mut self) {
+        let mut sky_queue: VecDeque<(usize, usize, usize, u8)> = VecDeque::new();
+        let mut block_queue: VecDeque<(usize, usize, usize, u8)> = VecDeque::new();
+
+        // Initialize queues: add all blocks that currently have some light.
+        // The light value in the queue is the current light level of that block.
+        for x in 0..CHUNK_WIDTH {
+            for y in 0..CHUNK_HEIGHT {
+                for z in 0..CHUNK_DEPTH {
+                    let block = &self.blocks[x][y][z];
+                    if block.sky_light_level > 0 {
+                        sky_queue.push_back((x, y, z, block.sky_light_level));
+                    }
+                    if block.block_light_level > 0 {
+                        block_queue.push_back((x, y, z, block.block_light_level));
+                    }
+                }
+            }
+        }
+
+        // Skylight propagation (BFS)
+        while let Some((x, y, z, light_val)) = sky_queue.pop_front() {
+            // If the light_val from queue is weaker than current block's actual skylight,
+            // it means a stronger path has already updated this block. Skip.
+            if light_val < self.blocks[x][y][z].sky_light_level && light_val != MAX_LIGHT { // MAX_LIGHT check for initial sources from top
+                 // Exception: if it's an initial MAX_LIGHT source from calculate_initial_skylight,
+                 // it should still propagate even if its current value is somehow less (should not happen).
+                 // More robustly: only propagate if light_val is the *source* of current block's light.
+                 // For now, this check is a simple optimization.
+            }
+            // Re-fetch current_light, as it might have been updated by another path if not using the above optimization.
+            let current_light = self.blocks[x][y][z].sky_light_level;
+            if current_light == 0 { continue; }
+
+
+            for dx in -1..=1 {
+                for dy in -1..=1 {
+                    for dz in -1..=1 {
+                        if (dx.abs() + dy.abs() + dz.abs()) != 1 { continue; } // Cardinal directions only
+
+                        let nx = x as i32 + dx;
+                        let ny = y as i32 + dy;
+                        let nz = z as i32 + dz;
+
+                        if nx < 0 || nx >= CHUNK_WIDTH as i32 ||
+                           ny < 0 || ny >= CHUNK_HEIGHT as i32 ||
+                           nz < 0 || nz >= CHUNK_DEPTH as i32 {
+                            // Out of chunk bounds, world will handle this boundary.
+                            continue;
+                        }
+
+                        let neighbor_x = nx as usize;
+                        let neighbor_y = ny as usize;
+                        let neighbor_z = nz as usize;
+
+                        let neighbor_block = &mut self.blocks[neighbor_x][neighbor_y][neighbor_z];
+                        let opacity = neighbor_block.opacity();
+
+                        // Skylight does not lose strength passing through fully transparent blocks (opacity 0)
+                        // but does lose 1 level for each step into a block with opacity > 0, plus that opacity.
+                        // However, for skylight spread, it typically just loses 1 level per block unless it's very opaque.
+                        // Minecraft logic: skylight loses 1 per step, unless it's downwards and current block is transparent, then it's same.
+                        // For horizontal/upwards spread, it's current_light - 1 - opacity.
+                        // Let's simplify: skylight passing into any block (even air) loses 1 level.
+                        // If the block itself is opaque, it blocks more.
+                        let mut reduction = 1;
+                        if opacity >= MAX_LIGHT { // Fully opaque
+                            reduction = MAX_LIGHT + 1; // Effectively blocks all light
+                        } else if opacity > 0 {
+                            reduction += opacity; // Reduce by opacity for semi-transparent
+                        }
+
+                        // Special handling for skylight going down into a transparent block from above.
+                        // If dy == -1 (going down) and neighbor_block.opacity() == 0, new_light should be current_light.
+                        // This is mostly handled by calculate_initial_skylight.
+                        // Here, for spreading, we assume general case.
+                        if dy == -1 && neighbor_block.opacity() == 0 && current_light == MAX_LIGHT {
+                             // If source is MAX_LIGHT (direct sky) and moving down into fully transparent block
+                            reduction = 0;
+                        }
+
+
+                        let new_light = current_light.saturating_sub(reduction);
+
+                        if new_light > neighbor_block.sky_light_level {
+                            neighbor_block.sky_light_level = new_light;
+                            sky_queue.push_back((neighbor_x, neighbor_y, neighbor_z, new_light));
+                        }
+                    }
+                }
+            }
+        }
+
+        // Block light propagation (BFS)
+        while let Some((x, y, z, light_val)) = block_queue.pop_front() {
+            // Similar optimization check as for skylight
+            if light_val < self.blocks[x][y][z].block_light_level {
+                // continue;
+            }
+            let current_light = self.blocks[x][y][z].block_light_level;
+            if current_light == 0 { continue; }
+
+
+            for dx in -1..=1 {
+                for dy in -1..=1 {
+                    for dz in -1..=1 {
+                        if (dx.abs() + dy.abs() + dz.abs()) != 1 { continue; } // Cardinal only
+
+                        let nx = x as i32 + dx;
+                        let ny = y as i32 + dy;
+                        let nz = z as i32 + dz;
+
+                        if nx < 0 || nx >= CHUNK_WIDTH as i32 ||
+                           ny < 0 || ny >= CHUNK_HEIGHT as i32 ||
+                           nz < 0 || nz >= CHUNK_DEPTH as i32 {
+                            continue;
+                        }
+
+                        let neighbor_x = nx as usize;
+                        let neighbor_y = ny as usize;
+                        let neighbor_z = nz as usize;
+
+                        let neighbor_block = &mut self.blocks[neighbor_x][neighbor_y][neighbor_z];
+                        let opacity = neighbor_block.opacity();
+
+                        // Block light always attenuates by at least 1, plus opacity of the medium it enters.
+                        let attenuation = 1u8.saturating_add(opacity);
+                        let new_light = current_light.saturating_sub(attenuation);
+
+                        if new_light > neighbor_block.block_light_level {
+                            neighbor_block.block_light_level = new_light;
+                            block_queue.push_back((neighbor_x, neighbor_y, neighbor_z, new_light));
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

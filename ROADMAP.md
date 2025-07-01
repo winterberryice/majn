@@ -42,6 +42,26 @@ The primary goal of this version is to refine the existing gameplay loop and imp
 
 ---
 
+## Version 0.3.0 (Dynamic Environment Update)
+
+This version focuses on bringing the world to life with dynamic lighting and environmental effects.
+
+* - [x] **Advanced Lighting System & Day/Night Cycle:**
+    *   Per-block sky light and block light (0-15 range).
+    *   Flood-fill (BFS) light propagation for both sky and block light, including light removal.
+    *   Dynamic day/night cycle (currently 20 minutes) affecting global skylight.
+    *   Rendering integration: block brightness determined by calculated light levels.
+    *   Caves and enclosed spaces are dark unless lit by light-emitting blocks.
+    *   Defined light emission for certain block types.
+* - [ ] **Skybox / Atmospheric Effects:**
+    *   Implement a dynamic skybox that changes with the time of day (sun, moon, stars, cloud layers).
+    *   Basic weather effects (e.g., rain, snow).
+* - [ ] **Sound & Ambiance:**
+    *   Basic footstep sounds.
+    *   Ambient sounds for different times of day or environments.
+
+---
+
 ## Backlog (Future Ideas - Not Assigned to a Version)
 
 This is a list of major features and ideas for consideration in future development cycles.
@@ -68,8 +88,7 @@ This is a list of major features and ideas for consideration in future developme
     * Add swimming/water physics.
 * **Advanced Rendering:**
     * Frustum Culling (don't process chunks that are outside the camera's view).
-    * Basic lighting system (ambient light + one directional light for the sun).
-    * Support for transparent blocks (e.g., water, glass).
+    * Support for transparent blocks (e.g., water, glass) - Note: Light *passes* through them correctly now, but visual transparency rendering is separate.
 * **Entities:**
     * Basic Entity Component System (ECS) for mobs and other dynamic objects.
 * **Networking:**

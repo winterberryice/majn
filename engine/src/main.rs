@@ -321,41 +321,48 @@ impl ApplicationHandler for App {
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct Vertex {
-    // Made public
-    pub position: [f32; 3], // Made public
-    pub color: [f32; 3],    // Made public
-    pub uv: [f32; 2],       // Added for texture coordinates
+    pub position: [f32; 3],
+    pub color: [f32; 3], // Still used for tinting sentinels
+    pub uv: [f32; 2],
+    pub light_level: f32, // Normalized 0.0 (dark) to 1.0 (bright)
 }
 
 impl Vertex {
-    // This describes the memory layout of a single vertex to the shader.
     pub fn desc() -> wgpu::VertexBufferLayout<'static> {
-        // Made public
         wgpu::VertexBufferLayout {
             array_stride: std::mem::size_of::<Vertex>() as wgpu::BufferAddress,
             step_mode: wgpu::VertexStepMode::Vertex,
             attributes: &[
+                // Position
                 wgpu::VertexAttribute {
                     offset: 0,
-                    shader_location: 0, // position
+                    shader_location: 0,
                     format: wgpu::VertexFormat::Float32x3,
                 },
+                // Color (for tinting)
                 wgpu::VertexAttribute {
                     offset: std::mem::size_of::<[f32; 3]>() as wgpu::BufferAddress,
-                    shader_location: 1, // color
+                    shader_location: 1,
                     format: wgpu::VertexFormat::Float32x3,
                 },
+                // UV
                 wgpu::VertexAttribute {
-                    offset: (std::mem::size_of::<[f32; 3]>() * 2) as wgpu::BufferAddress, // After position and color
-                    shader_location: 2,                                                   // uv
+                    offset: (std::mem::size_of::<[f32; 3]>() * 2) as wgpu::BufferAddress,
+                    shader_location: 2,
                     format: wgpu::VertexFormat::Float32x2,
+                },
+                // Light Level
+                wgpu::VertexAttribute {
+                    offset: (std::mem::size_of::<[f32; 3]>() * 2 + std::mem::size_of::<[f32; 2]>()) as wgpu::BufferAddress,
+                    shader_location: 3, // New location for light level
+                    format: wgpu::VertexFormat::Float32, // Single float
                 },
             ],
         }
     }
 }
 
-use crate::block::BlockType; // For block placement/removal
+use crate::block::{BlockType, MAX_LIGHT_LEVEL}; // For block placement/removal and MAX_LIGHT_LEVEL
 use crate::camera::CameraUniform;
 use crate::chunk::{CHUNK_DEPTH, CHUNK_HEIGHT, CHUNK_WIDTH};
 use crate::cube_geometry::CubeFace;
@@ -405,8 +412,43 @@ struct State {
     // diffuse_texture: crate::texture::Texture,
     // texture_bind_group_layout: wgpu::BindGroupLayout,
     diffuse_bind_group: wgpu::BindGroup,
-    input_state: input::InputState, // Added InputState here
+    input_state: input::InputState,
+    // Day/Night Cycle
+    time_of_day: f32, // 0.0 (midnight) to 1.0 (next midnight)
+    day_cycle_speed: f32, // Multiplier for how fast time progresses
+    current_skylight_level: u8,
 }
+
+// Helper function to calculate skylight based on time of day
+fn get_skylight_for_time(time: f32) -> u8 {
+    // Ensure time is within [0.0, 1.0)
+    let normalized_time = time.fract();
+
+    // Example:
+    // Midnight to pre-dawn (0.0 - 0.22): Dark (moonlight)
+    // Sunrise (0.22 - 0.28): Transition up
+    // Daytime (0.28 - 0.72): Full brightness
+    // Sunset (0.72 - 0.78): Transition down
+    // Dusk to midnight (0.78 - 1.0): Dark (moonlight)
+
+    const MIN_SKY_LIGHT: u8 = 4; // Moonlight level
+    const MAX_SKY_LIGHT: u8 = MAX_LIGHT_LEVEL; // Full daylight
+
+    if normalized_time < 0.22 || normalized_time >= 0.78 {
+        MIN_SKY_LIGHT // Night
+    } else if normalized_time >= 0.22 && normalized_time < 0.28 { // Sunrise
+        // Linear interpolation from MIN to MAX
+        let progress = (normalized_time - 0.22) / (0.28 - 0.22);
+        (MIN_SKY_LIGHT as f32 + (MAX_SKY_LIGHT - MIN_SKY_LIGHT) as f32 * progress).round() as u8
+    } else if normalized_time >= 0.28 && normalized_time < 0.72 { // Day
+        MAX_SKY_LIGHT
+    } else { // Sunset (normalized_time >= 0.72 && normalized_time < 0.78)
+        // Linear interpolation from MAX to MIN
+        let progress = (normalized_time - 0.72) / (0.78 - 0.72);
+        (MAX_SKY_LIGHT as f32 - (MAX_SKY_LIGHT - MIN_SKY_LIGHT) as f32 * progress).round() as u8
+    }
+}
+
 
 impl State {
     async fn new(
@@ -730,11 +772,27 @@ impl State {
             // diffuse_texture,
             // texture_bind_group_layout,
             diffuse_bind_group,
-            input_state: input::InputState::new(), // Initialize InputState
+            input_state: input::InputState::new(),
+            // Day/Night Cycle
+            time_of_day: 0.25, // Start at sunrise-ish for testing
+            day_cycle_speed: 1.0 / (60.0 * 20.0), // One full cycle every 20 minutes (60s * 20m)
+            current_skylight_level: get_skylight_for_time(0.25), // Initial skylight
         }
     }
 
     fn build_or_rebuild_chunk_mesh(&mut self, chunk_cx: i32, chunk_cz: i32) {
+        // When rebuilding mesh, ensure the chunk's skylight is based on current global skylight
+        // This is more of a fix for when chunks are loaded/generated with an old skylight value.
+        // The main skylight update should happen in world.update_global_skylight.
+        if let Some(chunk) = self.world.get_chunk_mut(chunk_cx, chunk_cz) {
+            // Check if its topmost blocks reflect current_skylight_level, if not, recalc
+            // This is a bit heavy here. Ideally, world update handles this proactively.
+            // For now, we assume the world's light propagation will eventually correct it.
+            // Or, more directly:
+            // chunk.update_skylight_column_based_on_global(self.current_skylight_level); // Needs this method in Chunk
+        }
+
+
         let mut opaque_vertices: Vec<Vertex> = Vec::new();
         let mut opaque_indices: Vec<u16> = Vec::new();
         let mut opaque_vertex_offset: u16 = 0;
@@ -895,6 +953,10 @@ impl State {
                                         )
                                     };
 
+                                // Get the light level for the current block this face belongs to
+                                let block_actual_light = block.light_level(); // u8 value from 0-15
+                                let normalized_light_level = block_actual_light as f32 / MAX_LIGHT_LEVEL as f32;
+
                                 for (i, v_template) in vertices_template.iter().enumerate() {
                                     target_vertices.push(Vertex {
                                         position: (current_block_world_center
@@ -902,6 +964,7 @@ impl State {
                                         .into(),
                                         color: current_vertex_color,
                                         uv: selected_face_uvs[i],
+                                        light_level: normalized_light_level, // Add light level here
                                     });
                                 }
                                 for local_idx in local_indices {
@@ -1095,6 +1158,25 @@ impl State {
 
         self.player
             .update_physics_and_collision(dt_secs, &self.world);
+
+        // Update time of day
+        self.time_of_day += dt_secs * self.day_cycle_speed;
+        if self.time_of_day >= 1.0 {
+            self.time_of_day -= 1.0; // Wrap around
+        }
+
+        let new_skylight_level = get_skylight_for_time(self.time_of_day);
+        if new_skylight_level != self.current_skylight_level {
+            println!("Global skylight changed from {} to {} at time {}", self.current_skylight_level, new_skylight_level, self.time_of_day);
+            self.current_skylight_level = new_skylight_level;
+            self.world.update_global_skylight(new_skylight_level);
+            // This will internally queue updates. We need to process them.
+            // Note: update_global_skylight should ideally populate the world's light queues.
+        }
+
+        // Always propagate light in case of block changes or global skylight changes
+        self.world.propagate_all_light();
+
 
         const RAYCAST_MAX_DISTANCE: f32 = 5.0;
         self.selected_block =

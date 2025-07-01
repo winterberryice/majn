@@ -5,9 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased] - YYYY-MM-DD (date of update)
+## [Unreleased] - 2024-04-26
 
 ### Added
+- **Lighting and Day/Night Cycle:**
+  - Implemented per-block sky light and block light levels (0-15).
+  - Light propagation system using BFS for spreading and removing light.
+  - Dynamic day/night cycle (20-minute cycle) that influences global skylight levels.
+  - Global skylight changes trigger recalculation and propagation of light.
+  - Caves and unlit areas become dark based on propagated light levels.
+  - Light emission property for blocks (e.g., `Torch`, `Glowstone` defined with emission values).
+  - Integrated light levels into the rendering pipeline:
+    - Vertex data now includes a normalized light level.
+    - Shaders (vertex and fragment) updated to use this light level to modulate final block color.
+    - Added a minimum ambient light factor in the fragment shader to ensure visibility in very dark areas.
 - **Rendering:** Static chunks of blocks (e.g., dirt, grass) with basic face culling (CPU-side mesh generation and GPU-side).
 - **Player Controller:**
     - Grounded "walking" player controller (replaces previous fly-cam).
