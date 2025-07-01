@@ -692,6 +692,8 @@ impl State {
                                 crate::block::BlockType::Dirt => [0.5, 0.25, 0.05],
                                 crate::block::BlockType::Grass => [0.0, 0.8, 0.1], // Default grass color
                                 crate::block::BlockType::Bedrock => [0.5, 0.5, 0.5], // Default bedrock color
+                                crate::block::BlockType::OakLog => [0.5, 0.5, 0.5], // Default log color
+                                crate::block::BlockType::OakLeaves => [0.5, 0.5, 0.5],
                                 crate::block::BlockType::Air => continue,
                             };
 
@@ -767,6 +769,11 @@ impl State {
                                                 current_vertex_color = [0.0, 0.8, 0.1];
                                             }
                                         }
+                                        crate::block::BlockType::OakLeaves => {
+                                            // Sentinel for tinting oak leaves.
+                                            // All faces of OakLeaves should be tinted.
+                                            current_vertex_color = [0.1, 0.9, 0.2];
+                                        }
                                         crate::block::BlockType::Bedrock => {
                                             // Bedrock uses its specific texture (set by all_face_atlas_indices)
                                             // and its default color was already set by the outer match
@@ -783,14 +790,16 @@ impl State {
                                     let v_max = v_min + tex_size_y;
 
                                     // Define the two potential UV mappings based on face vertex order
-                                    let uvs_for_bl_br_tr_tl_order = [ // Used for Back, Top
+                                    let uvs_for_bl_br_tr_tl_order = [
+                                        // Used for Back, Top
                                         [u_min, v_max], // BL_tex for V0 (BL_vert)
                                         [u_max, v_max], // BR_tex for V1 (BR_vert)
                                         [u_max, v_min], // TR_tex for V2 (TR_vert)
                                         [u_min, v_min], // TL_tex for V3 (TL_vert)
                                     ];
 
-                                    let uvs_for_bl_tl_tr_br_order = [ // Used for Front, Right, Left, Bottom
+                                    let uvs_for_bl_tl_tr_br_order = [
+                                        // Used for Front, Right, Left, Bottom
                                         [u_min, v_max], // BL_tex for V0 (BL_vert)
                                         [u_min, v_min], // TL_tex for V1 (TL_vert)
                                         [u_max, v_min], // TR_tex for V2 (TR_vert)
@@ -798,9 +807,10 @@ impl State {
                                     ];
 
                                     let selected_face_uvs = match face_type {
-                                        CubeFace::Front | CubeFace::Right | CubeFace::Left | CubeFace::Bottom => {
-                                            &uvs_for_bl_tl_tr_br_order
-                                        }
+                                        CubeFace::Front
+                                        | CubeFace::Right
+                                        | CubeFace::Left
+                                        | CubeFace::Bottom => &uvs_for_bl_tl_tr_br_order,
                                         CubeFace::Back | CubeFace::Top => {
                                             &uvs_for_bl_br_tr_tl_order
                                         }
@@ -1156,7 +1166,8 @@ impl State {
 
             // No need to check self.selected_block here again,
             // wireframe_renderer.draw itself handles whether to draw or not based on its internal state.
-            self.wireframe_renderer.draw(&mut render_pass, &self.queue, &self.world);
+            self.wireframe_renderer
+                .draw(&mut render_pass, &self.queue, &self.world);
         }
 
         {
