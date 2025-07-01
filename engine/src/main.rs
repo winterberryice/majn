@@ -370,10 +370,15 @@ use glam::IVec3;
 use glam::Mat4;
 use std::collections::HashMap; // For collision checking
 
-struct ChunkRenderData {
+struct ChunkRenderBuffers {
     vertex_buffer: wgpu::Buffer,
     index_buffer: wgpu::Buffer,
     num_indices: u32,
+}
+
+struct ChunkRenderData {
+    opaque_buffers: Option<ChunkRenderBuffers>,
+    transparent_buffers: Option<ChunkRenderBuffers>,
 }
 
 struct State {
@@ -382,7 +387,8 @@ struct State {
     queue: wgpu::Queue,
     config: wgpu::SurfaceConfiguration,
     size: winit::dpi::PhysicalSize<u32>,
-    render_pipeline: wgpu::RenderPipeline,
+    render_pipeline: wgpu::RenderPipeline, // For opaque objects
+    transparent_render_pipeline: wgpu::RenderPipeline, // For transparent objects
     player: Player,
     camera_uniform: CameraUniform,
     camera_buffer: wgpu::Buffer,
@@ -581,7 +587,60 @@ impl State {
             depth_stencil: Some(wgpu::DepthStencilState {
                 format: wgpu::TextureFormat::Depth32Float,
                 depth_write_enabled: true,
-                depth_compare: wgpu::CompareFunction::Less,
+                depth_compare: wgpu::CompareFunction::Less, // Standard depth test
+                stencil: wgpu::StencilState::default(),
+                bias: wgpu::DepthBiasState::default(),
+            }),
+            multisample: wgpu::MultisampleState::default(),
+            multiview: None,
+            cache: None,
+        });
+
+        // Create a separate render pipeline for transparent objects
+        // Key difference: depth_write_enabled is false
+        let transparent_render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("Transparent Render Pipeline"),
+            layout: Some(&render_pipeline_layout), // Reuse the same layout
+            vertex: wgpu::VertexState {
+                module: &shader,
+                entry_point: Some("vs_main"),
+                buffers: &[Vertex::desc()],
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
+            },
+            fragment: Some(wgpu::FragmentState { // Same fragment shader and targets
+                module: &shader,
+                entry_point: Some("fs_main"),
+                targets: &[Some(wgpu::ColorTargetState {
+                    format: config.format,
+                    blend: Some(wgpu::BlendState { // Same blend state
+                        color: wgpu::BlendComponent {
+                            src_factor: wgpu::BlendFactor::SrcAlpha,
+                            dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
+                            operation: wgpu::BlendOperation::Add,
+                        },
+                        alpha: wgpu::BlendComponent {
+                            src_factor: wgpu::BlendFactor::One,
+                            dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
+                            operation: wgpu::BlendOperation::Add,
+                        },
+                    }),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
+            }),
+            primitive: wgpu::PrimitiveState { // Same primitive state
+                topology: wgpu::PrimitiveTopology::TriangleList,
+                strip_index_format: None,
+                front_face: wgpu::FrontFace::Ccw,
+                cull_mode: Some(wgpu::Face::Back), // Could be None for two-sided transparent things, but Back is fine for cubes
+                polygon_mode: wgpu::PolygonMode::Fill,
+                unclipped_depth: false,
+                conservative: false,
+            },
+            depth_stencil: Some(wgpu::DepthStencilState {
+                format: wgpu::TextureFormat::Depth32Float,
+                depth_write_enabled: false, // <<< KEY DIFFERENCE FOR TRANSPARENCY
+                depth_compare: wgpu::CompareFunction::Less, // Still compare, but don't write
                 stencil: wgpu::StencilState::default(),
                 bias: wgpu::DepthBiasState::default(),
             }),
@@ -654,6 +713,7 @@ impl State {
             config,
             size: initial_size,
             render_pipeline,
+            transparent_render_pipeline, // Store the new pipeline
             player,
             camera_uniform,
             camera_buffer,
@@ -675,9 +735,13 @@ impl State {
     }
 
     fn build_or_rebuild_chunk_mesh(&mut self, chunk_cx: i32, chunk_cz: i32) {
-        let mut chunk_mesh_vertices: Vec<Vertex> = Vec::new();
-        let mut chunk_mesh_indices: Vec<u16> = Vec::new();
-        let mut current_vertex_offset: u16 = 0;
+        let mut opaque_vertices: Vec<Vertex> = Vec::new();
+        let mut opaque_indices: Vec<u16> = Vec::new();
+        let mut opaque_vertex_offset: u16 = 0;
+
+        let mut transparent_vertices: Vec<Vertex> = Vec::new();
+        let mut transparent_indices: Vec<u16> = Vec::new();
+        let mut transparent_vertex_offset: u16 = 0;
 
         let chunk_opt = self.world.get_chunk(chunk_cx, chunk_cz);
         if chunk_opt.is_none() {
@@ -697,165 +761,153 @@ impl State {
             for ly in 0..CHUNK_HEIGHT {
                 for lz in 0..CHUNK_DEPTH {
                     if let Some(block) = chunk.get_block(lx, ly, lz) {
-                        if block.is_solid() {
-                            // Default block_color, might be overridden for specific types/faces
-                            let default_block_color = match block.block_type {
-                                crate::block::BlockType::Dirt => [0.5, 0.25, 0.05],
-                                crate::block::BlockType::Grass => [0.0, 0.8, 0.1], // Default grass color
-                                crate::block::BlockType::Bedrock => [0.5, 0.5, 0.5], // Default bedrock color
-                                crate::block::BlockType::OakLog => [0.5, 0.5, 0.5], // Default log color
-                                crate::block::BlockType::OakLeaves => [0.5, 0.5, 0.5],
-                                crate::block::BlockType::Air => continue,
-                            };
+                        // Skip Air blocks entirely
+                        if block.block_type == BlockType::Air {
+                            continue;
+                        }
 
-                            let current_block_world_center = glam::Vec3::new(
-                                chunk_world_origin_x + lx as f32 + 0.5,
-                                ly as f32 + 0.5,
-                                chunk_world_origin_z + lz as f32 + 0.5,
-                            );
+                        // Determine if the block is transparent (for mesh type)
+                        let is_current_block_transparent = block.is_transparent(); // Visual transparency
 
-                            let face_definitions: [(CubeFace, (i32, i32, i32)); 6] = [
-                                (CubeFace::Front, (0, 0, -1)),
-                                (CubeFace::Back, (0, 0, 1)),
-                                (CubeFace::Right, (1, 0, 0)),
-                                (CubeFace::Left, (-1, 0, 0)),
-                                (CubeFace::Top, (0, 1, 0)),
-                                (CubeFace::Bottom, (0, -1, 0)),
-                            ];
+                        // Default block_color, might be overridden for specific types/faces
+                        let default_block_color = match block.block_type {
+                            BlockType::Dirt => [0.5, 0.25, 0.05],
+                            BlockType::Grass => [0.0, 0.8, 0.1],
+                            BlockType::Bedrock => [0.5, 0.5, 0.5],
+                            BlockType::OakLog => [0.5, 0.5, 0.5],
+                            BlockType::OakLeaves => [0.5, 0.5, 0.5], // Base color before tinting
+                            BlockType::Air => unreachable!(), // Should be skipped
+                        };
 
-                            for (face_type, offset) in face_definitions.iter() {
-                                let neighbor_world_bx =
-                                    chunk_world_origin_x as i32 + lx as i32 + offset.0;
-                                let neighbor_world_by = ly as i32 + offset.1;
-                                let neighbor_world_bz =
-                                    chunk_world_origin_z as i32 + lz as i32 + offset.2;
+                        let current_block_world_center = glam::Vec3::new(
+                            chunk_world_origin_x + lx as f32 + 0.5,
+                            ly as f32 + 0.5,
+                            chunk_world_origin_z + lz as f32 + 0.5,
+                        );
 
-                                let mut is_face_visible = true;
-                                if neighbor_world_by < 0 || neighbor_world_by >= CHUNK_HEIGHT as i32
-                                {
-                                } else {
-                                    if let Some(neighbor_block) = self.world.get_block_at_world(
-                                        neighbor_world_bx as f32,
-                                        neighbor_world_by as f32,
-                                        neighbor_world_bz as f32,
-                                    ) {
-                                        // A face is not visible if it's adjacent to a solid, non-transparent block.
-                                        // If the neighbor is transparent, the face should still be visible.
-                                        if neighbor_block.is_solid()
-                                            && !neighbor_block.is_transparent()
-                                        {
-                                            is_face_visible = false;
-                                        }
-                                        // Also, if the current block is transparent, its faces should not be culled by other transparent blocks.
-                                        // However, this is more complex. The current rule is: if neighbor is solid AND NOT transparent, cull.
-                                        // This means if neighbor is transparent, face IS visible.
-                                        // If current block is transparent and neighbor is also transparent, face IS visible.
-                                        // If current block is solid and neighbor is transparent, face IS visible.
+                        let face_definitions: [(CubeFace, (i32, i32, i32)); 6] = [
+                            (CubeFace::Front, (0, 0, -1)),
+                            (CubeFace::Back, (0, 0, 1)),
+                            (CubeFace::Right, (1, 0, 0)),
+                            (CubeFace::Left, (-1, 0, 0)),
+                            (CubeFace::Top, (0, 1, 0)),
+                            (CubeFace::Bottom, (0, -1, 0)),
+                        ];
+
+                        for (face_type, offset) in face_definitions.iter() {
+                            let neighbor_world_bx =
+                                chunk_world_origin_x as i32 + lx as i32 + offset.0;
+                            let neighbor_world_by = ly as i32 + offset.1;
+                            let neighbor_world_bz =
+                                chunk_world_origin_z as i32 + lz as i32 + offset.2;
+
+                            let mut is_face_visible = true;
+                            if neighbor_world_by >= 0 && neighbor_world_by < CHUNK_HEIGHT as i32 {
+                                if let Some(neighbor_block) = self.world.get_block_at_world(
+                                    neighbor_world_bx as f32,
+                                    neighbor_world_by as f32,
+                                    neighbor_world_bz as f32,
+                                ) {
+                                    // Culling logic:
+                                    // A face is culled if the neighbor block is:
+                                    // 1. Solid (physics-wise, meaning it's not Air)
+                                    // 2. AND NOT transparent (visual-wise)
+                                    // 3. UNLESS the current block itself is transparent.
+                                    //    Transparent blocks should not cull each other's faces.
+                                    if neighbor_block.is_solid() && !neighbor_block.is_transparent() && !is_current_block_transparent {
+                                        is_face_visible = false;
+                                    }
+                                    // If current block is transparent, and neighbor is also transparent, face should be visible.
+                                    if is_current_block_transparent && neighbor_block.is_transparent() {
+                                        is_face_visible = true;
                                     }
                                 }
-                                // If the current block itself is transparent, we should always draw its faces,
-                                // unless the adjacent block is solid and opaque (which is covered by the above).
-                                // The crucial part is that a transparent block should not cull the face of an adjacent transparent block.
-                                // The current logic: is_face_visible = true initially.
-                                // It becomes false if neighbor_block.is_solid() && !neighbor_block.is_transparent().
-                                // So, if neighbor_block.is_transparent(), is_face_visible remains true. This is correct.
+                            }
+                            // Faces at chunk boundaries (not checking outside world bounds) are always visible.
 
-                                if is_face_visible {
-                                    let vertices_template = face_type.get_vertices_template();
-                                    let local_indices = face_type.get_local_indices();
+                            if is_face_visible {
+                                let vertices_template = face_type.get_vertices_template();
+                                let local_indices = face_type.get_local_indices();
 
-                                    const ATLAS_COLS: f32 = 16.0;
-                                    const ATLAS_ROWS: f32 = 39.0;
-                                    let tex_size_x = 1.0 / ATLAS_COLS;
-                                    let tex_size_y = 1.0 / ATLAS_ROWS;
+                                const ATLAS_COLS: f32 = 16.0;
+                                const ATLAS_ROWS: f32 = 39.0;
+                                let tex_size_x = 1.0 / ATLAS_COLS;
+                                let tex_size_y = 1.0 / ATLAS_ROWS;
 
-                                    let all_face_atlas_indices = block.get_texture_atlas_indices();
-                                    let mut current_vertex_color = default_block_color; // Start with default from outer match
+                                let all_face_atlas_indices = block.get_texture_atlas_indices();
+                                let mut current_vertex_color = default_block_color;
 
-                                    let face_specific_atlas_indices: [f32; 2] = match face_type {
-                                        CubeFace::Front => all_face_atlas_indices[0],
-                                        CubeFace::Back => all_face_atlas_indices[1],
-                                        CubeFace::Right => all_face_atlas_indices[2],
-                                        CubeFace::Left => all_face_atlas_indices[3],
-                                        CubeFace::Top => all_face_atlas_indices[4],
-                                        CubeFace::Bottom => all_face_atlas_indices[5],
-                                    };
+                                let face_specific_atlas_indices: [f32; 2] = match face_type {
+                                    CubeFace::Front => all_face_atlas_indices[0],
+                                    CubeFace::Back => all_face_atlas_indices[1],
+                                    CubeFace::Right => all_face_atlas_indices[2],
+                                    CubeFace::Left => all_face_atlas_indices[3],
+                                    CubeFace::Top => all_face_atlas_indices[4],
+                                    CubeFace::Bottom => all_face_atlas_indices[5],
+                                };
 
-                                    // Apply specific color changes after selecting texture, using default_block_color as a base
-                                    match block.block_type {
-                                        crate::block::BlockType::Grass => {
-                                            if *face_type == CubeFace::Top {
-                                                current_vertex_color = [0.1, 0.9, 0.1]; // Sentinel for tinting grass top
-                                            } else if *face_type == CubeFace::Bottom {
-                                                // Bottom of grass uses Dirt texture (already set by all_face_atlas_indices)
-                                                // and should have dirt color
-                                                current_vertex_color = [0.5, 0.25, 0.05];
-                                            } else {
-                                                // Sides of grass
-                                                current_vertex_color = [0.0, 0.8, 0.1];
-                                            }
+                                match block.block_type {
+                                    BlockType::Grass => {
+                                        if *face_type == CubeFace::Top {
+                                            current_vertex_color = [0.1, 0.9, 0.1];
+                                        } else if *face_type == CubeFace::Bottom {
+                                            current_vertex_color = [0.5, 0.25, 0.05];
+                                        } else {
+                                            current_vertex_color = [0.0, 0.8, 0.1];
                                         }
-                                        crate::block::BlockType::OakLeaves => {
-                                            // Sentinel for tinting oak leaves.
-                                            // All faces of OakLeaves should be tinted.
-                                            current_vertex_color = [0.1, 0.9, 0.2];
-                                        }
-                                        crate::block::BlockType::Bedrock => {
-                                            // Bedrock uses its specific texture (set by all_face_atlas_indices)
-                                            // and its default color was already set by the outer match
-                                            // current_vertex_color = [0.4, 0.4, 0.4]; // Or a specific color if different from default
-                                        }
-                                        // Dirt's color is already set by default_block_color
-                                        // Air is skipped earlier
-                                        _ => {}
                                     }
-
-                                    let u_min = face_specific_atlas_indices[0] * tex_size_x;
-                                    let v_min = face_specific_atlas_indices[1] * tex_size_y;
-                                    let u_max = u_min + tex_size_x;
-                                    let v_max = v_min + tex_size_y;
-
-                                    // Define the two potential UV mappings based on face vertex order
-                                    let uvs_for_bl_br_tr_tl_order = [
-                                        // Used for Back, Top
-                                        [u_min, v_max], // BL_tex for V0 (BL_vert)
-                                        [u_max, v_max], // BR_tex for V1 (BR_vert)
-                                        [u_max, v_min], // TR_tex for V2 (TR_vert)
-                                        [u_min, v_min], // TL_tex for V3 (TL_vert)
-                                    ];
-
-                                    let uvs_for_bl_tl_tr_br_order = [
-                                        // Used for Front, Right, Left, Bottom
-                                        [u_min, v_max], // BL_tex for V0 (BL_vert)
-                                        [u_min, v_min], // TL_tex for V1 (TL_vert)
-                                        [u_max, v_min], // TR_tex for V2 (TR_vert)
-                                        [u_max, v_max], // BR_tex for V3 (BR_vert)
-                                    ];
-
-                                    let selected_face_uvs = match face_type {
-                                        CubeFace::Front
-                                        | CubeFace::Right
-                                        | CubeFace::Left
-                                        | CubeFace::Bottom => &uvs_for_bl_tl_tr_br_order,
-                                        CubeFace::Back | CubeFace::Top => {
-                                            &uvs_for_bl_br_tr_tl_order
-                                        }
-                                    };
-
-                                    for (i, v_template) in vertices_template.iter().enumerate() {
-                                        chunk_mesh_vertices.push(Vertex {
-                                            position: (current_block_world_center
-                                                + glam::Vec3::from(v_template.position))
-                                            .into(),
-                                            color: current_vertex_color,
-                                            uv: selected_face_uvs[i],
-                                        });
+                                    BlockType::OakLeaves => {
+                                        current_vertex_color = [0.1, 0.9, 0.2];
                                     }
-                                    for local_idx in local_indices {
-                                        chunk_mesh_indices.push(current_vertex_offset + local_idx);
-                                    }
-                                    current_vertex_offset += vertices_template.len() as u16;
+                                    _ => {}
                                 }
+
+                                let u_min = face_specific_atlas_indices[0] * tex_size_x;
+                                let v_min = face_specific_atlas_indices[1] * tex_size_y;
+                                let u_max = u_min + tex_size_x;
+                                let v_max = v_min + tex_size_y;
+
+                                let uvs_for_bl_br_tr_tl_order = [
+                                    [u_min, v_max], [u_max, v_max], [u_max, v_min], [u_min, v_min],
+                                ];
+                                let uvs_for_bl_tl_tr_br_order = [
+                                    [u_min, v_max], [u_min, v_min], [u_max, v_min], [u_max, v_max],
+                                ];
+
+                                let selected_face_uvs = match face_type {
+                                    CubeFace::Front | CubeFace::Right | CubeFace::Left | CubeFace::Bottom =>
+                                        &uvs_for_bl_tl_tr_br_order,
+                                    CubeFace::Back | CubeFace::Top => &uvs_for_bl_br_tr_tl_order,
+                                };
+
+                                let (target_vertices, target_indices, current_vertex_offset) =
+                                    if is_current_block_transparent {
+                                        (
+                                            &mut transparent_vertices,
+                                            &mut transparent_indices,
+                                            &mut transparent_vertex_offset,
+                                        )
+                                    } else {
+                                        (
+                                            &mut opaque_vertices,
+                                            &mut opaque_indices,
+                                            &mut opaque_vertex_offset,
+                                        )
+                                    };
+
+                                for (i, v_template) in vertices_template.iter().enumerate() {
+                                    target_vertices.push(Vertex {
+                                        position: (current_block_world_center
+                                            + glam::Vec3::from(v_template.position))
+                                        .into(),
+                                        color: current_vertex_color,
+                                        uv: selected_face_uvs[i],
+                                    });
+                                }
+                                for local_idx in local_indices {
+                                    target_indices.push(*current_vertex_offset + local_idx);
+                                }
+                                *current_vertex_offset += vertices_template.len() as u16;
                             }
                         }
                     }
@@ -863,29 +915,59 @@ impl State {
             }
         }
 
-        if !chunk_mesh_vertices.is_empty() && !chunk_mesh_indices.is_empty() {
-            use wgpu::util::DeviceExt;
-            let vertex_buffer = self
-                .device
-                .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                    label: Some(&format!("Chunk VB ({}, {})", chunk_cx, chunk_cz)),
-                    contents: bytemuck::cast_slice(&chunk_mesh_vertices),
-                    usage: wgpu::BufferUsages::VERTEX,
-                });
-            let index_buffer = self
-                .device
-                .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                    label: Some(&format!("Chunk IB ({}, {})", chunk_cx, chunk_cz)),
-                    contents: bytemuck::cast_slice(&chunk_mesh_indices),
-                    usage: wgpu::BufferUsages::INDEX,
-                });
+        use wgpu::util::DeviceExt;
+        let mut opaque_buffers: Option<ChunkRenderBuffers> = None;
+        if !opaque_vertices.is_empty() && !opaque_indices.is_empty() {
+            let vertex_buffer =
+                self.device
+                    .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                        label: Some(&format!("Opaque Chunk VB ({}, {})", chunk_cx, chunk_cz)),
+                        contents: bytemuck::cast_slice(&opaque_vertices),
+                        usage: wgpu::BufferUsages::VERTEX,
+                    });
+            let index_buffer =
+                self.device
+                    .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                        label: Some(&format!("Opaque Chunk IB ({}, {})", chunk_cx, chunk_cz)),
+                        contents: bytemuck::cast_slice(&opaque_indices),
+                        usage: wgpu::BufferUsages::INDEX,
+                    });
+            opaque_buffers = Some(ChunkRenderBuffers {
+                vertex_buffer,
+                index_buffer,
+                num_indices: opaque_indices.len() as u32,
+            });
+        }
 
+        let mut transparent_buffers: Option<ChunkRenderBuffers> = None;
+        if !transparent_vertices.is_empty() && !transparent_indices.is_empty() {
+            let vertex_buffer =
+                self.device
+                    .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                        label: Some(&format!("Transparent Chunk VB ({}, {})", chunk_cx, chunk_cz)),
+                        contents: bytemuck::cast_slice(&transparent_vertices),
+                        usage: wgpu::BufferUsages::VERTEX,
+                    });
+            let index_buffer =
+                self.device
+                    .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                        label: Some(&format!("Transparent Chunk IB ({}, {})", chunk_cx, chunk_cz)),
+                        contents: bytemuck::cast_slice(&transparent_indices),
+                        usage: wgpu::BufferUsages::INDEX,
+                    });
+            transparent_buffers = Some(ChunkRenderBuffers {
+                vertex_buffer,
+                index_buffer,
+                num_indices: transparent_indices.len() as u32,
+            });
+        }
+
+        if opaque_buffers.is_some() || transparent_buffers.is_some() {
             self.chunk_render_data.insert(
                 (chunk_cx, chunk_cz),
                 ChunkRenderData {
-                    vertex_buffer,
-                    index_buffer,
-                    num_indices: chunk_mesh_indices.len() as u32,
+                    opaque_buffers,
+                    transparent_buffers,
                 },
             );
         } else {
@@ -1177,23 +1259,59 @@ impl State {
             render_pass.set_bind_group(0, &self.camera_bind_group, &[]);
             render_pass.set_bind_group(1, &self.diffuse_bind_group, &[]);
 
+            // Opaque pass: depth write enabled (default from render_pipeline)
             for chunk_coord in &self.active_chunk_coords {
-                if let Some(render_data) = self.chunk_render_data.get(chunk_coord) {
-                    if render_data.num_indices > 0 {
-                        render_pass.set_vertex_buffer(0, render_data.vertex_buffer.slice(..));
-                        render_pass.set_index_buffer(
-                            render_data.index_buffer.slice(..),
-                            wgpu::IndexFormat::Uint16,
-                        );
-                        render_pass.draw_indexed(0..render_data.num_indices, 0, 0..1);
+                if let Some(chunk_data) = self.chunk_render_data.get(chunk_coord) {
+                    if let Some(ref opaque_buffers) = chunk_data.opaque_buffers {
+                        if opaque_buffers.num_indices > 0 {
+                            render_pass
+                                .set_vertex_buffer(0, opaque_buffers.vertex_buffer.slice(..));
+                            render_pass.set_index_buffer(
+                                opaque_buffers.index_buffer.slice(..),
+                                wgpu::IndexFormat::Uint16,
+                            );
+                            render_pass.draw_indexed(0..opaque_buffers.num_indices, 0, 0..1);
+                        }
                     }
                 }
             }
 
-            // No need to check self.selected_block here again,
-            // wireframe_renderer.draw itself handles whether to draw or not based on its internal state.
+            // Wireframe for selected block (rendered with opaque settings)
             self.wireframe_renderer
                 .draw(&mut render_pass, &self.queue, &self.world);
+
+            // Transparent pass: depth write disabled
+            // We need to create a new pipeline or modify the depth_stencil state for this pass.
+            // For simplicity, let's assume we have a separate pipeline for transparent objects
+            // or can dynamically set depth_write_enabled = false.
+            // The current render_pipeline has depth_write_enabled: true.
+            // We will create a new pipeline for transparent objects.
+            // This will be done in State::new and stored.
+            // For now, let's simulate this by just drawing them after opaque.
+            // The actual fix requires a new pipeline with depth_write_enabled: false.
+
+            // Set the transparent render pipeline
+            render_pass.set_pipeline(&self.transparent_render_pipeline);
+
+            for chunk_coord in &self.active_chunk_coords {
+                if let Some(chunk_data) = self.chunk_render_data.get(chunk_coord) {
+                    if let Some(ref transparent_buffers) = chunk_data.transparent_buffers {
+                        if transparent_buffers.num_indices > 0 {
+                            // Bind groups are already set from opaque pass, assuming they are compatible
+                            render_pass.set_vertex_buffer(
+                                0,
+                                transparent_buffers.vertex_buffer.slice(..),
+                            );
+                            render_pass.set_index_buffer(
+                                transparent_buffers.index_buffer.slice(..),
+                                wgpu::IndexFormat::Uint16,
+                            );
+                            render_pass
+                                .draw_indexed(0..transparent_buffers.num_indices, 0, 0..1);
+                        }
+                    }
+                }
+            }
         }
 
         {
