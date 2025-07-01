@@ -1292,12 +1292,17 @@ impl State {
 
             // Set the transparent render pipeline
             render_pass.set_pipeline(&self.transparent_render_pipeline);
+            // Crucially, re-bind the necessary bind groups for this pipeline.
+            // Group 0 (camera_bind_group) is likely still correctly bound from the opaque pass
+            // as wireframe renderer also uses a camera_bind_group_layout at group 0.
+            // However, Group 1 needs to be explicitly set to diffuse_bind_group.
+            render_pass.set_bind_group(1, &self.diffuse_bind_group, &[]);
+
 
             for chunk_coord in &self.active_chunk_coords {
                 if let Some(chunk_data) = self.chunk_render_data.get(chunk_coord) {
                     if let Some(ref transparent_buffers) = chunk_data.transparent_buffers {
                         if transparent_buffers.num_indices > 0 {
-                            // Bind groups are already set from opaque pass, assuming they are compatible
                             render_pass.set_vertex_buffer(
                                 0,
                                 transparent_buffers.vertex_buffer.slice(..),
