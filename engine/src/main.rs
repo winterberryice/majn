@@ -769,6 +769,11 @@ impl State {
                                                 current_vertex_color = [0.0, 0.8, 0.1];
                                             }
                                         }
+                                        crate::block::BlockType::OakLeaves => {
+                                            // Sentinel for tinting oak leaves.
+                                            // All faces of OakLeaves should be tinted.
+                                            current_vertex_color = [0.1, 0.9, 0.2];
+                                        }
                                         crate::block::BlockType::Bedrock => {
                                             // Bedrock uses its specific texture (set by all_face_atlas_indices)
                                             // and its default color was already set by the outer match

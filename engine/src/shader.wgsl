@@ -44,18 +44,26 @@ fn fs_main(in: FragmentInput) -> @location(0) vec4<f32> {
     let sampled_color = textureSample(t_diffuse, s_sampler, in.tex_coords);
 
     // Check for sentinel color indicating Grass Top that needs tinting
-    // Sentinel color set in main.rs: [0.1, 0.9, 0.1]
+    // Sentinel color for Grass Top, set in main.rs: [0.1, 0.9, 0.1]
     let grass_top_sentinel = vec3<f32>(0.1, 0.9, 0.1);
+    // Sentinel color for Oak Leaves, set in main.rs: [0.1, 0.9, 0.2]
+    let oak_leaves_sentinel = vec3<f32>(0.1, 0.9, 0.2);
 
     // Compare floating point colors with a small epsilon for precision issues
-    let color_diff = abs(in.original_color - grass_top_sentinel);
-    let is_grass_top = color_diff.x < 0.01 && color_diff.y < 0.01 && color_diff.z < 0.01;
+    let grass_color_diff = abs(in.original_color - grass_top_sentinel);
+    let is_grass_top = grass_color_diff.x < 0.01 && grass_color_diff.y < 0.01 && grass_color_diff.z < 0.01;
 
-    if (is_grass_top) {
-        // Texture at (0,0) is grayscale, use its intensity (e.g., from red channel)
+    let leaves_color_diff = abs(in.original_color - oak_leaves_sentinel);
+    let is_oak_leaves = leaves_color_diff.x < 0.01 && leaves_color_diff.y < 0.01 && leaves_color_diff.z < 0.01;
+
+    if (is_grass_top || is_oak_leaves) {
+        // Texture for grass top is at (0,0) which is grayscale.
+        // Texture for oak leaves is at (4,3) which is also grayscale.
+        // Use the intensity (e.g., from red channel) from the sampled texture.
         let intensity = sampled_color.r;
         // Apply a greenish tint. Adjust factors for desired green hue.
         // Example: (R: low, G: high, B: medium-low)
+        // Using the same tint factors for both grass and leaves as per requirement "similar tint".
         let tinted_color = vec3<f32>(intensity * 0.4, intensity * 0.9, intensity * 0.35);
         return vec4<f32>(tinted_color, sampled_color.a);
     } else {
