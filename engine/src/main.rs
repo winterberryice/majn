@@ -560,7 +560,7 @@ impl State {
                             operation: wgpu::BlendOperation::Add,
                         },
                         alpha: wgpu::BlendComponent {
-                            src_factor: wgpu::BlendFactor::One, // Or SrcAlpha
+                            src_factor: wgpu::BlendFactor::One,              // Or SrcAlpha
                             dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha, // Or Zero
                             operation: wgpu::BlendOperation::Add,
                         },
@@ -741,7 +741,9 @@ impl State {
                                     ) {
                                         // A face is not visible if it's adjacent to a solid, non-transparent block.
                                         // If the neighbor is transparent, the face should still be visible.
-                                        if neighbor_block.is_solid() && !neighbor_block.is_transparent() {
+                                        if neighbor_block.is_solid()
+                                            && !neighbor_block.is_transparent()
+                                        {
                                             is_face_visible = false;
                                         }
                                         // Also, if the current block is transparent, its faces should not be culled by other transparent blocks.
@@ -763,7 +765,7 @@ impl State {
                                     let local_indices = face_type.get_local_indices();
 
                                     const ATLAS_COLS: f32 = 16.0;
-                                    const ATLAS_ROWS: f32 = 16.0;
+                                    const ATLAS_ROWS: f32 = 39.0;
                                     let tex_size_x = 1.0 / ATLAS_COLS;
                                     let tex_size_y = 1.0 / ATLAS_ROWS;
 
