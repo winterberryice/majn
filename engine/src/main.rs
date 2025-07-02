@@ -749,6 +749,16 @@ impl State {
         let mut transparent_indices: Vec<u16> = Vec::new();
         let mut transparent_vertex_offset: u16 = 0;
 
+        // Temporary storage for transparent block data before sorting
+        struct TransparentBlockData {
+            block: block::Block, // Store the block itself
+            lx: usize,
+            ly: usize,
+            lz: usize,
+            world_center: glam::Vec3, // Pre-calculate for sorting
+        }
+        let mut transparent_block_render_list: Vec<TransparentBlockData> = Vec::new();
+
         let chunk_opt = self.world.get_chunk(chunk_cx, chunk_cz);
         if chunk_opt.is_none() {
             eprintln!(
@@ -808,128 +818,205 @@ impl State {
                                 chunk_world_origin_z as i32 + lz as i32 + offset.2;
 
                             let mut is_face_visible = true;
-
-                            if block.block_type == BlockType::OakLeaves {
-                                // For OakLeaves, is_face_visible remains true. All faces generated (CPU-side).
-                            } else {
-                                // Culling logic for non-OakLeaves blocks:
-                                if neighbor_world_by >= 0 && neighbor_world_by < CHUNK_HEIGHT as i32 {
-                                    if let Some(neighbor_block) = self.world.get_block_at_world(
-                                        neighbor_world_bx as f32,
-                                        neighbor_world_by as f32,
-                                        neighbor_world_bz as f32,
-                                    ) {
-                                        // Only cull if current block is Opaque and neighbor is Opaque Solid.
-                                        // `is_current_block_transparent` is `block.is_transparent()`.
-                                        // If current block is another transparent type (e.g. Glass), it won't be culled here.
-                                        if !is_current_block_transparent {
-                                            if neighbor_block.is_solid() && !neighbor_block.is_transparent() {
-                                                is_face_visible = false;
-                                            }
+                            if neighbor_world_by >= 0 && neighbor_world_by < CHUNK_HEIGHT as i32 {
+                                if let Some(neighbor_block) = self.world.get_block_at_world(
+                                    neighbor_world_bx as f32,
+                                    neighbor_world_by as f32,
+                                    neighbor_world_bz as f32,
+                                ) {
+                                    // If current block is transparent, always generate the face (CPU-side).
+                                    // is_face_visible remains true.
+                                    // If current block is opaque, then check neighbor.
+                                    if !is_current_block_transparent { // Current block is Opaque
+                                        if neighbor_block.is_solid() && !neighbor_block.is_transparent() {
+                                            is_face_visible = false; // Cull if neighbor is opaque solid
                                         }
                                     }
-                                    // If neighbor is None (e.g. unloaded chunk), face remains visible for non-OakLeaves.
+                                    // If current block is transparent, is_face_visible is not changed from its default 'true'.
                                 }
-                                // If neighbor is out of Y-bounds, face remains visible for non-OakLeaves.
+                                // If neighbor_block is None (e.g. unloaded chunk), is_face_visible remains true.
+                                // This is implicitly handled as the inner 'if let Some(neighbor_block)' won't execute.
                             }
+                            // Faces at world Y boundaries (y < 0 or y >= CHUNK_HEIGHT) also keep is_face_visible = true
+                            // as the outer 'if neighbor_world_by >= 0 ...' condition fails.
 
                             if is_face_visible {
-                                let vertices_template = face_type.get_vertices_template();
-                                let local_indices = face_type.get_local_indices();
+                                // For opaque blocks, generate mesh directly.
+                                // For transparent blocks, this face is visible, store block info for later processing.
+                                // This 'if is_face_visible' check is important because even for transparent blocks,
+                                // we only care about them if at least one face is visible.
+                                // However, our current logic for transparent blocks means all their faces are visible.
+                                // So, for transparent blocks, we effectively add them to the list once per block, not per face.
+                                // This needs to be handled carefully.
 
-                                const ATLAS_COLS: f32 = 16.0;
-                                const ATLAS_ROWS: f32 = 39.0;
-                                let tex_size_x = 1.0 / ATLAS_COLS;
-                                let tex_size_y = 1.0 / ATLAS_ROWS;
+                                // The decision to add to transparent_block_render_list should happen ONCE per block, not per face.
+                                // We will do this after the face loop if the block is transparent.
+                                if !is_current_block_transparent { // Opaque block processing
+                                    let vertices_template = face_type.get_vertices_template();
+                                    let local_indices = face_type.get_local_indices();
 
-                                let all_face_atlas_indices = block.get_texture_atlas_indices();
-                                let mut current_vertex_color = default_block_color;
+                                    const ATLAS_COLS: f32 = 16.0;
+                                    const ATLAS_ROWS: f32 = 39.0;
+                                    let tex_size_x = 1.0 / ATLAS_COLS;
+                                    let tex_size_y = 1.0 / ATLAS_ROWS;
 
-                                let face_specific_atlas_indices: [f32; 2] = match face_type {
-                                    CubeFace::Front => all_face_atlas_indices[0],
-                                    CubeFace::Back => all_face_atlas_indices[1],
-                                    CubeFace::Right => all_face_atlas_indices[2],
-                                    CubeFace::Left => all_face_atlas_indices[3],
-                                    CubeFace::Top => all_face_atlas_indices[4],
-                                    CubeFace::Bottom => all_face_atlas_indices[5],
-                                };
+                                    let all_face_atlas_indices = block.get_texture_atlas_indices();
+                                    let mut current_vertex_color = default_block_color;
 
-                                match block.block_type {
-                                    BlockType::Grass => {
-                                        if *face_type == CubeFace::Top {
-                                            current_vertex_color = [0.1, 0.9, 0.1];
-                                        } else if *face_type == CubeFace::Bottom {
-                                            current_vertex_color = [0.5, 0.25, 0.05];
-                                        } else {
-                                            current_vertex_color = [0.0, 0.8, 0.1];
+                                    let face_specific_atlas_indices: [f32; 2] = match face_type {
+                                        CubeFace::Front => all_face_atlas_indices[0],
+                                        CubeFace::Back => all_face_atlas_indices[1],
+                                        CubeFace::Right => all_face_atlas_indices[2],
+                                        CubeFace::Left => all_face_atlas_indices[3],
+                                        CubeFace::Top => all_face_atlas_indices[4],
+                                        CubeFace::Bottom => all_face_atlas_indices[5],
+                                    };
+
+                                    match block.block_type { // Only for opaque, as transparent colors are handled by shader tint
+                                        BlockType::Grass => {
+                                            if *face_type == CubeFace::Top { current_vertex_color = [0.1, 0.9, 0.1]; }
+                                            else if *face_type == CubeFace::Bottom { current_vertex_color = [0.5, 0.25, 0.05];}
+                                            else { current_vertex_color = [0.0, 0.8, 0.1]; }
                                         }
+                                        // OakLeaves is transparent, so its base color here is less critical if shader overrides
+                                        // Bedrock, Dirt, OakLog will use their default_block_color
+                                        _ => {}
                                     }
-                                    BlockType::OakLeaves => {
-                                        current_vertex_color = [0.1, 0.9, 0.2];
-                                    }
-                                    _ => {}
-                                }
 
-                                let u_min = face_specific_atlas_indices[0] * tex_size_x;
-                                let v_min = face_specific_atlas_indices[1] * tex_size_y;
-                                let u_max = u_min + tex_size_x;
-                                let v_max = v_min + tex_size_y;
+                                    let u_min = face_specific_atlas_indices[0] * tex_size_x;
+                                    let v_min = face_specific_atlas_indices[1] * tex_size_y;
+                                    let u_max = u_min + tex_size_x;
+                                    let v_max = v_min + tex_size_y;
 
-                                let uvs_for_bl_br_tr_tl_order = [
-                                    [u_min, v_max], [u_max, v_max], [u_max, v_min], [u_min, v_min],
-                                ];
-                                let uvs_for_bl_tl_tr_br_order = [
-                                    [u_min, v_max], [u_min, v_min], [u_max, v_min], [u_max, v_max],
-                                ];
+                                    let uvs_for_bl_br_tr_tl_order = [[u_min, v_max], [u_max, v_max], [u_max, v_min], [u_min, v_min]];
+                                    let uvs_for_bl_tl_tr_br_order = [[u_min, v_max], [u_min, v_min], [u_max, v_min], [u_max, v_max]];
 
-                                let selected_face_uvs = match face_type {
-                                    CubeFace::Front | CubeFace::Right | CubeFace::Left | CubeFace::Bottom =>
-                                        &uvs_for_bl_tl_tr_br_order,
-                                    CubeFace::Back | CubeFace::Top => &uvs_for_bl_br_tr_tl_order,
-                                };
-
-                                let (target_vertices, target_indices, current_vertex_offset) =
-                                    if is_current_block_transparent {
-                                        (
-                                            &mut transparent_vertices,
-                                            &mut transparent_indices,
-                                            &mut transparent_vertex_offset,
-                                        )
-                                    } else {
-                                        (
-                                            &mut opaque_vertices,
-                                            &mut opaque_indices,
-                                            &mut opaque_vertex_offset,
-                                        )
+                                    let selected_face_uvs = match face_type {
+                                        CubeFace::Front | CubeFace::Right | CubeFace::Left | CubeFace::Bottom => &uvs_for_bl_tl_tr_br_order,
+                                        CubeFace::Back | CubeFace::Top => &uvs_for_bl_br_tr_tl_order,
                                     };
 
-                                for (i, v_template) in vertices_template.iter().enumerate() {
-                                    let current_tree_id = if block.block_type == BlockType::OakLeaves {
-                                        block.tree_id.unwrap_or(0) // Default to 0 if None
-                                    } else {
-                                        0 // Not a tree, so ID is 0
-                                    };
-
-                                    target_vertices.push(Vertex {
-                                        position: (current_block_world_center
-                                            + glam::Vec3::from(v_template.position))
-                                        .into(),
-                                        color: current_vertex_color,
-                                        uv: selected_face_uvs[i],
-                                        tree_id: current_tree_id,
-                                    });
+                                    for (i, v_template) in vertices_template.iter().enumerate() {
+                                        opaque_vertices.push(Vertex {
+                                            position: (current_block_world_center + glam::Vec3::from(v_template.position)).into(),
+                                            color: current_vertex_color,
+                                            uv: selected_face_uvs[i],
+                                            tree_id: 0, // Opaque blocks don't have tree_id relevant for unique coloring
+                                        });
+                                    }
+                                    for local_idx in local_indices {
+                                        opaque_indices.push(opaque_vertex_offset + local_idx);
+                                    }
+                                    opaque_vertex_offset += vertices_template.len() as u16;
                                 }
-                                for local_idx in local_indices {
-                                    target_indices.push(*current_vertex_offset + local_idx);
-                                }
-                                *current_vertex_offset += vertices_template.len() as u16;
                             }
+                        } // End of face loop
+
+                        // After iterating all faces for a block, if it's transparent, add it to the list for later sorted processing.
+                        // We only need to add it once per block.
+                        if is_current_block_transparent {
+                            // Check if this block (at lx,ly,lz) has already been added to avoid processing a block multiple times
+                            // if it had multiple visible faces (though for transparent, all faces are visible by current logic)
+                            // This check is actually not needed if we add it here, once per (lx,ly,lz) block.
+                            transparent_block_render_list.push(TransparentBlockData {
+                                block: *block, // Copy the block data
+                                lx, ly, lz,
+                                world_center: current_block_world_center,
+                            });
                         }
                     }
                 }
             }
+        } // End of lx, ly, lz loops
+
+        // --- Sort and process transparent blocks ---
+        let player_camera_pos = self.player.position + glam::Vec3::new(0.0, PLAYER_EYE_HEIGHT, 0.0); // Use camera position for sorting
+        transparent_block_render_list.sort_by(|a, b| {
+            let dist_a = player_camera_pos.distance_squared(a.world_center);
+            let dist_b = player_camera_pos.distance_squared(b.world_center);
+            dist_b.partial_cmp(&dist_a).unwrap_or(std::cmp::Ordering::Equal) // Sorts descending (far to near)
+        });
+
+        for t_block_data in transparent_block_render_list {
+            let block = &t_block_data.block; // Use the stored block data
+            let lx = t_block_data.lx;
+            let ly = t_block_data.ly;
+            let lz = t_block_data.lz;
+            let current_block_world_center = t_block_data.world_center;
+
+            // Determine correct sentinel color for the transparent block
+            let base_vertex_color = match block.block_type {
+                BlockType::OakLeaves => [0.1, 0.9, 0.2], // Sentinel for OakLeaves
+                // Add other transparent types here if they need specific sentinel colors
+                _ => [0.5, 0.5, 0.5], // Default for unspecified transparent types
+            };
+
+            // Iterate through faces for this transparent block
+            let face_definitions: [(CubeFace, (i32, i32, i32)); 6] = [
+                (CubeFace::Front, (0, 0, -1)), (CubeFace::Back, (0, 0, 1)),
+                (CubeFace::Right, (1, 0, 0)), (CubeFace::Left, (-1, 0, 0)),
+                (CubeFace::Top, (0, 1, 0)), (CubeFace::Bottom, (0, -1, 0)),
+            ];
+
+            for (face_type, offset) in face_definitions.iter() {
+                // CPU Culling for transparent blocks (simplified: always visible unless against solid opaque)
+                // For this pass, we assume all 6 faces of a transparent block should be generated,
+                // as per previous fixes. The sorting handles inter-block order.
+                // A more refined culling for transparent faces could be done here if needed,
+                // but for now, let's generate all 6 faces of each transparent block from the sorted list.
+                // The `is_face_visible` check based on neighbors is effectively always true here for transparent blocks.
+
+                let vertices_template = face_type.get_vertices_template();
+                let local_indices = face_type.get_local_indices();
+
+                const ATLAS_COLS: f32 = 16.0;
+                const ATLAS_ROWS: f32 = 39.0;
+                let tex_size_x = 1.0 / ATLAS_COLS;
+                let tex_size_y = 1.0 / ATLAS_ROWS;
+
+                let all_face_atlas_indices = block.get_texture_atlas_indices();
+                // For transparent blocks, vertex color is often a sentinel or base for shader.
+                let current_vertex_color = base_vertex_color;
+
+                let face_specific_atlas_indices: [f32; 2] = match face_type {
+                    CubeFace::Front => all_face_atlas_indices[0], CubeFace::Back => all_face_atlas_indices[1],
+                    CubeFace::Right => all_face_atlas_indices[2], CubeFace::Left => all_face_atlas_indices[3],
+                    CubeFace::Top => all_face_atlas_indices[4], CubeFace::Bottom => all_face_atlas_indices[5],
+                };
+
+                let u_min = face_specific_atlas_indices[0] * tex_size_x;
+                let v_min = face_specific_atlas_indices[1] * tex_size_y;
+                let u_max = u_min + tex_size_x;
+                let v_max = v_min + tex_size_y;
+
+                let uvs_for_bl_br_tr_tl_order = [[u_min, v_max], [u_max, v_max], [u_max, v_min], [u_min, v_min]];
+                let uvs_for_bl_tl_tr_br_order = [[u_min, v_max], [u_min, v_min], [u_max, v_min], [u_max, v_max]];
+
+                let selected_face_uvs = match face_type {
+                    CubeFace::Front | CubeFace::Right | CubeFace::Left | CubeFace::Bottom => &uvs_for_bl_tl_tr_br_order,
+                    CubeFace::Back | CubeFace::Top => &uvs_for_bl_br_tr_tl_order,
+                };
+
+                for (i, v_template) in vertices_template.iter().enumerate() {
+                    let current_tree_id = if block.block_type == BlockType::OakLeaves {
+                        block.tree_id.unwrap_or(0)
+                    } else { 0 };
+
+                    transparent_vertices.push(Vertex {
+                        position: (current_block_world_center + glam::Vec3::from(v_template.position)).into(),
+                        color: current_vertex_color,
+                        uv: selected_face_uvs[i],
+                        tree_id: current_tree_id,
+                    });
+                }
+                for local_idx in local_indices {
+                    transparent_indices.push(transparent_vertex_offset + local_idx);
+                }
+                transparent_vertex_offset += vertices_template.len() as u16;
+            }
         }
 
+        // --- Buffer creation ---
         use wgpu::util::DeviceExt;
         let mut opaque_buffers: Option<ChunkRenderBuffers> = None;
         if !opaque_vertices.is_empty() && !opaque_indices.is_empty() {
