@@ -37,6 +37,7 @@ impl Block {
     pub fn is_transparent(&self) -> bool {
         match self.block_type {
             BlockType::OakLeaves => true,
+            BlockType::Air => true, // Air is also visually transparent
             _ => false,
         }
     }

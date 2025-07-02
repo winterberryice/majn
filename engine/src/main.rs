@@ -808,27 +808,30 @@ impl State {
                                 chunk_world_origin_z as i32 + lz as i32 + offset.2;
 
                             let mut is_face_visible = true;
-                            if neighbor_world_by >= 0 && neighbor_world_by < CHUNK_HEIGHT as i32 {
-                                if let Some(neighbor_block) = self.world.get_block_at_world(
-                                    neighbor_world_bx as f32,
-                                    neighbor_world_by as f32,
-                                    neighbor_world_bz as f32,
-                                ) {
-                                    // If current block is transparent, always generate the face (CPU-side).
-                                    // is_face_visible remains true.
-                                    // If current block is opaque, then check neighbor.
-                                    if !is_current_block_transparent { // Current block is Opaque
-                                        if neighbor_block.is_solid() && !neighbor_block.is_transparent() {
-                                            is_face_visible = false; // Cull if neighbor is opaque solid
+
+                            if block.block_type == BlockType::OakLeaves {
+                                // For OakLeaves, is_face_visible remains true. All faces generated (CPU-side).
+                            } else {
+                                // Culling logic for non-OakLeaves blocks:
+                                if neighbor_world_by >= 0 && neighbor_world_by < CHUNK_HEIGHT as i32 {
+                                    if let Some(neighbor_block) = self.world.get_block_at_world(
+                                        neighbor_world_bx as f32,
+                                        neighbor_world_by as f32,
+                                        neighbor_world_bz as f32,
+                                    ) {
+                                        // Only cull if current block is Opaque and neighbor is Opaque Solid.
+                                        // `is_current_block_transparent` is `block.is_transparent()`.
+                                        // If current block is another transparent type (e.g. Glass), it won't be culled here.
+                                        if !is_current_block_transparent {
+                                            if neighbor_block.is_solid() && !neighbor_block.is_transparent() {
+                                                is_face_visible = false;
+                                            }
                                         }
                                     }
-                                    // If current block is transparent, is_face_visible is not changed from its default 'true'.
+                                    // If neighbor is None (e.g. unloaded chunk), face remains visible for non-OakLeaves.
                                 }
-                                // If neighbor_block is None (e.g. unloaded chunk), is_face_visible remains true.
-                                // This is implicitly handled as the inner 'if let Some(neighbor_block)' won't execute.
+                                // If neighbor is out of Y-bounds, face remains visible for non-OakLeaves.
                             }
-                            // Faces at world Y boundaries (y < 0 or y >= CHUNK_HEIGHT) also keep is_face_visible = true
-                            // as the outer 'if neighbor_world_by >= 0 ...' condition fails.
 
                             if is_face_visible {
                                 let vertices_template = face_type.get_vertices_template();
