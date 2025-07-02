@@ -1,5 +1,6 @@
 use crate::block::{Block, BlockType};
 use rand::Rng; // Assuming block.rs is in the same directory
+use std::collections::VecDeque;
 
 pub const CHUNK_WIDTH: usize = 16;
 pub const CHUNK_HEIGHT: usize = 32; // Reduced height for now
@@ -30,30 +31,103 @@ impl Chunk {
     pub fn calculate_initial_sunlight(&mut self) {
         for x in 0..CHUNK_WIDTH {
             for z in 0..CHUNK_DEPTH {
-                let mut light_penetration = MAX_LIGHT;
+                let mut current_light_level = MAX_LIGHT;
                 for y in (0..CHUNK_HEIGHT).rev() { // Iterate from top to bottom
-                    let block = &mut self.blocks[x][y][z];
-                    if light_penetration > 0 {
-                        if block.is_solid() {
-                             // Solid blocks stop light penetration for blocks below them in this column.
-                             // The current solid block still gets the current light_penetration value.
-                            self.light_levels[x][y][z] = light_penetration;
-                            light_penetration = 0; // Stop light for blocks below this one in this column
-                        } else if block.is_transparent() {
-                            // Transparent blocks (like leaves) get full light and reduce it slightly for below.
-                            self.light_levels[x][y][z] = light_penetration;
-                            // For now, leaves don't dim light, but this is where you could add it:
-                            // light_penetration = light_penetration.saturating_sub(1);
-                        } else { // Air block
-                            self.light_levels[x][y][z] = light_penetration;
-                        }
-                    } else {
+                    let block_type = self.blocks[x][y][z].block_type; // Get block_type directly
+
+                    if current_light_level == 0 {
                         self.light_levels[x][y][z] = 0;
+                        continue;
                     }
+
+                    self.light_levels[x][y][z] = current_light_level;
+
+                    // Determine how much light is lost passing through this block
+                    let light_reduction = match block_type {
+                        BlockType::Air => 0, // Air doesn't reduce light
+                        BlockType::OakLeaves => 1, // Leaves reduce light slightly
+                        // Solid blocks completely block sunlight from passing further down this column
+                        _ if self.blocks[x][y][z].is_solid() => MAX_LIGHT,
+                        _ => 0, // Other non-solid, non-transparent blocks (if any)
+                    };
+
+                    current_light_level = current_light_level.saturating_sub(light_reduction);
                 }
             }
         }
     }
+
+    // New method for light propagation
+    fn propagate_light(&mut self) {
+        let mut light_queue: VecDeque<(usize, usize, usize)> = VecDeque::new();
+
+        // Initial population of the queue:
+        // Add all blocks that currently have light and can potentially spread it.
+        // This includes blocks lit by calculate_initial_sunlight.
+        for x in 0..CHUNK_WIDTH {
+            for y in 0..CHUNK_HEIGHT {
+                for z in 0..CHUNK_DEPTH {
+                    if self.light_levels[x][y][z] > 0 {
+                        light_queue.push_back((x, y, z));
+                    }
+                }
+            }
+        }
+
+        // Define offsets for 6 neighbors (dx, dy, dz)
+        let neighbors_offsets: [(isize, isize, isize); 6] = [
+            (1, 0, 0), (-1, 0, 0), (0, 1, 0),
+            (0, -1, 0), (0, 0, 1), (0, 0, -1)
+        ];
+
+        while let Some((x, y, z)) = light_queue.pop_front() {
+            let current_light = self.light_levels[x][y][z];
+            if current_light <= 1 { // Cannot propagate light weaker than or equal to 1
+                continue;
+            }
+
+            for (dx, dy, dz) in neighbors_offsets.iter() {
+                let nx = x as isize + dx;
+                let ny = y as isize + dy;
+                let nz = z as isize + dz;
+
+                // Check bounds for neighbor
+                if nx >= 0 && nx < CHUNK_WIDTH as isize &&
+                   ny >= 0 && ny < CHUNK_HEIGHT as isize &&
+                   nz >= 0 && nz < CHUNK_DEPTH as isize {
+
+                    let nu = nx as usize;
+                    let nv = ny as usize;
+                    let nw = nz as usize;
+
+                    // Light reduction depends on the block type it's entering
+                    let neighbor_block = &self.blocks[nu][nv][nw];
+
+                    // Standard light reduction when passing from one block to the next.
+                    // For leaves, it's higher as they are more opaque than air.
+                    let propagation_cost = match neighbor_block.block_type {
+                        BlockType::OakLeaves => 2, // Light has a harder time passing into/through leaves.
+                        _ => 1, // Standard cost for air and other blocks.
+                    };
+
+                    let new_neighbor_light = current_light.saturating_sub(propagation_cost);
+
+                    if new_neighbor_light > self.light_levels[nu][nv][nw] {
+                        self.light_levels[nu][nv][nw] = new_neighbor_light;
+
+                        // Only add to queue if the neighbor can propagate light further.
+                        // Solid blocks receive light but don't propagate it unless they are light sources.
+                        // Transparent blocks (like leaves) can propagate.
+                        if !neighbor_block.is_solid() && new_neighbor_light > 1 {
+                            light_queue.push_back((nu, nv, nw));
+                        }
+                    }
+                }
+                // TODO: Handle propagation to adjacent chunks later
+            }
+        }
+    }
+
 
     #[allow(deprecated)] // Allow rand::thread_rng and rng.random_bool for now
     pub fn generate_terrain(&mut self) {
@@ -95,6 +169,7 @@ impl Chunk {
         }
         // After all terrain and features are placed, calculate sunlight
         self.calculate_initial_sunlight();
+        self.propagate_light(); // Spread the light
     }
 
     // TASK: Create a helper function to place a tree at a specific location.
