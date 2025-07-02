@@ -21,6 +21,7 @@ pub struct DebugOverlay {
     frame_count: u32,
     accumulated_time: f32,
     fps: u32,
+    target_block_light_level: Option<u8>, // New field
 }
 
 impl DebugOverlay {
@@ -56,6 +57,7 @@ impl DebugOverlay {
             frame_count: 0,
             accumulated_time: 0.0,
             fps: 0,
+            target_block_light_level: None, // Initialize new field
         }
     }
 
@@ -67,7 +69,8 @@ impl DebugOverlay {
     //     self.visible
     // }
 
-    pub fn update(&mut self, player_position: Vec3) {
+    // Modified update signature to accept world and target_block_position
+    pub fn update(&mut self, player_position: Vec3, world: &crate::world::World, target_block_position: Option<glam::IVec3>) {
         if !self.visible {
             // Reset FPS calculation when not visible to avoid large delta_time on re-enabling
             self.last_frame_time = Instant::now();
@@ -90,10 +93,31 @@ impl DebugOverlay {
             self.accumulated_time -= 1.0;
         }
 
-        let text_content = format!(
+        // Update target block light level
+        if let Some(pos) = target_block_position {
+            let ((chunk_x, chunk_z), (local_x, local_y, local_z)) =
+                crate::world::World::world_to_chunk_coords(pos.x as f32, pos.y as f32, pos.z as f32);
+
+            if let Some(chunk) = world.get_chunk(chunk_x, chunk_z) {
+                self.target_block_light_level = chunk.get_light_level(local_x, local_y, local_z);
+            } else {
+                self.target_block_light_level = None;
+            }
+        } else {
+            self.target_block_light_level = None;
+        }
+
+        let mut text_content = format!(
             "FPS: {}\nPosition: {:.2}, {:.2}, {:.2}",
             self.fps, player_position.x, player_position.y, player_position.z
         );
+
+        if let Some(light) = self.target_block_light_level {
+            text_content.push_str(&format!("\nTarget Light: {}", light));
+        } else if target_block_position.is_some() {
+            text_content.push_str("\nTarget Light: N/A (Chunk not loaded or out of bounds)");
+        }
+
 
         // Update the section's text.
         self.section.text = vec![
