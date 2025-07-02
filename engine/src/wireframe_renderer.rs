@@ -355,7 +355,7 @@ impl WireframeRenderer {
             let neighbor_pos = selected_pos + neighbor_offset;
 
             let mut should_draw_face = true;
-            if let Some(neighbor_block) = world.get_block_at_world(
+            if let Some(neighbor_block) = world.get_block_at_world_f32(
                 neighbor_pos.x as f32,
                 neighbor_pos.y as f32,
                 neighbor_pos.z as f32,

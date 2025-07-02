@@ -61,9 +61,12 @@ pub fn propagate_queued_light(world: &mut World, light_queue: &mut VecDeque<Ligh
         let current_light_level = node.level;
 
         // Iterate over neighbors (6 cardinal directions)
-        for dx in -1..=1 {
-            for dy in -1..=1 {
-                for dz in -1..=1 {
+        for dx_i32 in -1..=1 {
+            for dy_i32 in -1..=1 {
+                for dz_i32 in -1..=1 {
+                    let dx: i32 = dx_i32;
+                    let dy: i32 = dy_i32;
+                    let dz: i32 = dz_i32;
                     if dx.abs() + dy.abs() + dz.abs() != 1 {
                         continue; // Skip self and diagonals
                     }
@@ -201,9 +204,12 @@ fn unpropagate_light(
     }
 
     while let Some((current_pos, prev_removed_level)) = removal_queue.pop_front() {
-        for dx in -1..=1 {
-            for dy in -1..=1 {
-                for dz in -1..=1 {
+        for dx_i32 in -1..=1 {
+            for dy_i32 in -1..=1 {
+                for dz_i32 in -1..=1 {
+                    let dx: i32 = dx_i32;
+                    let dy: i32 = dy_i32;
+                    let dz: i32 = dz_i32;
                     if dx.abs() + dy.abs() + dz.abs() != 1 {
                         continue; // Skip self and diagonals
                     }
@@ -282,7 +288,9 @@ pub fn update_light_after_block_change(
     changed_pos_world: IVec3,
     old_block_was_opaque: bool, // Opacity of the block *before* change
     new_block_is_opaque: bool,   // Opacity of the block *after* change
-    old_emission: u8,
+    _old_emission: u8, // Prefixed with underscore as it's not directly used in this function body
+                       // Its conceptual importance is that if it was > 0, unpropagate_light for block light
+                       // would have handled removing its effects.
     new_emission: u8,
 ) {
     // Placeholder for the full update logic.

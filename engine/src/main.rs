@@ -794,7 +794,7 @@ impl State {
 
                             let mut is_face_visible = true;
                             if neighbor_world_by >= 0 && neighbor_world_by < CHUNK_HEIGHT as i32 {
-                                if let Some(neighbor_block) = self.world.get_block_at_world(
+                                if let Some(neighbor_block) = self.world.get_block_at_world_f32(
                                     neighbor_world_bx as f32,
                                     neighbor_world_by as f32,
                                     neighbor_world_bz as f32,

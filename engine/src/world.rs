@@ -22,54 +22,22 @@ impl World {
 
     // Gets a reference to a chunk if it exists, otherwise generates/loads it.
     pub fn get_or_create_chunk(&mut self, chunk_x: i32, chunk_z: i32) -> &mut Chunk {
-        // Check if the chunk already exists and has lighting calculated (e.g. by a flag or by checking some light values)
-        // For now, we assume if it exists, lighting is done. If it's newly inserted, calculate lighting.
-        // This logic might need refinement if chunks can be generated without immediate lighting.
+        let needs_initialization = !self.chunks.contains_key(&(chunk_x, chunk_z));
 
-        let is_new_chunk = !self.chunks.contains_key(&(chunk_x, chunk_z));
-
-        let chunk_entry = self.chunks.entry((chunk_x, chunk_z)).or_insert_with(|| {
+        if needs_initialization {
+            // Chunk doesn't exist, so create, generate terrain, and insert it.
             let mut new_chunk = Chunk::new(chunk_x, chunk_z);
             new_chunk.generate_terrain();
-            new_chunk // Terrain generated, but lighting not yet done for this new_chunk
-        });
+            self.chunks.insert((chunk_x, chunk_z), new_chunk);
 
-        if is_new_chunk {
-            // The chunk was just inserted and generated. Now calculate its lighting.
-            // This requires `&mut World` (which `self` is), so we do it after `or_insert_with`.
-            // We pass chunk_x, chunk_z because initialize_lighting_for_generated_chunk
-            // will need to operate on this chunk and potentially its neighbors.
-            // Note: `chunk_entry` is a mutable reference to the chunk within the HashMap.
-            // `initialize_lighting_for_generated_chunk` takes `&mut World`.
-            // This is a classic borrow checker problem: we have a mutable borrow of a part of `self.chunks`
-            // via `chunk_entry`, and `initialize_lighting_for_generated_chunk` needs `&mut self` (the whole World).
-
-            // To resolve this, we can't hold `chunk_entry` across the lighting call.
-            // We can release the borrow from `or_insert_with` by letting it go out of scope,
-            // then call lighting, then get the chunk reference again.
-            // However, `or_insert_with` returns the mutable reference directly.
-
-            // A common pattern:
-            // 1. Generate terrain for the new chunk (done by `or_insert_with` if new).
-            // 2. *After* the `or_insert_with` block (so the mutable borrow of `self.chunks` from `entry()` is released),
-            //    call the lighting function which takes `&mut self`.
-            // 3. Then, retrieve the chunk again to return it.
-
-            // Let's restructure:
-            // First, ensure the chunk is generated if it's new.
-            if !self.chunks.contains_key(&(chunk_x, chunk_z)) {
-                let mut new_chunk = Chunk::new(chunk_x, chunk_z);
-                new_chunk.generate_terrain();
-                self.chunks.insert((chunk_x, chunk_z), new_chunk);
-                // Now the chunk is in the map, and we don't have a direct borrow from `entry()`.
-                // We can call the lighting function.
-                lighting::initialize_lighting_for_generated_chunk(self, chunk_x, chunk_z);
-            }
-            // This `self` in the lighting call refers to the entire World struct.
+            // Now that the chunk is inserted and we don't have an interfering borrow from `entry()`,
+            // we can safely call the lighting initialization which takes `&mut self`.
+            lighting::initialize_lighting_for_generated_chunk(self, chunk_x, chunk_z);
         }
 
-        // Now that lighting is done (if it was a new chunk), get and return the chunk.
-        self.chunks.get_mut(&(chunk_x, chunk_z)).unwrap() // Should always exist now
+        // Retrieve and return the mutable reference to the chunk.
+        // It's guaranteed to exist at this point, either pre-existing or just inserted.
+        self.chunks.get_mut(&(chunk_x, chunk_z)).unwrap()
     }
 
     // Gets an immutable reference to a chunk if it exists.

@@ -245,9 +245,9 @@ fn get_nearby_block_aabbs(player_world_box: &AABB, world: &World) -> Vec<AABB> {
                     continue;
                 }
 
-                // Use world.get_block_at_world to get block data
+                // Use world.get_block_at_world_f32 to get block data
                 // This method handles chunk boundaries internally.
-                if let Some(block) = world.get_block_at_world(world_bx as f32, world_by as f32, world_bz as f32) {
+                if let Some(block) = world.get_block_at_world_f32(world_bx as f32, world_by as f32, world_bz as f32) {
                     if block.is_solid() {
                         // The AABB for the block should be in world coordinates
                         let block_min_corner = Vec3::new(world_bx as f32, world_by as f32, world_bz as f32);
