@@ -1139,7 +1139,8 @@ impl State {
             0,
             bytemuck::cast_slice(&[self.camera_uniform]),
         );
-        self.debug_overlay.update(self.player.position);
+        // Pass self.world and None for target_block_position for now
+        self.debug_overlay.update(self.player.position, &self.world, None);
 
         // Clear per-frame input flags
         self.input_state.clear_frame_state(); // Use self.input_state
