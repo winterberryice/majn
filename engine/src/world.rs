@@ -90,7 +90,13 @@ impl World {
 
         let chunk = self.get_or_create_chunk(chunk_x, chunk_z);
         match chunk.set_block(local_x, local_y, local_z, block_type) {
-            Ok(_) => Ok((chunk_x, chunk_z)),
+            Ok(_) => {
+                // After setting a block, recalculate sunlight for this chunk.
+                // This is a simple approach. A more advanced system would update
+                // light propagation starting from the modified block.
+                chunk.calculate_initial_sunlight();
+                Ok((chunk_x, chunk_z))
+            }
             Err(e) => Err(e), // Propagate error from chunk.set_block
         }
     }

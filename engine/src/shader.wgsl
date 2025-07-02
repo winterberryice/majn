@@ -10,12 +10,14 @@ struct VertexInput {
     @location(0) position: vec3<f32>,
     @location(1) color: vec3<f32>,    // Kept for potential future use (tinting, etc.)
     @location(2) uv: vec2<f32>,       // Texture coordinates
+    @location(3) light_level: f32, // Added light level
 };
 
 struct VertexOutput {
     @builtin(position) clip_position: vec4<f32>,
     @location(0) original_color: vec3<f32>, // Pass original color through
     @location(1) tex_coords: vec2<f32>,   // Pass UVs to fragment shader
+    @location(2) v_light_level: f32,    // Pass light level to fragment shader
 };
 
 @vertex
@@ -24,6 +26,7 @@ fn vs_main(model: VertexInput) -> VertexOutput {
     out.clip_position = camera.view_proj * vec4<f32>(model.position, 1.0);
     out.original_color = model.color; // Pass through the original vertex color
     out.tex_coords = model.uv;        // Pass through UV coordinates
+    out.v_light_level = model.light_level; // Pass through light level
     return out;
 }
 
@@ -37,11 +40,12 @@ fn vs_main(model: VertexInput) -> VertexOutput {
 struct FragmentInput {
     @location(0) original_color: vec3<f32>,
     @location(1) tex_coords: vec2<f32>,
+    @location(2) light_level: f32, // Received light level
 }
 
 @fragment
 fn fs_main(in: FragmentInput) -> @location(0) vec4<f32> {
-    let sampled_color = textureSample(t_diffuse, s_sampler, in.tex_coords);
+    var final_sampled_color = textureSample(t_diffuse, s_sampler, in.tex_coords);
 
     // Check for sentinel color indicating Grass Top that needs tinting
     // Sentinel color for Grass Top, set in main.rs: [0.1, 0.9, 0.1]
@@ -60,14 +64,19 @@ fn fs_main(in: FragmentInput) -> @location(0) vec4<f32> {
         // Texture for grass top is at (0,0) which is grayscale.
         // Texture for oak leaves is at (4,3) which is also grayscale.
         // Use the intensity (e.g., from red channel) from the sampled texture.
-        let intensity = sampled_color.r;
+        let intensity = final_sampled_color.r;
         // Apply a greenish tint. Adjust factors for desired green hue.
         // Example: (R: low, G: high, B: medium-low)
         // Using the same tint factors for both grass and leaves as per requirement "similar tint".
         let tinted_color = vec3<f32>(intensity * 0.4, intensity * 0.9, intensity * 0.35);
-        return vec4<f32>(tinted_color, sampled_color.a);
-    } else {
-        // For all other blocks/faces, use the sampled texture color directly.
-        return sampled_color;
+        final_sampled_color = vec4<f32>(tinted_color, final_sampled_color.a);
     }
+
+    // Apply lighting
+    // Ensure light level is at least a minimum ambient value to avoid pure black.
+    let ambient_light = 0.05; // Smallest light contribution
+    let effective_light = max(in.light_level, ambient_light);
+    let lit_color = final_sampled_color.rgb * effective_light;
+
+    return vec4<f32>(lit_color, final_sampled_color.a);
 }

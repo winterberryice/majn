@@ -325,6 +325,7 @@ pub struct Vertex {
     pub position: [f32; 3], // Made public
     pub color: [f32; 3],    // Made public
     pub uv: [f32; 2],       // Added for texture coordinates
+    pub light_level: f32,   // Added for light level (normalized 0.0-1.0)
 }
 
 impl Vertex {
@@ -349,6 +350,11 @@ impl Vertex {
                     offset: (std::mem::size_of::<[f32; 3]>() * 2) as wgpu::BufferAddress, // After position and color
                     shader_location: 2,                                                   // uv
                     format: wgpu::VertexFormat::Float32x2,
+                },
+                wgpu::VertexAttribute {
+                    offset: (std::mem::size_of::<[f32; 3]>() * 2 + std::mem::size_of::<[f32; 2]>()) as wgpu::BufferAddress, // After position, color, and uv
+                    shader_location: 3, // light_level
+                    format: wgpu::VertexFormat::Float32,
                 },
             ],
         }
@@ -896,12 +902,16 @@ impl State {
                                     };
 
                                 for (i, v_template) in vertices_template.iter().enumerate() {
+                                    let light_level_u8 = chunk.get_light_level(lx, ly, lz).unwrap_or(0);
+                                    let normalized_light_level = light_level_u8 as f32 / chunk::MAX_LIGHT as f32;
+
                                     target_vertices.push(Vertex {
                                         position: (current_block_world_center
                                             + glam::Vec3::from(v_template.position))
                                         .into(),
                                         color: current_vertex_color,
                                         uv: selected_face_uvs[i],
+                                        light_level: normalized_light_level,
                                     });
                                 }
                                 for local_idx in local_indices {

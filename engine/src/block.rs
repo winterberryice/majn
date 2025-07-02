@@ -12,12 +12,16 @@ pub enum BlockType {
 #[derive(Debug, Clone, Copy)]
 pub struct Block {
     pub block_type: BlockType,
+    pub light_level: u8, // Added light_level
     // We can add more properties later, like light levels, custom data, etc.
 }
 
 impl Block {
     pub fn new(block_type: BlockType) -> Self {
-        Block { block_type }
+        Block {
+            block_type,
+            light_level: 0, // Initialize light_level to 0
+        }
     }
 
     pub fn is_solid(&self) -> bool {
