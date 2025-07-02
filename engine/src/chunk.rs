@@ -58,7 +58,7 @@ impl Chunk {
     }
 
     // New method for light propagation
-    fn propagate_light(&mut self) {
+    pub fn propagate_light(&mut self) { // Made public
         let mut light_queue: VecDeque<(usize, usize, usize)> = VecDeque::new();
 
         // Initial population of the queue:
