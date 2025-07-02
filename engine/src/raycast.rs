@@ -69,11 +69,7 @@ pub fn cast_ray(
 
     // Initial check for the block the player is standing in
     // (or rather, the block the eye is in)
-    if let Some(block) = world.get_block_at_world(
-        current_voxel_coord.x as f32,
-        current_voxel_coord.y as f32,
-        current_voxel_coord.z as f32,
-    ) {
+    if let Some(block) = world.get_block_at_world(current_voxel_coord) {
         if block.block_type != BlockType::Air {
             // Cannot select the block the eye is inside. This case is tricky.
             // For now, we assume the first step will take us out of it.
@@ -119,11 +115,7 @@ pub fn cast_ray(
         // Check block at current_voxel_coord
         // World coordinates for get_block_at_world can be any point within the block,
         // so using the corner (current_voxel_coord) is fine.
-        if let Some(block) = world.get_block_at_world(
-            current_voxel_coord.x as f32,
-            current_voxel_coord.y as f32,
-            current_voxel_coord.z as f32,
-        ) {
+        if let Some(block) = world.get_block_at_world(current_voxel_coord) {
             if block.block_type != BlockType::Air { // Found a solid block
                 return Some((current_voxel_coord, last_face));
             }

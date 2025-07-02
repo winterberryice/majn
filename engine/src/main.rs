@@ -825,7 +825,7 @@ impl State {
                         }
 
                         // Determine if the block is transparent (for mesh type)
-                        let is_current_block_transparent = block.is_transparent(); // Visual transparency
+                        let is_current_block_transparent = block.is_transparent_for_rendering(); // Visual transparency
 
                         // Default block_color, might be overridden for specific types/faces
                         let default_block_color = match block.block_type {
@@ -861,27 +861,24 @@ impl State {
 
                             let mut is_face_visible = true;
                             if neighbor_world_by >= 0 && neighbor_world_by < CHUNK_HEIGHT as i32 {
-                                if let Some(neighbor_block) = self.world.get_block_at_world(
-                                    neighbor_world_bx as f32,
-                                    neighbor_world_by as f32,
-                                    neighbor_world_bz as f32,
-                                ) {
-                                    // Culling logic:
-                                    // A face is culled if the neighbor block is:
-                                    // 1. Solid (physics-wise, meaning it's not Air)
-                                    // 2. AND NOT transparent (visual-wise)
-                                    // 3. UNLESS the current block itself is transparent.
-                                    //    Transparent blocks should not cull each other's faces.
-                                    if neighbor_block.is_solid() && !neighbor_block.is_transparent() && !is_current_block_transparent {
+                                let neighbor_world_pos = glam::ivec3(neighbor_world_bx, neighbor_world_by, neighbor_world_bz);
+                                if let Some(neighbor_block) = self.world.get_block_at_world(neighbor_world_pos) {
+                                    if neighbor_block.is_solid() && !neighbor_block.is_transparent_for_rendering() && !is_current_block_transparent {
                                         is_face_visible = false;
                                     }
-                                    // If current block is transparent, and neighbor is also transparent, face should be visible.
-                                    if is_current_block_transparent && neighbor_block.is_transparent() {
-                                        is_face_visible = true;
+                                    if is_current_block_transparent && neighbor_block.is_transparent_for_rendering() {
+                                        if neighbor_block.block_type == block.block_type {
+                                            // Don't render internal faces of same transparent type (e.g. water-water)
+                                            is_face_visible = false;
+                                        } else {
+                                            // Render if different transparent types (e.g. water next to glass)
+                                            is_face_visible = true;
+                                        }
                                     }
                                 }
+                                // If neighbor_block is None (outside loaded world but within y-bounds), face is visible.
                             }
-                            // Faces at chunk boundaries (not checking outside world bounds) are always visible.
+                            // If neighbor_world_by is out of bounds, face is also visible (boundary of world).
 
                             if is_face_visible {
                                 let vertices_template = face_type.get_vertices_template();
