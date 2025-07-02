@@ -44,6 +44,7 @@ impl Chunk {
         // After the main terrain is set, we make a second pass to add features like trees.
         let mut rng = rand::rng(); // Create a random number generator
         const TREE_CHANCE: f64 = 0.02; // 2% chance to try and place a tree at any given spot
+        let mut next_tree_id: u32 = 1; // Start tree IDs from 1
 
         for x in 2..(CHUNK_WIDTH - 2) {
             // Iterate with a margin to keep trees from chunk edges
@@ -53,7 +54,11 @@ impl Chunk {
                     // Use the random number generator to decide if a tree should grow here
                     if rng.random_bool(TREE_CHANCE) {
                         // The ground level for the tree trunk is one block above the grass.
-                        self.place_tree(x, surface_level + 1, z);
+                        self.place_tree(x, surface_level + 1, z, next_tree_id);
+                        next_tree_id = next_tree_id.wrapping_add(1); // Increment for next tree
+                        if next_tree_id == 0 { // Avoid tree_id 0 if it wraps around, as 0 is default/non-tree
+                            next_tree_id = 1;
+                        }
                     }
                 }
             }
@@ -62,7 +67,7 @@ impl Chunk {
 
     // TASK: Create a helper function to place a tree at a specific location.
     // This makes the generation logic cleaner.
-    fn place_tree(&mut self, x: usize, y_base: usize, z: usize) {
+    fn place_tree(&mut self, x: usize, y_base: usize, z: usize, tree_id: u32) { // Added tree_id parameter
         // A simple tree structure.
         let trunk_height: usize = 4;
         let leaves_radius: usize = 2;
@@ -101,11 +106,13 @@ impl Chunk {
                         if self.blocks[block_x as usize][block_y][block_z as usize].block_type
                             == BlockType::Air
                         {
-                            self.set_block(
+                            // Set OakLeaves block with tree_id
+                            self.set_block_with_tree_id(
                                 block_x as usize,
                                 block_y,
                                 block_z as usize,
                                 BlockType::OakLeaves,
+                                tree_id,
                             )
                             .unwrap_or_default();
                         }
@@ -136,6 +143,23 @@ impl Chunk {
     ) -> Result<(), &'static str> {
         if x < CHUNK_WIDTH && y < CHUNK_HEIGHT && z < CHUNK_DEPTH {
             self.blocks[x][y][z] = Block::new(block_type);
+            Ok(())
+        } else {
+            Err("Coordinates out of chunk bounds")
+        }
+    }
+
+    // Helper to set a block with a tree_id at a given coordinate
+    pub fn set_block_with_tree_id(
+        &mut self,
+        x: usize,
+        y: usize,
+        z: usize,
+        block_type: BlockType,
+        tree_id: u32,
+    ) -> Result<(), &'static str> {
+        if x < CHUNK_WIDTH && y < CHUNK_HEIGHT && z < CHUNK_DEPTH {
+            self.blocks[x][y][z] = Block::new_with_tree_id(block_type, tree_id);
             Ok(())
         } else {
             Err("Coordinates out of chunk bounds")

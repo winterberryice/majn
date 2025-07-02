@@ -325,6 +325,7 @@ pub struct Vertex {
     pub position: [f32; 3], // Made public
     pub color: [f32; 3],    // Made public
     pub uv: [f32; 2],       // Added for texture coordinates
+    pub tree_id: u32,       // Added for tree identification
 }
 
 impl Vertex {
@@ -349,6 +350,11 @@ impl Vertex {
                     offset: (std::mem::size_of::<[f32; 3]>() * 2) as wgpu::BufferAddress, // After position and color
                     shader_location: 2,                                                   // uv
                     format: wgpu::VertexFormat::Float32x2,
+                },
+                wgpu::VertexAttribute {
+                    offset: (std::mem::size_of::<[f32; 3]>() * 2 + std::mem::size_of::<[f32; 2]>()) as wgpu::BufferAddress, // After position, color, and uv
+                    shader_location: 3, // tree_id
+                    format: wgpu::VertexFormat::Uint32,
                 },
             ],
         }
@@ -896,12 +902,19 @@ impl State {
                                     };
 
                                 for (i, v_template) in vertices_template.iter().enumerate() {
+                                    let current_tree_id = if block.block_type == BlockType::OakLeaves {
+                                        block.tree_id.unwrap_or(0) // Default to 0 if None
+                                    } else {
+                                        0 // Not a tree, so ID is 0
+                                    };
+
                                     target_vertices.push(Vertex {
                                         position: (current_block_world_center
                                             + glam::Vec3::from(v_template.position))
                                         .into(),
                                         color: current_vertex_color,
                                         uv: selected_face_uvs[i],
+                                        tree_id: current_tree_id,
                                     });
                                 }
                                 for local_idx in local_indices {

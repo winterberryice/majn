@@ -12,12 +12,18 @@ pub enum BlockType {
 #[derive(Debug, Clone, Copy)]
 pub struct Block {
     pub block_type: BlockType,
+    pub tree_id: Option<u32>, // Added to identify trees
     // We can add more properties later, like light levels, custom data, etc.
 }
 
 impl Block {
     pub fn new(block_type: BlockType) -> Self {
-        Block { block_type }
+        Block { block_type, tree_id: None }
+    }
+
+    // Helper to create a block with a tree_id
+    pub fn new_with_tree_id(block_type: BlockType, tree_id: u32) -> Self {
+        Block { block_type, tree_id: Some(tree_id) }
     }
 
     pub fn is_solid(&self) -> bool {
