@@ -1,5 +1,5 @@
 use std::collections::{HashMap, VecDeque};
-use crate::chunk::{Chunk, CHUNK_WIDTH, CHUNK_HEIGHT, CHUNK_DEPTH, MAX_LIGHT_LEVEL as CHUNK_MAX_LIGHT};
+use crate::chunk::{Chunk, CHUNK_WIDTH, CHUNK_HEIGHT, CHUNK_DEPTH};
 use crate::block::{Block, BlockType, MAX_LIGHT_LEVEL};
 
 #[derive(Debug, Clone, Copy)]
@@ -72,9 +72,9 @@ impl World {
         self.chunks.get(&(chunk_x, chunk_z))
     }
 
-    // pub fn get_chunk_mut(&mut self, chunk_x: i32, chunk_z: i32) -> Option<&mut Chunk> {
-    //     self.chunks.get_mut(&(chunk_x, chunk_z))
-    // }
+    pub fn get_chunk_mut(&mut self, chunk_x: i32, chunk_z: i32) -> Option<&mut Chunk> {
+        self.chunks.get_mut(&(chunk_x, chunk_z))
+    }
 
     pub fn world_to_chunk_coords_ivec3(world_pos: glam::IVec3) -> ((i32, i32), (usize, usize, usize)) {
         let chunk_x = (world_pos.x as f32 / CHUNK_WIDTH as f32).floor() as i32;
@@ -169,7 +169,8 @@ impl World {
                     for dz_i32 in -1..=1_i32 {
                         if dx_i32 == 0 && dy_i32 == 0 && dz_i32 == 0 { continue; }
                         let neighbor_pos = world_block_pos + glam::ivec3(dx_i32, dy_i32, dz_i32);
-                        if let Some(nb) = self.get_block_at_world(neighbor_pos) {
+                        let neighbor_block_opt = self.get_block_at_world(neighbor_pos).copied();
+                        if let Some(nb) = neighbor_block_opt {
                             if nb.sky_light_level > 0 {
                                 self.sky_light_queue.push_back(LightNode { pos: neighbor_pos, light_level: nb.sky_light_level });
                             }
@@ -233,10 +234,10 @@ impl World {
     }
 
     fn process_light_removal_queue_typed(&mut self, is_sky_light: bool) {
-        let queue_ref = if is_sky_light {
-            &mut self.sky_light_removal_queue
+        let mut queue_ref = if is_sky_light {
+            std::mem::take(&mut self.sky_light_removal_queue)
         } else {
-            &mut self.block_light_removal_queue
+            std::mem::take(&mut self.block_light_removal_queue)
         };
         let mut temp_propagate_queue = VecDeque::new();
 
@@ -264,8 +265,8 @@ impl World {
                         if neighbor_old_light == 0 || neighbor_opacity_opt.is_none() { continue; }
                         let neighbor_opacity = neighbor_opacity_opt.unwrap();
 
-                        let opacity_of_medium_light_was_in =
-                                self.get_block_at_world(node.pos).map_or(CHUNK_MAX_LIGHT, |b| b.opacity());
+                        let _opacity_of_medium_light_was_in =
+                                self.get_block_at_world(node.pos).map_or(MAX_LIGHT_LEVEL, |b| b.opacity());
 
                         let reduction_into_neighbor = if is_sky_light {
                             if dy_i32 == -1 && neighbor_opacity == 0 && node.light_level == MAX_LIGHT_LEVEL { 0 }
@@ -274,12 +275,6 @@ impl World {
                             1u8.saturating_add(neighbor_opacity)
                         };
 
-                        // This was the original problematic line for removal logic.
-                        // Corrected logic: if neighbor's light *could have come from* node's old light value.
-                        // The light neighbor_pos would have received from node.pos (before node.pos changed) is `node.light_level - reduction_from_node_to_neighbor`
-                        // where reduction_from_node_to_neighbor is based on the properties of the medium the light *was* in at node.pos
-                        // and the medium it *entered* at neighbor_pos.
-                        // For simplicity, let's use reduction based on the neighbor's opacity.
                         let light_neighbor_would_get_from_node_old_state = node.light_level.saturating_sub(reduction_into_neighbor);
 
 
@@ -310,15 +305,17 @@ impl World {
     }
 
     fn process_light_propagation_queue_typed(&mut self, is_sky_light: bool) {
-        let queue = if is_sky_light {
-            &mut self.sky_light_queue
+        let mut queue = if is_sky_light {
+            std::mem::take(&mut self.sky_light_queue)
         } else {
-            &mut self.block_light_queue
+            std::mem::take(&mut self.block_light_queue)
         };
 
         while let Some(node) = queue.pop_front() {
-            let source_light = match self.get_block_at_world(node.pos) {
-                Some(b) => if is_sky_light { b.sky_light_level } else { b.block_light_level },
+            let source_light_opt = self.get_block_at_world(node.pos).map(|b| if is_sky_light { b.sky_light_level } else { b.block_light_level });
+
+            let source_light = match source_light_opt {
+                Some(light) => light,
                 None => continue,
             };
             if source_light == 0 { continue; }
@@ -334,8 +331,9 @@ impl World {
                         if neighbor_pos.y < 0 || neighbor_pos.y >= CHUNK_HEIGHT as i32 {
                             continue;
                         }
+                        let neighbor_block_mut_opt = self.get_block_at_world_mut(neighbor_pos);
 
-                        if let Some(neighbor_block_mut) = self.get_block_at_world_mut(neighbor_pos) {
+                        if let Some(neighbor_block_mut) = neighbor_block_mut_opt {
                             let opacity_of_neighbor = neighbor_block_mut.opacity();
                             if opacity_of_neighbor >= MAX_LIGHT_LEVEL &&
                                !(is_sky_light && dy_i32 == -1 && source_light == MAX_LIGHT_LEVEL && neighbor_block_mut.sky_light_level == 0) {

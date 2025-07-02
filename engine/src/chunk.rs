@@ -1,5 +1,5 @@
 use crate::block::{Block, BlockType, MAX_LIGHT_LEVEL};
-use rand::Rng; // Import Rng trait for rng.gen_bool and rng.gen_range
+use rand::{Rng, rngs::ThreadRng};
 use std::collections::VecDeque;
 use super::world::LightNode; // Import LightNode
 
@@ -52,7 +52,7 @@ impl Chunk {
 
     pub fn generate_terrain(&mut self) {
         let surface_level = CHUNK_HEIGHT / 2;
-        let mut rng = rand::thread_rng(); // Initialize rng
+        let mut rng = ThreadRng::default();
 
         for x in 0..CHUNK_WIDTH {
             for z in 0..CHUNK_DEPTH {
@@ -73,7 +73,7 @@ impl Chunk {
         for x in 2..(CHUNK_WIDTH - 2) {
             for z in 2..(CHUNK_DEPTH - 2) {
                 if self.blocks[x][surface_level][z].block_type == BlockType::Grass {
-                    if rng.gen_bool(TREE_CHANCE) {
+                    if rng.random::<f64>() < TREE_CHANCE {
                         self.place_tree(x, surface_level + 1, z, &mut rng); // Pass rng
                     }
                 }
@@ -82,7 +82,7 @@ impl Chunk {
     }
 
     fn place_tree(&mut self, x: usize, y_base: usize, z: usize, rng: &mut impl Rng) { // Accept Rng
-        let trunk_height: usize = rng.gen_range(3..=5);
+        let trunk_height: usize = rng.random_range(3..=5);
         let leaves_radius: usize = 2;
 
         if y_base + trunk_height + leaves_radius >= CHUNK_HEIGHT {

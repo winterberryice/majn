@@ -784,7 +784,7 @@ impl State {
         // When rebuilding mesh, ensure the chunk's skylight is based on current global skylight
         // This is more of a fix for when chunks are loaded/generated with an old skylight value.
         // The main skylight update should happen in world.update_global_skylight.
-        if let Some(chunk) = self.world.get_chunk_mut(chunk_cx, chunk_cz) {
+        if let Some(_chunk) = self.world.get_chunk_mut(chunk_cx, chunk_cz) {
             // Check if its topmost blocks reflect current_skylight_level, if not, recalc
             // This is a bit heavy here. Ideally, world update handles this proactively.
             // For now, we assume the world's light propagation will eventually correct it.
@@ -835,6 +835,7 @@ impl State {
                             BlockType::OakLog => [0.5, 0.5, 0.5],
                             BlockType::OakLeaves => [0.5, 0.5, 0.5], // Base color before tinting
                             BlockType::Air => unreachable!(), // Should be skipped
+                            _ => [0.5, 0.5, 0.5], // Default color for other block types
                         };
 
                         let current_block_world_center = glam::Vec3::new(
