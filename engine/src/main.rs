@@ -814,22 +814,21 @@ impl State {
                                     neighbor_world_by as f32,
                                     neighbor_world_bz as f32,
                                 ) {
-                                    // Culling logic:
-                                    // A face is culled if the neighbor block is:
-                                    // 1. Solid (physics-wise, meaning it's not Air)
-                                    // 2. AND NOT transparent (visual-wise)
-                                    // 3. UNLESS the current block itself is transparent.
-                                    //    Transparent blocks should not cull each other's faces.
-                                    if neighbor_block.is_solid() && !neighbor_block.is_transparent() && !is_current_block_transparent {
-                                        is_face_visible = false;
+                                    // If current block is transparent, always generate the face (CPU-side).
+                                    // is_face_visible remains true.
+                                    // If current block is opaque, then check neighbor.
+                                    if !is_current_block_transparent { // Current block is Opaque
+                                        if neighbor_block.is_solid() && !neighbor_block.is_transparent() {
+                                            is_face_visible = false; // Cull if neighbor is opaque solid
+                                        }
                                     }
-                                    // If current block is transparent, and neighbor is also transparent, face should be visible.
-                                    if is_current_block_transparent && neighbor_block.is_transparent() {
-                                        is_face_visible = true;
-                                    }
+                                    // If current block is transparent, is_face_visible is not changed from its default 'true'.
                                 }
+                                // If neighbor_block is None (e.g. unloaded chunk), is_face_visible remains true.
+                                // This is implicitly handled as the inner 'if let Some(neighbor_block)' won't execute.
                             }
-                            // Faces at chunk boundaries (not checking outside world bounds) are always visible.
+                            // Faces at world Y boundaries (y < 0 or y >= CHUNK_HEIGHT) also keep is_face_visible = true
+                            // as the outer 'if neighbor_world_by >= 0 ...' condition fails.
 
                             if is_face_visible {
                                 let vertices_template = face_type.get_vertices_template();
