@@ -1187,11 +1187,23 @@ impl State {
 
         let mut coords_to_mesh: Vec<(i32, i32)> = Vec::new();
         for &(cx, cz) in &self.active_chunk_coords {
-            if !self.chunk_render_data.contains_key(&(cx, cz)) {
-                coords_to_mesh.push((cx, cz));
+            match self.chunk_render_data.get(&(cx,cz)) {
+                Some(render_data) => {
+                    // If chunk exists and has transparent buffers, mark for re-mesh (diagnostic)
+                    if render_data.transparent_buffers.is_some() {
+                        coords_to_mesh.push((cx, cz));
+                    }
+                }
+                None => {
+                    // Chunk is not meshed yet, add it to be meshed.
+                    coords_to_mesh.push((cx, cz));
+                }
             }
         }
-        for (cx, cz) in coords_to_mesh { // This loop only processes newly activated chunks
+        coords_to_mesh.sort_unstable();
+        coords_to_mesh.dedup();
+
+        for (cx, cz) in coords_to_mesh {
             self.build_or_rebuild_chunk_mesh(cx, cz);
         }
 
