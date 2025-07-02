@@ -638,7 +638,7 @@ impl State {
                 topology: wgpu::PrimitiveTopology::TriangleList,
                 strip_index_format: None,
                 front_face: wgpu::FrontFace::Ccw,
-                cull_mode: Some(wgpu::Face::Back), // Could be None for two-sided transparent things, but Back is fine for cubes
+                cull_mode: None, // Changed for leaves: render both sides
                 polygon_mode: wgpu::PolygonMode::Fill,
                 unclipped_depth: false,
                 conservative: false,
@@ -1311,8 +1311,26 @@ impl State {
             // However, Group 1 needs to be explicitly set to diffuse_bind_group.
             render_pass.set_bind_group(1, &self.diffuse_bind_group, &[]);
 
+            // Sort active_chunk_coords by distance from player for transparent rendering (back-to-front)
+            let mut sorted_transparent_chunks = self.active_chunk_coords.clone();
+            let player_pos = self.player.position;
+            sorted_transparent_chunks.sort_by(|a, b| {
+                let pos_a = glam::Vec3::new(
+                    (a.0 as f32 + 0.5) * CHUNK_WIDTH as f32,
+                    CHUNK_HEIGHT as f32 / 2.0, // Use mid-height of chunk for Y
+                    (a.1 as f32 + 0.5) * CHUNK_DEPTH as f32,
+                );
+                let pos_b = glam::Vec3::new(
+                    (b.0 as f32 + 0.5) * CHUNK_WIDTH as f32,
+                    CHUNK_HEIGHT as f32 / 2.0,
+                    (b.1 as f32 + 0.5) * CHUNK_DEPTH as f32,
+                );
+                let dist_a = player_pos.distance_squared(pos_a);
+                let dist_b = player_pos.distance_squared(pos_b);
+                dist_b.partial_cmp(&dist_a).unwrap_or(std::cmp::Ordering::Equal) // Sorts descending (far to near)
+            });
 
-            for chunk_coord in &self.active_chunk_coords {
+            for chunk_coord in &sorted_transparent_chunks {
                 if let Some(chunk_data) = self.chunk_render_data.get(chunk_coord) {
                     if let Some(ref transparent_buffers) = chunk_data.transparent_buffers {
                         if transparent_buffers.num_indices > 0 {
