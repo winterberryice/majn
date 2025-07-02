@@ -1191,7 +1191,7 @@ impl State {
                 coords_to_mesh.push((cx, cz));
             }
         }
-        for (cx, cz) in coords_to_mesh {
+        for (cx, cz) in coords_to_mesh { // This loop only processes newly activated chunks
             self.build_or_rebuild_chunk_mesh(cx, cz);
         }
 
