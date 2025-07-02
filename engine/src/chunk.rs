@@ -55,6 +55,7 @@ impl Chunk {
         }
     }
 
+    #[allow(deprecated)] // Allow rand::thread_rng and rng.random_bool for now
     pub fn generate_terrain(&mut self) {
         let surface_level = CHUNK_HEIGHT / 2; // Grass will be at this Y level
 
@@ -85,7 +86,7 @@ impl Chunk {
                 // Check if the block at the surface level is grass
                 if self.blocks[x][surface_level][z].block_type == BlockType::Grass {
                     // Use the random number generator to decide if a tree should grow here
-                    if rng.gen_bool(TREE_CHANCE) { // Changed to rng.gen_bool
+                    if rng.random_bool(TREE_CHANCE) { // Changed to random_bool as per warning
                         // The ground level for the tree trunk is one block above the grass.
                         self.place_tree(x, surface_level + 1, z);
                     }
