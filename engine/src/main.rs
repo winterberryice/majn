@@ -1,6 +1,7 @@
 mod block;
 mod camera;
 mod chunk;
+mod lighting; // Added lighting module
 mod cube_geometry;
 mod debug_overlay;
 mod input;
@@ -321,42 +322,26 @@ impl ApplicationHandler for App {
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct Vertex {
-    // Made public
-    pub position: [f32; 3], // Made public
-    pub color: [f32; 3],    // Made public
-    pub uv: [f32; 2],       // Added for texture coordinates
-    pub light_level: f32,   // Added for light level (normalized 0.0-1.0)
+    pub position: [f32; 3],
+    pub color: [f32; 3], // This might be replaced or supplemented by texture + light_level
+    pub uv: [f32; 2],
+    pub light_level: f32, // Normalized 0.0 to 1.0
 }
 
 impl Vertex {
+    const ATTRIBS: [wgpu::VertexAttribute; 4] = wgpu::vertex_attr_array![
+        0 => Float32x3, // position
+        1 => Float32x3, // color
+        2 => Float32x2, // uv
+        3 => Float32,   // light_level
+    ];
+
     // This describes the memory layout of a single vertex to the shader.
     pub fn desc() -> wgpu::VertexBufferLayout<'static> {
-        // Made public
         wgpu::VertexBufferLayout {
             array_stride: std::mem::size_of::<Vertex>() as wgpu::BufferAddress,
             step_mode: wgpu::VertexStepMode::Vertex,
-            attributes: &[
-                wgpu::VertexAttribute {
-                    offset: 0,
-                    shader_location: 0, // position
-                    format: wgpu::VertexFormat::Float32x3,
-                },
-                wgpu::VertexAttribute {
-                    offset: std::mem::size_of::<[f32; 3]>() as wgpu::BufferAddress,
-                    shader_location: 1, // color
-                    format: wgpu::VertexFormat::Float32x3,
-                },
-                wgpu::VertexAttribute {
-                    offset: (std::mem::size_of::<[f32; 3]>() * 2) as wgpu::BufferAddress, // After position and color
-                    shader_location: 2,                                                   // uv
-                    format: wgpu::VertexFormat::Float32x2,
-                },
-                wgpu::VertexAttribute {
-                    offset: (std::mem::size_of::<[f32; 3]>() * 2 + std::mem::size_of::<[f32; 2]>()) as wgpu::BufferAddress, // After position, color, and uv
-                    shader_location: 3, // light_level
-                    format: wgpu::VertexFormat::Float32,
-                },
-            ],
+            attributes: &Self::ATTRIBS,
         }
     }
 }
@@ -902,16 +887,19 @@ impl State {
                                     };
 
                                 for (i, v_template) in vertices_template.iter().enumerate() {
-                                    let light_level_u8 = chunk.get_light_level(lx, ly, lz).unwrap_or(0);
-                                    let normalized_light_level = light_level_u8 as f32 / chunk::MAX_LIGHT as f32;
-
                                     target_vertices.push(Vertex {
                                         position: (current_block_world_center
                                             + glam::Vec3::from(v_template.position))
                                         .into(),
-                                        color: current_vertex_color,
+                                        color: current_vertex_color, // Color might be deprecated soon for full texture+light
                                         uv: selected_face_uvs[i],
-                                        light_level: normalized_light_level,
+                                        light_level: {
+                                            let block_local_pos = IVec3::new(lx as i32, ly as i32, lz as i32);
+                                            let sky_light = chunk.get_sky_light(block_local_pos);
+                                            let block_light = chunk.get_block_light(block_local_pos);
+                                            let final_light_u8 = sky_light.max(block_light);
+                                            final_light_u8 as f32 / 15.0 // Normalize
+                                        },
                                     });
                                 }
                                 for local_idx in local_indices {
@@ -1139,8 +1127,7 @@ impl State {
             0,
             bytemuck::cast_slice(&[self.camera_uniform]),
         );
-        // Pass self.world and None for target_block_position for now
-        self.debug_overlay.update(self.player.position, &self.world, None);
+        self.debug_overlay.update(self.player.position);
 
         // Clear per-frame input flags
         self.input_state.clear_frame_state(); // Use self.input_state
@@ -1151,20 +1138,31 @@ impl State {
     fn handle_block_interactions(&mut self) {
         // Block Removal (Left-Click)
         if self.input_state.left_mouse_pressed_this_frame {
-            if let Some((block_pos, _face)) = self.selected_block {
-                match self.world.set_block(block_pos, BlockType::Air) {
+            if let Some((block_pos_world, _face)) = self.selected_block {
+                // Get old block properties before removing it
+                let old_block_opt = self.world.get_block_world_space(block_pos_world);
+                let old_block_was_opaque = old_block_opt.map_or(false, |b| b.is_opaque_for_light());
+                let old_emission = old_block_opt.map_or(0, |b| b.get_light_emission());
+
+                match self.world.set_block_world_space(block_pos_world, BlockType::Air) {
                     Ok(chunk_coord) => {
-                        // Mark chunk as dirty by removing its render data
+                        // New block is Air
+                        let new_block_is_opaque = block::BLOCK_TYPE_PROPERTIES[BlockType::Air as usize].is_transparent == false; // Air is not opaque for light
+                        let new_emission = block::BLOCK_TYPE_PROPERTIES[BlockType::Air as usize].emission;
+
+                        lighting::update_light_after_block_change(
+                            &mut self.world,
+                            block_pos_world,
+                            old_block_was_opaque,
+                            new_block_is_opaque,
+                            old_emission,
+                            new_emission,
+                        );
+
+                        // Mark chunk as dirty and rebuild neighbors
+                        // TODO: Lighting update should ideally return a list of affected chunks to rebuild.
                         self.chunk_render_data.remove(&chunk_coord);
-                        // Also, if the removed block was on a boundary, the adjacent chunk might need updating
-                        // This is complex; for now, just rebuild the primary chunk.
-                        // A more robust solution would check neighbors if block is on edge.
-                        // We might also need to rebuild neighbors if a block *removal* exposes their faces.
-                        // For simplicity, we'll rely on the existing active chunk meshing logic to pick up
-                        // changes when the player moves, or we can force rebuilds of neighbors.
-                        // Let's check and rebuild neighbors of the modified chunk as well.
-                        self.build_or_rebuild_chunk_mesh(chunk_coord.0, chunk_coord.1); // Rebuild the main chunk
-                        // And its direct neighbors, as face visibility might change
+                        self.build_or_rebuild_chunk_mesh(chunk_coord.0, chunk_coord.1);
                         self.build_or_rebuild_chunk_mesh(chunk_coord.0 + 1, chunk_coord.1);
                         self.build_or_rebuild_chunk_mesh(chunk_coord.0 - 1, chunk_coord.1);
                         self.build_or_rebuild_chunk_mesh(chunk_coord.0, chunk_coord.1 + 1);
@@ -1179,7 +1177,6 @@ impl State {
 
         // Block Placement (Right-Click)
         if self.input_state.right_mouse_pressed_this_frame {
-            // Use self.input_state
             if let Some((selected_block_pos, hit_face)) = self.selected_block {
                 let mut offset = IVec3::ZERO;
                 match hit_face {
@@ -1190,23 +1187,42 @@ impl State {
                     BlockFace::PosZ => offset.z = 1,
                     BlockFace::NegZ => offset.z = -1,
                 }
-                let new_block_pos = selected_block_pos + offset;
+                let new_block_pos_world = selected_block_pos + offset;
 
                 // Collision Check with player
                 let player_aabb = self.player.get_world_bounding_box();
                 let new_block_aabb = AABB {
-                    min: new_block_pos.as_vec3(),
-                    max: new_block_pos.as_vec3() + glam::Vec3::ONE, // Assuming 1x1x1 block
+                    min: new_block_pos_world.as_vec3(),
+                    max: new_block_pos_world.as_vec3() + glam::Vec3::ONE,
                 };
 
                 if player_aabb.intersects(&new_block_aabb) {
                     // eprintln!("Cannot place block: intersects with player.");
                 } else {
-                    match self.world.set_block(new_block_pos, BlockType::Grass) {
+                    // Get properties of the block currently at new_block_pos_world (likely Air)
+                    let old_block_opt = self.world.get_block_world_space(new_block_pos_world);
+                    let old_block_was_opaque = old_block_opt.map_or(false, |b| b.is_opaque_for_light());
+                    let old_emission = old_block_opt.map_or(0, |b| b.get_light_emission());
+
+                    // For now, placing Grass. Later, this will be the selected block type from inventory.
+                    let new_block_to_place = BlockType::Grass; // TODO: Change to selected block type
+
+                    match self.world.set_block_world_space(new_block_pos_world, new_block_to_place) {
                         Ok(chunk_coord) => {
-                            // Mark chunk as dirty by removing its render data
+                            let new_block_props = &block::BLOCK_TYPE_PROPERTIES[new_block_to_place as usize];
+                            let new_block_is_opaque = !new_block_props.is_transparent; // is_opaque_for_light uses this
+                            let new_emission = new_block_props.emission;
+
+                            lighting::update_light_after_block_change(
+                                &mut self.world,
+                                new_block_pos_world,
+                                old_block_was_opaque,
+                                new_block_is_opaque,
+                                old_emission,
+                                new_emission,
+                            );
+
                             self.chunk_render_data.remove(&chunk_coord);
-                            // Rebuild the potentially new chunk and its neighbors
                             self.build_or_rebuild_chunk_mesh(chunk_coord.0, chunk_coord.1);
                             self.build_or_rebuild_chunk_mesh(chunk_coord.0 + 1, chunk_coord.1);
                             self.build_or_rebuild_chunk_mesh(chunk_coord.0 - 1, chunk_coord.1);

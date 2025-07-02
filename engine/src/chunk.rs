@@ -1,16 +1,21 @@
 use crate::block::{Block, BlockType};
+use glam::IVec3; // Added for using IVec3
 use rand::Rng; // Assuming block.rs is in the same directory
-use std::collections::VecDeque;
 
 pub const CHUNK_WIDTH: usize = 16;
 pub const CHUNK_HEIGHT: usize = 32; // Reduced height for now
 pub const CHUNK_DEPTH: usize = 16;
-pub const MAX_LIGHT: u8 = 15;
+pub const CHUNK_SIZE_IN_BLOCKS: usize = CHUNK_WIDTH * CHUNK_HEIGHT * CHUNK_DEPTH;
+
+// Each byte in light_map stores two 4-bit values: sky_light and block_light.
+// Sky light is stored in the upper nibble, block light in the lower nibble.
+// Example: 0xF0 means sky_light=15, block_light=0. 0x0F means sky_light=0, block_light=15. 0xFF means both are 15.
+pub const CHUNK_LIGHT_MAP_SIZE_IN_BYTES: usize = CHUNK_SIZE_IN_BLOCKS; // One byte per block
 
 pub struct Chunk {
     pub coord: (i32, i32),        // Add world coordinates (x, z) for the chunk
     blocks: Vec<Vec<Vec<Block>>>, // Stored as [x][y][z]
-    light_levels: Vec<Vec<Vec<u8>>>, // Stored as [x][y][z]
+    light_map: Vec<u8>,           // Stores lighting data for the chunk
 }
 
 impl Chunk {
@@ -18,118 +23,73 @@ impl Chunk {
         // Initialize with Air blocks
         let blocks =
             vec![vec![vec![Block::new(BlockType::Air); CHUNK_DEPTH]; CHUNK_HEIGHT]; CHUNK_WIDTH];
-        // Initialize light levels to 0
-        let light_levels =
-            vec![vec![vec![0u8; CHUNK_DEPTH]; CHUNK_HEIGHT]; CHUNK_WIDTH];
+        // Initialize light map with all zeros (darkness)
+        let light_map = vec![0u8; CHUNK_LIGHT_MAP_SIZE_IN_BYTES];
         Chunk {
             coord: (coord_x, coord_z),
             blocks,
-            light_levels,
+            light_map,
         }
     }
 
-    pub fn calculate_initial_sunlight(&mut self) {
-        for x in 0..CHUNK_WIDTH {
-            for z in 0..CHUNK_DEPTH {
-                let mut current_light_level = MAX_LIGHT;
-                for y in (0..CHUNK_HEIGHT).rev() { // Iterate from top to bottom
-                    let block_type = self.blocks[x][y][z].block_type; // Get block_type directly
-
-                    if current_light_level == 0 {
-                        self.light_levels[x][y][z] = 0;
-                        continue;
-                    }
-
-                    self.light_levels[x][y][z] = current_light_level;
-
-                    // Determine how much light is lost passing through this block
-                    let light_reduction = match block_type {
-                        BlockType::Air => 0, // Air doesn't reduce light
-                        BlockType::OakLeaves => 1, // Leaves reduce light slightly
-                        // Solid blocks completely block sunlight from passing further down this column
-                        _ if self.blocks[x][y][z].is_solid() => MAX_LIGHT,
-                        _ => 0, // Other non-solid, non-transparent blocks (if any)
-                    };
-
-                    current_light_level = current_light_level.saturating_sub(light_reduction);
-                }
-            }
-        }
+    // Helper to convert 3D position to 1D index for light_map
+    fn light_idx(x: usize, y: usize, z: usize) -> usize {
+        y * CHUNK_WIDTH * CHUNK_DEPTH + z * CHUNK_WIDTH + x
     }
 
-    // New method for light propagation
-    pub fn propagate_light(&mut self) { // Made public
-        let mut light_queue: VecDeque<(usize, usize, usize)> = VecDeque::new();
-
-        // Initial population of the queue:
-        // Add all blocks that currently have light and can potentially spread it.
-        // This includes blocks lit by calculate_initial_sunlight.
-        for x in 0..CHUNK_WIDTH {
-            for y in 0..CHUNK_HEIGHT {
-                for z in 0..CHUNK_DEPTH {
-                    if self.light_levels[x][y][z] > 0 {
-                        light_queue.push_back((x, y, z));
-                    }
-                }
-            }
+    pub fn get_light(&self, pos: IVec3) -> u8 {
+        if pos.x < 0
+            || pos.x >= CHUNK_WIDTH as i32
+            || pos.y < 0
+            || pos.y >= CHUNK_HEIGHT as i32
+            || pos.z < 0
+            || pos.z >= CHUNK_DEPTH as i32
+        {
+            return 0; // Default to dark if out of bounds (should be handled by world later)
         }
-
-        // Define offsets for 6 neighbors (dx, dy, dz)
-        let neighbors_offsets: [(isize, isize, isize); 6] = [
-            (1, 0, 0), (-1, 0, 0), (0, 1, 0),
-            (0, -1, 0), (0, 0, 1), (0, 0, -1)
-        ];
-
-        while let Some((x, y, z)) = light_queue.pop_front() {
-            let current_light = self.light_levels[x][y][z];
-            if current_light <= 1 { // Cannot propagate light weaker than or equal to 1
-                continue;
-            }
-
-            for (dx, dy, dz) in neighbors_offsets.iter() {
-                let nx = x as isize + dx;
-                let ny = y as isize + dy;
-                let nz = z as isize + dz;
-
-                // Check bounds for neighbor
-                if nx >= 0 && nx < CHUNK_WIDTH as isize &&
-                   ny >= 0 && ny < CHUNK_HEIGHT as isize &&
-                   nz >= 0 && nz < CHUNK_DEPTH as isize {
-
-                    let nu = nx as usize;
-                    let nv = ny as usize;
-                    let nw = nz as usize;
-
-                    // Light reduction depends on the block type it's entering
-                    let neighbor_block = &self.blocks[nu][nv][nw];
-
-                    // Standard light reduction when passing from one block to the next.
-                    // For leaves, it's higher as they are more opaque than air.
-                    let propagation_cost = match neighbor_block.block_type {
-                        BlockType::OakLeaves => 2, // Light has a harder time passing into/through leaves.
-                        _ => 1, // Standard cost for air and other blocks.
-                    };
-
-                    let new_neighbor_light = current_light.saturating_sub(propagation_cost);
-
-                    if new_neighbor_light > self.light_levels[nu][nv][nw] {
-                        self.light_levels[nu][nv][nw] = new_neighbor_light;
-
-                        // Only add to queue if the neighbor can propagate light further.
-                        // Solid blocks receive light but don't propagate it unless they are light sources.
-                        // Transparent blocks (like leaves) can propagate.
-                        if !neighbor_block.is_solid() && new_neighbor_light > 1 {
-                            light_queue.push_back((nu, nv, nw));
-                        }
-                    }
-                }
-                // TODO: Handle propagation to adjacent chunks later
-            }
-        }
+        self.light_map[Self::light_idx(pos.x as usize, pos.y as usize, pos.z as usize)]
     }
 
+    pub fn set_light(&mut self, pos: IVec3, light: u8) {
+        if pos.x < 0
+            || pos.x >= CHUNK_WIDTH as i32
+            || pos.y < 0
+            || pos.y >= CHUNK_HEIGHT as i32
+            || pos.z < 0
+            || pos.z >= CHUNK_DEPTH as i32
+        {
+            return; // Out of bounds
+        }
+        let index = Self::light_idx(pos.x as usize, pos.y as usize, pos.z as usize);
+        self.light_map[index] = light;
+    }
 
-    #[allow(deprecated)] // Allow rand::thread_rng and rng.random_bool for now
+    pub fn get_sky_light(&self, pos: IVec3) -> u8 {
+        (self.get_light(pos) >> 4) & 0x0F
+    }
+
+    pub fn set_sky_light(&mut self, pos: IVec3, level: u8) {
+        if level > 15 {
+            panic!("Sky light level cannot exceed 15");
+        }
+        let current_block_light = self.get_block_light(pos);
+        let new_light_value = (level << 4) | current_block_light;
+        self.set_light(pos, new_light_value);
+    }
+
+    pub fn get_block_light(&self, pos: IVec3) -> u8 {
+        self.get_light(pos) & 0x0F
+    }
+
+    pub fn set_block_light(&mut self, pos: IVec3, level: u8) {
+        if level > 15 {
+            panic!("Block light level cannot exceed 15");
+        }
+        let current_sky_light = self.get_sky_light(pos);
+        let new_light_value = (current_sky_light << 4) | level;
+        self.set_light(pos, new_light_value);
+    }
+
     pub fn generate_terrain(&mut self) {
         let surface_level = CHUNK_HEIGHT / 2; // Grass will be at this Y level
 
@@ -151,7 +111,7 @@ impl Chunk {
 
         // --- TASK: Pass 2: Generate Trees ---
         // After the main terrain is set, we make a second pass to add features like trees.
-        let mut rng = rand::thread_rng(); // Create a random number generator
+        let mut rng = rand::rng(); // Create a random number generator
         const TREE_CHANCE: f64 = 0.02; // 2% chance to try and place a tree at any given spot
 
         for x in 2..(CHUNK_WIDTH - 2) {
@@ -160,16 +120,13 @@ impl Chunk {
                 // Check if the block at the surface level is grass
                 if self.blocks[x][surface_level][z].block_type == BlockType::Grass {
                     // Use the random number generator to decide if a tree should grow here
-                    if rng.random_bool(TREE_CHANCE) { // Changed to random_bool as per warning
+                    if rng.random_bool(TREE_CHANCE) {
                         // The ground level for the tree trunk is one block above the grass.
                         self.place_tree(x, surface_level + 1, z);
                     }
                 }
             }
         }
-        // After all terrain and features are placed, calculate sunlight
-        self.calculate_initial_sunlight();
-        self.propagate_light(); // Spread the light
     }
 
     // TASK: Create a helper function to place a tree at a specific location.
@@ -237,15 +194,6 @@ impl Chunk {
         }
     }
 
-    // Helper to get a light level at a given coordinate
-    pub fn get_light_level(&self, x: usize, y: usize, z: usize) -> Option<u8> {
-        if x < CHUNK_WIDTH && y < CHUNK_HEIGHT && z < CHUNK_DEPTH {
-            Some(self.light_levels[x][y][z])
-        } else {
-            None
-        }
-    }
-
     // Helper to set a block at a given coordinate
     // Returns Result<(), &str> to indicate success or out-of-bounds error
     pub fn set_block(
@@ -257,23 +205,9 @@ impl Chunk {
     ) -> Result<(), &'static str> {
         if x < CHUNK_WIDTH && y < CHUNK_HEIGHT && z < CHUNK_DEPTH {
             self.blocks[x][y][z] = Block::new(block_type);
-            // NOTE: Light level is not set here directly.
-            // The light calculation pass will handle it.
-            // For dynamic updates, a call to recalculate light for this chunk
-            // (and potentially neighbors) would be needed after a block is set.
             Ok(())
         } else {
             Err("Coordinates out of chunk bounds")
-        }
-    }
-
-    // Helper to set a light level at a given coordinate
-    pub fn set_light_level(&mut self, x: usize, y: usize, z: usize, level: u8) -> Result<(), &'static str> {
-        if x < CHUNK_WIDTH && y < CHUNK_HEIGHT && z < CHUNK_DEPTH {
-            self.light_levels[x][y][z] = level.min(MAX_LIGHT); // Ensure light level doesn't exceed max
-            Ok(())
-        } else {
-            Err("Coordinates out of chunk bounds for light level")
         }
     }
 }
