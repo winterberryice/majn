@@ -1059,34 +1059,43 @@ impl State {
 
         for &(cx, cz) in &self.active_chunk_coords {
              // If not already added from newly_created_chunk_coords and needs remeshing for other reasons (e.g. transparency sort)
-            if !newly_created_chunk_coords.contains(&(cx,cz)) && !self.chunk_render_data.contains_key(&(cx, cz)) {
-                 coords_to_mesh.push((cx,cz));
-            } else if let Some(render_data) = self.chunk_render_data.get(&(cx, cz)) {
-                    if render_data.transparent_buffers.is_some() {
-                        let mut needs_remesh = false;
-                        if let Some(last_pos) = render_data.last_transparent_mesh_camera_pos {
-                            if self.player.position.distance_squared(last_pos) > TRANSPARENT_REMESH_DISTANCE_SQUARED_THRESHOLD {
-                                needs_remesh = true;
-                            }
-                        } else {
-                            needs_remesh = true;
-                        }
-                        if !needs_remesh {
-                            if let Some(last_yaw) = render_data.last_transparent_mesh_camera_yaw {
-                                let yaw_diff = (self.player.yaw - last_yaw).abs();
-                                let mut normalized_yaw_diff = yaw_diff;
-                                if normalized_yaw_diff > std::f32::consts::PI {
-                                    normalized_yaw_diff = 2.0 * std::f32::consts::PI - normalized_yaw_diff;
-                                }
-                                if normalized_yaw_diff > TRANSPARENT_REMESH_YAW_THRESHOLD_RADIANS {
-                                    needs_remesh = true;
+            // Check if the chunk needs remeshing for reasons other than being new.
+            // (e.g. transparency sort, or if it was marked dirty by a block change affecting a neighbor)
+            // The current logic for adding to coords_to_mesh based on !self.chunk_render_data.contains_key
+            // already covers chunks that were invalidated by block changes (their render data is removed).
+            if !newly_created_chunk_coords.contains(&(cx,cz)) { // Avoid double-adding
+                if !self.chunk_render_data.contains_key(&(cx, cz)) {
+                    // This chunk's render data was removed (e.g., by a block change), so it needs remeshing.
+                    coords_to_mesh.push((cx, cz));
+                } else {
+                    // Check for transparency remesh conditions only if it wasn't already added.
+                    if let Some(render_data) = self.chunk_render_data.get(&(cx, cz)) {
+                        if render_data.transparent_buffers.is_some() {
+                            let mut needs_remesh_for_transparency = false;
+                            if let Some(last_pos) = render_data.last_transparent_mesh_camera_pos {
+                                if self.player.position.distance_squared(last_pos) > TRANSPARENT_REMESH_DISTANCE_SQUARED_THRESHOLD {
+                                    needs_remesh_for_transparency = true;
                                 }
                             } else {
-                                needs_remesh = true;
+                                needs_remesh_for_transparency = true; // No last pos, needs initial transparent mesh relative to camera
                             }
-                        }
-                        if needs_remesh {
-                            coords_to_mesh.push((cx, cz));
+                            if !needs_remesh_for_transparency {
+                                if let Some(last_yaw) = render_data.last_transparent_mesh_camera_yaw {
+                                    let yaw_diff = (self.player.yaw - last_yaw).abs();
+                                    let mut normalized_yaw_diff = yaw_diff;
+                                    if normalized_yaw_diff > std::f32::consts::PI {
+                                        normalized_yaw_diff = 2.0 * std::f32::consts::PI - normalized_yaw_diff;
+                                    }
+                                    if normalized_yaw_diff > TRANSPARENT_REMESH_YAW_THRESHOLD_RADIANS {
+                                        needs_remesh_for_transparency = true;
+                                    }
+                                } else {
+                                    needs_remesh_for_transparency = true; // No last yaw
+                                }
+                            }
+                            if needs_remesh_for_transparency {
+                                coords_to_mesh.push((cx, cz));
+                            }
                         }
                     }
                 }
