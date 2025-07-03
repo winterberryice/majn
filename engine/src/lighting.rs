@@ -385,7 +385,7 @@ pub fn initialize_lighting_for_generated_chunk(world: &mut World, chunk_x: i32, 
 // Made public for use in other modules if complex light updates need to build queues.
 // Or keep it private if only this module manages queues. For now, private.
 #[derive(Debug, Clone, Copy)]
-struct LightNode {
+pub(crate) struct LightNode { // Changed to pub(crate)
     pos: IVec3, // World position
     level: u8,
 }
