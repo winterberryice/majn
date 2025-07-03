@@ -1,26 +1,25 @@
-// Corrected use statement based on glyph_brush re-exports
 use glam::Vec3;
 use std::time::Instant;
-use wgpu::TextureFormat; // Import TextureFormat
+use wgpu::TextureFormat;
 use wgpu_text::{
-    BrushBuilder,
-    TextBrush,
-    glyph_brush::{Extra, OwnedSection, OwnedText, ab_glyph::FontArc}, // Import Section and Text from glyph_brush
+    BrushBuilder, TextBrush,
+    glyph_brush::{Extra, OwnedSection, OwnedText, ab_glyph::FontArc},
 };
+// NEW: We need to know about the Block struct to get its info.
+use crate::block::Block;
 
-// This line assumes a font file named "Roboto-Regular.ttf" is in your assets/fonts/ directory
-// or configured in your project's root. Make sure the path is correct for your setup.
 const FONT_BYTES: &[u8] = include_bytes!("../assets/fonts/Roboto-Regular.ttf");
 
 pub struct DebugOverlay {
     brush: TextBrush,
-    // The type is now just 'Section', but we imported it from glyph_brush
     section: OwnedSection<Extra>,
     visible: bool,
     last_frame_time: Instant,
     frame_count: u32,
     accumulated_time: f32,
     fps: u32,
+    // NEW: Add a field to store info about the selected block.
+    selected_block_info: Option<String>,
 }
 
 impl DebugOverlay {
@@ -31,14 +30,13 @@ impl DebugOverlay {
         let brush = BrushBuilder::using_font(font.clone())
             .with_depth_stencil(Some(wgpu::DepthStencilState {
                 format: TextureFormat::Depth32Float,
-                depth_write_enabled: true, // Text should probably write to depth buffer
-                depth_compare: wgpu::CompareFunction::Less, // Match main pipeline's comparison
+                depth_write_enabled: true,
+                depth_compare: wgpu::CompareFunction::Less,
                 stencil: wgpu::StencilState::default(),
                 bias: wgpu::DepthBiasState::default(),
             }))
             .build(device, config.width, config.height, config.format);
 
-        // We don't need to prefix with a module name here because we `use`d them directly
         let section = OwnedSection::default()
             .add_text(
                 OwnedText::new("")
@@ -56,6 +54,21 @@ impl DebugOverlay {
             frame_count: 0,
             accumulated_time: 0.0,
             fps: 0,
+            // NEW: Initialize the new field.
+            selected_block_info: None,
+        }
+    }
+
+    // NEW: A method to update the overlay with the selected block's data.
+    // We'll call this from main.rs every frame.
+    pub fn update_selection_info(&mut self, block: Option<&Block>) {
+        if let Some(b) = block {
+            self.selected_block_info = Some(format!(
+                "Block: {:?}\nSunlight: {}\nBlocklight: {}",
+                b.block_type, b.sun_light, b.block_light
+            ));
+        } else {
+            self.selected_block_info = None;
         }
     }
 
@@ -63,13 +76,8 @@ impl DebugOverlay {
         self.visible = !self.visible;
     }
 
-    // pub fn is_visible(&self) -> bool {
-    //     self.visible
-    // }
-
     pub fn update(&mut self, player_position: Vec3) {
         if !self.visible {
-            // Reset FPS calculation when not visible to avoid large delta_time on re-enabling
             self.last_frame_time = Instant::now();
             self.frame_count = 0;
             self.accumulated_time = 0.0;
@@ -83,19 +91,24 @@ impl DebugOverlay {
         self.accumulated_time += delta_time;
         self.frame_count += 1;
 
-        // Update FPS counter once per second
         if self.accumulated_time >= 1.0 {
             self.fps = self.frame_count;
             self.frame_count = 0;
             self.accumulated_time -= 1.0;
         }
 
-        let text_content = format!(
+        // Start with the basic info.
+        let mut text_content = format!(
             "FPS: {}\nPosition: {:.2}, {:.2}, {:.2}",
             self.fps, player_position.x, player_position.y, player_position.z
         );
 
-        // Update the section's text.
+        // NEW: Append the selected block info if it exists.
+        if let Some(info) = &self.selected_block_info {
+            text_content.push_str("\n---\n");
+            text_content.push_str(info);
+        }
+
         self.section.text = vec![
             OwnedText::new(text_content)
                 .with_scale(20.0)
@@ -103,14 +116,12 @@ impl DebugOverlay {
         ];
     }
 
-    // This function prepares the text for rendering
     pub fn prepare(
         &mut self,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
     ) -> Result<(), wgpu_text::BrushError> {
         if self.visible {
-            // Queue the section for drawing. The brush needs a slice of sections.
             let borrowed_section = self.section.to_borrowed();
             self.brush
                 .queue(device, queue, std::slice::from_ref(&borrowed_section))?;
@@ -118,18 +129,14 @@ impl DebugOverlay {
         Ok(())
     }
 
-    // This function performs the actual drawing. It must be called within a RenderPass.
     pub fn render<'pass>(&'pass self, render_pass: &mut wgpu::RenderPass<'pass>) {
         if self.visible {
             self.brush.draw(render_pass);
         }
     }
 
-    // Call this when the window is resized
     pub fn resize(&mut self, width: u32, height: u32, queue: &wgpu::Queue) {
-        // Update the brush's view projection
         self.brush.resize_view(width as f32, height as f32, queue);
-        // Update the text section's bounds
         self.section.bounds = (width as f32, height as f32);
     }
 }

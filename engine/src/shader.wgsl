@@ -54,16 +54,34 @@ struct FragmentInput {
 
 @fragment
 fn fs_main(in: FragmentInput) -> @location(0) vec4<f32> {
+     // A simple linear ramp that makes each step down in brightness more obvious.
+    const LIGHT_LEVEL_TO_BRIGHTNESS = array<f32, 16>(
+        0.05,      // 0 - A tiny bit of ambient light
+        1.0/15.0,  // 1
+        2.0/15.0,  // 2
+        3.0/15.0,  // 3
+        4.0/15.0,  // 4
+        5.0/15.0,  // 5
+        6.0/15.0,  // 6
+        7.0/15.0,  // 7
+        8.0/15.0,  // 8
+        9.0/15.0,  // 9
+        10.0/15.0, // 10
+        11.0/15.0, // 11
+        12.0/15.0, // 12
+        13.0/15.0, // 13
+        14.0/15.0, // 14
+        1.0        // 15
+    );
+
     let sampled_color = textureSample(t_diffuse, s_sampler, in.tex_coords);
     var final_color = sampled_color.rgb;
 
-    // --- Biome tinting logic (your existing code) ---
+    // --- Biome tinting logic (your existing code is unchanged) ---
     let grass_top_sentinel = vec3<f32>(0.1, 0.9, 0.1);
     let oak_leaves_sentinel = vec3<f32>(0.1, 0.9, 0.2);
-
     let grass_color_diff = abs(in.original_color - grass_top_sentinel);
     let is_grass_top = grass_color_diff.x < 0.01 && grass_color_diff.y < 0.01 && grass_color_diff.z < 0.01;
-
     let leaves_color_diff = abs(in.original_color - oak_leaves_sentinel);
     let is_potential_oak_leaves = leaves_color_diff.x < 0.01 && leaves_color_diff.y < 0.01 && leaves_color_diff.z < 0.01;
 
@@ -76,23 +94,18 @@ fn fs_main(in: FragmentInput) -> @location(0) vec4<f32> {
     }
     // --- End of biome tinting logic ---
 
-    // --- NEW LIGHTING CALCULATION ---
+    // --- NEW, SIMPLER LIGHTING CALCULATION ---
     let sun_light = in.light_level.x;
     let block_light = in.light_level.y;
 
-    // Use the brightest of the two light sources for this pixel
-    let brightest_light = max(sun_light, block_light);
+    // Find the brightest light level affecting this pixel
+    let brightest_light_idx = u32(max(sun_light, block_light));
 
-    // Convert the 0-15 light level to a 0.0-1.0 brightness multiplier.
-    // We use pow() to make the light fall off more naturally (less linear).
-    // We also add a minimum ambient light so caves aren't pitch black.
-    let ambient_light = 0.2;
-    let light_multiplier = pow(brightest_light / 15.0, 1.5);
-    let final_light = max(light_multiplier, ambient_light);
-
+    // Look up the brightness from our table
+    let light_multiplier = LIGHT_LEVEL_TO_BRIGHTNESS[brightest_light_idx];
+    
     // Apply the light multiplier to the final color
-    final_color = final_color * final_light;
-    // --- END of new lighting calculation ---
+    final_color = final_color * light_multiplier;
 
     return vec4<f32>(final_color, sampled_color.a);
 }

@@ -654,7 +654,6 @@ impl State {
         let mut transparent_indices: Vec<u16> = Vec::new();
         let mut transparent_vertex_offset: u16 = 0;
 
-        // This struct holds data for transparent blocks so we can sort them later.
         struct TransparentBlockData {
             block: block::Block,
             lx: usize,
@@ -666,8 +665,6 @@ impl State {
 
         let chunk_opt = self.world.get_chunk(chunk_cx, chunk_cz);
         if chunk_opt.is_none() {
-            // This can happen if a chunk is requested but not yet generated.
-            // It's safe to just return and wait for the next frame.
             self.chunk_render_data.remove(&(chunk_cx, chunk_cz));
             return;
         }
@@ -676,7 +673,6 @@ impl State {
         let chunk_world_origin_x = chunk_cx as f32 * CHUNK_WIDTH as f32;
         let chunk_world_origin_z = chunk_cz as f32 * CHUNK_DEPTH as f32;
 
-        // First pass: Generate mesh for opaque blocks and collect transparent blocks.
         for lx in 0..CHUNK_WIDTH {
             for ly in 0..CHUNK_HEIGHT {
                 for lz in 0..CHUNK_DEPTH {
@@ -692,7 +688,6 @@ impl State {
                             chunk_world_origin_z + lz as f32 + 0.5,
                         );
 
-                        // If the block is transparent, add it to a list to be processed later.
                         if is_current_block_transparent {
                             transparent_block_render_list.push(TransparentBlockData {
                                 block: *block,
@@ -701,10 +696,9 @@ impl State {
                                 lz,
                                 world_center: current_block_world_center,
                             });
-                            continue; // Don't generate mesh for it yet.
+                            continue;
                         }
 
-                        // --- OPAQUE BLOCK MESH GENERATION ---
                         let face_definitions: [(CubeFace, (i32, i32, i32)); 6] = [
                             (CubeFace::Front, (0, 0, -1)),
                             (CubeFace::Back, (0, 0, 1)),
@@ -727,24 +721,33 @@ impl State {
                                 neighbor_world_bz as f32,
                             );
 
-                            // A face is visible if its neighbor is transparent.
                             let is_face_visible = if let Some(neighbor_block) = neighbor_block_opt {
                                 neighbor_block.is_transparent()
                             } else {
-                                true // Render face if neighbor is outside the world.
+                                true
                             };
 
                             if is_face_visible {
+                                // --- THE FIX IS HERE! ---
+                                // We get the light level from the NEIGHBOR block (the air), not the current solid block.
+                                let (sun_light, block_light) =
+                                    if let Some(neighbor_block) = neighbor_block_opt {
+                                        (neighbor_block.sun_light, neighbor_block.block_light)
+                                    } else {
+                                        (15, 0) // If neighbor is outside the world, assume full sunlight.
+                                    };
+                                let packed_light = ((block_light as u32) << 8) | (sun_light as u32);
+                                // --- END OF FIX ---
+
                                 let vertices_template = face_type.get_vertices_template();
                                 let local_indices = face_type.get_local_indices();
 
-                                // --- Your original texture and color logic ---
                                 const ATLAS_COLS: f32 = 16.0;
                                 const ATLAS_ROWS: f32 = 39.0;
                                 let tex_size_x = 1.0 / ATLAS_COLS;
                                 let tex_size_y = 1.0 / ATLAS_ROWS;
                                 let all_face_atlas_indices = block.get_texture_atlas_indices();
-                                let mut current_vertex_color = [0.5, 0.25, 0.05]; // Default
+                                let mut current_vertex_color = [0.5, 0.25, 0.05];
                                 let face_specific_atlas_indices: [f32; 2] = match face_type {
                                     CubeFace::Front => all_face_atlas_indices[0],
                                     CubeFace::Back => all_face_atlas_indices[1],
@@ -788,28 +791,16 @@ impl State {
                                     | CubeFace::Bottom => &uvs_for_bl_tl_tr_br_order,
                                     CubeFace::Back | CubeFace::Top => &uvs_for_bl_br_tr_tl_order,
                                 };
-                                // --- End of your texture/color logic ---
 
                                 for (i, v_template) in vertices_template.iter().enumerate() {
-                                    // --- NEW LIGHTING CALCULATION ---
-                                    // For now, we use the light level of the block the face belongs to.
-                                    // A more advanced method would average the light of the 8 surrounding blocks for smooth lighting.
-                                    let sun_light = block.sun_light;
-                                    let block_light = block.block_light;
-
-                                    // Pack sun_light and block_light into a single u32.
-                                    // We put sun_light in the low bits and block_light in the next bits.
-                                    let packed_light =
-                                        ((block_light as u32) << 8) | (sun_light as u32);
-
                                     opaque_vertices.push(Vertex {
                                         position: (current_block_world_center
                                             + glam::Vec3::from(v_template.position))
                                         .into(),
                                         color: current_vertex_color,
                                         uv: selected_face_uvs[i],
-                                        tree_id: 0, // Opaque blocks don't need a tree_id
-                                        light: packed_light, // Add the packed light!
+                                        tree_id: 0,
+                                        light: packed_light, // Use the new packed_light from the neighbor!
                                     });
                                 }
                                 for local_idx in local_indices {
@@ -823,7 +814,6 @@ impl State {
             }
         }
 
-        // Second pass: Sort transparent blocks and generate their mesh.
         let player_camera_pos = self.player.position + glam::Vec3::new(0.0, PLAYER_EYE_HEIGHT, 0.0);
         transparent_block_render_list.sort_by(|a, b| {
             let dist_a = player_camera_pos.distance_squared(a.world_center);
@@ -837,7 +827,6 @@ impl State {
             let block = &t_block_data.block;
             let current_block_world_center = t_block_data.world_center;
 
-            // --- TRANSPARENT BLOCK MESH GENERATION ---
             let face_definitions: [(CubeFace, (i32, i32, i32)); 6] = [
                 (CubeFace::Front, (0, 0, -1)),
                 (CubeFace::Back, (0, 0, 1)),
@@ -860,8 +849,6 @@ impl State {
                     neighbor_world_bz as f32,
                 );
 
-                // A face is visible if its neighbor is transparent.
-                // For transparent blocks, we also don't draw faces against other transparent blocks of the same type.
                 let is_face_visible = if let Some(neighbor_block) = neighbor_block_opt {
                     if neighbor_block.block_type == block.block_type {
                         false
@@ -869,14 +856,23 @@ impl State {
                         neighbor_block.is_transparent()
                     }
                 } else {
-                    true // Render face if neighbor is outside the world.
+                    true
                 };
 
                 if is_face_visible {
+                    // --- THE SAME FIX for transparent blocks ---
+                    let (sun_light, block_light) = if let Some(neighbor_block) = neighbor_block_opt
+                    {
+                        (neighbor_block.sun_light, neighbor_block.block_light)
+                    } else {
+                        (15, 0)
+                    };
+                    let packed_light = ((block_light as u32) << 8) | (sun_light as u32);
+                    // --- END OF FIX ---
+
                     let vertices_template = face_type.get_vertices_template();
                     let local_indices = face_type.get_local_indices();
 
-                    // --- Your original texture and color logic for transparent blocks ---
                     const ATLAS_COLS: f32 = 16.0;
                     const ATLAS_ROWS: f32 = 39.0;
                     let tex_size_x = 1.0 / ATLAS_COLS;
@@ -916,14 +912,8 @@ impl State {
                         }
                         CubeFace::Back | CubeFace::Top => &uvs_for_bl_br_tr_tl_order,
                     };
-                    // --- End of your texture/color logic ---
 
                     for (i, v_template) in vertices_template.iter().enumerate() {
-                        // --- NEW LIGHTING CALCULATION ---
-                        let sun_light = block.sun_light;
-                        let block_light = block.block_light;
-                        let packed_light = ((block_light as u32) << 8) | (sun_light as u32);
-
                         transparent_vertices.push(Vertex {
                             position: (current_block_world_center
                                 + glam::Vec3::from(v_template.position))
@@ -931,7 +921,7 @@ impl State {
                             color: base_vertex_color,
                             uv: selected_face_uvs[i],
                             tree_id: block.tree_id.unwrap_or(0),
-                            light: packed_light, // Add the packed light!
+                            light: packed_light, // Use the new packed_light from the neighbor!
                         });
                     }
                     for local_idx in local_indices {
@@ -942,7 +932,6 @@ impl State {
             }
         }
 
-        // Final step: Create the GPU buffers from the vertex and index data.
         use wgpu::util::DeviceExt;
         let mut opaque_buffers: Option<ChunkRenderBuffers> = None;
         if !opaque_vertices.is_empty() && !opaque_indices.is_empty() {
@@ -1167,12 +1156,27 @@ impl State {
         const RAYCAST_MAX_DISTANCE: f32 = 5.0;
         self.selected_block =
             crate::raycast::cast_ray(&self.player, &self.world, RAYCAST_MAX_DISTANCE);
+
+        // --- MODIFIED SECTION ---
         if let Some((block_pos, _)) = self.selected_block {
             self.wireframe_renderer.update_selection(Some(block_pos));
+            // Get the actual block data from the world
+            let block_ref = self.world.get_block_at_world(
+                block_pos.x as f32,
+                block_pos.y as f32,
+                block_pos.z as f32,
+            );
+            // Pass the block data to the debug overlay
+            self.debug_overlay.update_selection_info(block_ref);
         } else {
             self.wireframe_renderer.update_selection(None);
+            // If no block is selected, clear the info
+            self.debug_overlay.update_selection_info(None);
         }
+        // --- END OF MODIFIED SECTION ---
+
         let camera_eye = self.player.position + glam::Vec3::new(0.0, PLAYER_EYE_HEIGHT, 0.0);
+
         let camera_front = glam::Vec3::new(
             self.player.yaw.cos() * self.player.pitch.cos(),
             self.player.pitch.sin(),
