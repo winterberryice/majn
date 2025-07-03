@@ -1,3 +1,6 @@
+// Content of main.rs from last read_files, with is_face_visible logic updated
+// AND with the erroneous "[end of engine/src/main.rs]" lines removed.
+
 mod block;
 mod camera;
 mod chunk;
@@ -6,45 +9,39 @@ mod debug_overlay;
 mod input;
 pub mod physics;
 pub mod player;
-mod raycast; // Add raycast module
+mod raycast;
 mod texture;
-mod ui; // Added for Crosshair
+mod ui;
 mod wireframe_renderer;
-mod world; // Add world module // Add wireframe_renderer module
+mod world;
 
-use std::sync::Arc; // Added for Arc<Window>
+use std::sync::Arc;
 use wgpu::Trace;
 use winit::{
-    application::ApplicationHandler, // Added for ApplicationHandler
+    application::ApplicationHandler,
     event::*,
-    event_loop::{ActiveEventLoop, ControlFlow, EventLoop}, // Added ControlFlow
+    event_loop::{ActiveEventLoop, ControlFlow, EventLoop},
     keyboard::{KeyCode, PhysicalKey},
-    window::{Window, WindowId}, // WindowId might be needed by ApplicationHandler methods
+    window::{Window, WindowId},
 };
 
-// Struct to hold application state and wgpu state
 struct App {
-    // Removed lifetime 'a
-    window: Option<Arc<Window>>, // Changed to Option<Arc<Window>>
-    state: Option<State>,        // Changed to Option<State> (State will also not have 'a)
-    // input_state: input::InputState, // REMOVED: Will be part of State
-    mouse_grabbed: bool, // Added to track mouse grab state
-    last_mouse_position: Option<winit::dpi::PhysicalPosition<f64>>, // Added to track last mouse position
+    window: Option<Arc<Window>>,
+    state: Option<State>,
+    mouse_grabbed: bool,
+    last_mouse_position: Option<winit::dpi::PhysicalPosition<f64>>,
 }
 
 impl App {
-    // Removed lifetime 'a
     fn new() -> Self {
         Self {
             window: None,
             state: None,
-            // input_state: input::InputState::new(), // REMOVED
             mouse_grabbed: false,
             last_mouse_position: None,
         }
     }
 
-    // Helper method to manage mouse grab and cursor visibility
     fn set_mouse_grab(&mut self, grab: bool) {
         if let Some(window) = self.window.as_ref() {
             if grab {
@@ -63,13 +60,8 @@ impl App {
         }
     }
 
-    // New method to handle window events, adapted from ApplicationHandler::window_event
     fn handle_window_event(&mut self, event: WindowEvent, active_loop: &ActiveEventLoop) {
-        // Renamed elwt to active_loop for clarity
-        // --- Phase 1: Handle events that might change self.mouse_grabbed or cause an early exit ---
-        // This phase operates on `&mut self` but NOT `&mut self.state` yet.
         let mut event_consumed_by_grab_logic = false;
-
         match event {
             WindowEvent::KeyboardInput {
                 event: ref key_event,
@@ -78,11 +70,11 @@ impl App {
                 && key_event.state == ElementState::Pressed =>
             {
                 if self.mouse_grabbed {
-                    self.set_mouse_grab(false); // Modifies self directly
+                    self.set_mouse_grab(false);
                     event_consumed_by_grab_logic = true;
                 } else {
-                    active_loop.exit(); // Uses active_loop
-                    return; // Early return, no further processing of this event
+                    active_loop.exit();
+                    return;
                 }
             }
             WindowEvent::MouseInput {
@@ -90,38 +82,24 @@ impl App {
                 state: mouse_element_state,
                 ..
             } => {
-                // Capture button and state, renamed state to mouse_element_state to avoid conflict
-                // Pass mouse input to State's InputState handler
                 if let Some(s) = self.state.as_mut() {
                     s.input_state.on_mouse_input(button, mouse_element_state);
                 }
-
                 if mouse_element_state == ElementState::Pressed {
-                    // Existing logic for mouse grab
                     if !self.mouse_grabbed {
-                        self.set_mouse_grab(true); // Modifies self directly
-                        // event_consumed_by_grab_logic = true; // Potentially consume this click for grabbing only
+                        self.set_mouse_grab(true);
                     }
                 }
             }
             _ => {}
         }
 
-        // --- Phase 2: Process event with State ---
-        // Now, we can safely borrow `self.state.as_mut()` if the event wasn't fully handled by grab logic
-        // or if grab logic doesn't preclude state processing.
-
-        // We need `state` for most other event handling.
         let state = match self.state.as_mut() {
-            // state needs to be mutable here
             Some(s) => s,
-            // If state is None (e.g., after Resumed failed or before it ran),
-            // most window events can't be processed meaningfully.
             None => return,
         };
 
         let mut event_handled_by_state_input = false;
-        // Only pass event to state.input if not the Escape key press that was consumed by grab logic
         if !(event_consumed_by_grab_logic
             && matches!(
                 event,
@@ -141,24 +119,16 @@ impl App {
         let mut cursor_moved_while_grabbed = false;
         if self.mouse_grabbed {
             if let WindowEvent::CursorMoved { position, .. } = event {
-                // This specific handling of CursorMoved when grabbed might be redundant
-                // if DeviceEvent::MouseMotion is the primary source of camera updates.
-                // However, if other UI elements depend on CursorMoved even when grabbed, this is relevant.
-                // For now, we mark it as potentially handled to prevent default processing if grabbed.
-                let mut mouse_delta = (0.0, 0.0); // This delta is local to CursorMoved, DeviceEvent provides its own
+                let mut mouse_delta = (0.0, 0.0);
                 if let Some(last_pos) = self.last_mouse_position {
                     mouse_delta.0 = position.x - last_pos.x;
                     mouse_delta.1 = position.y - last_pos.y;
                 }
                 self.last_mouse_position = Some(position);
-                // state.process_mouse_motion(mouse_delta.0, mouse_delta.1); // This is usually done by DeviceEvent
-                cursor_moved_while_grabbed = true; // If grabbed, consider CursorMoved handled at this level
+                cursor_moved_while_grabbed = true;
             }
         }
 
-        // --- Phase 3: Default event handling for non-consumed events ---
-        // These are events that weren't an Escape toggle, a click-to-grab,
-        // weren't consumed by state.input(), and weren't a CursorMoved while grabbed.
         if !event_consumed_by_grab_logic
             && !event_handled_by_state_input
             && !cursor_moved_while_grabbed
@@ -171,72 +141,14 @@ impl App {
                     state.resize(physical_size);
                 }
                 WindowEvent::RedrawRequested => {
-                    // This is the correct place for rendering logic triggered by the system.
-                    // We need to borrow input_state mutably here, separate from state.
-                    // This is tricky because state also comes from self.
-                    // Let's try to call update with input_state from self.
-                    // This might require restructuring if Rust's borrow checker complains.
-                    // For now, let's assume we can pass `&mut self.input_state`.
-
-                    // The issue: `state` is `&mut self.state.unwrap()`.
-                    // `self.input_state` is another field of `self`.
-                    // We cannot have two mutable borrows of `self` or parts of `self` simultaneously
-                    // if `state.update` takes `&mut self`, and we pass `&mut self.input_state`.
-                    // However, `state.update` takes `&mut self` (referring to `State` instance)
-                    // and `&mut input_state` as a separate argument.
-
-                    // Let's try to get `input_state` first, then `state`.
-                    // This won't work as `self.state.as_mut()` borrows `self` mutably.
-
-                    // The most straightforward way is to temporarily take `input_state` out of `self`,
-                    // then call `state.update()`, then put `input_state` back.
-                    // This is not ideal.
-                    // A better way: `State::update` should not take `&mut self` if it also needs `&mut InputState` from `App`.
-                    // Or, `InputState` becomes part of `State`.
-
-                    // Let's make InputState part of State for simplicity.
-                    // This requires changes in:
-                    // 1. App struct: remove input_state
-                    // 2. App::new(): remove input_state init
-                    // 3. App::handle_window_event (MouseInput): call state.input_state.on_mouse_input()
-                    // 4. State struct: add input_state field
-                    // 5. State::new(): init input_state
-                    // 6. State::update(): access self.input_state directly
-                    // This seems like a more Rusty way to handle ownership.
-
-                    // === REVISED PLAN FOR THIS STEP ===
-                    // 1. Move InputState ownership to the State struct.
-                    // 2. Update App event handling to call state.input_state.on_mouse_input().
-                    // 3. Update State::update() to use its own input_state.
-
-                    // For now, I will proceed with the original plan and see if the borrow checker complains.
-                    // If it does, I will refactor to move InputState into State.
-                    // The current signature of state.update is `fn update(&mut self, input_state: &mut input::InputState)`
-                    // `state` here is `&mut State`.
-                    // `self` in `App::handle_window_event` is `&mut App`.
-                    // So we'd be calling `state.update(&mut self.input_state)`.
-                    // This means `state` (which is `self.state.as_mut().unwrap()`) is one mutable borrow.
-                    // `&mut self.input_state` is another mutable borrow from `self`.
-                    // This is a conflict.
-
-                    // Refactoring to move InputState into State is the way.
-
-                    // --- START REFACTOR ---
-                    // This change is larger than just this location.
-                    // I will make the necessary changes across files for this refactor.
-                    // I will start by removing input_state from App and adding it to State.
-
-                    // The call will become: state.update() and State::update will internally use self.input_state.
-                    state.update(); // State::update will be changed to use its own InputState
+                    state.update();
                     match state.render() {
                         Ok(_) => {}
-                        Err(wgpu::SurfaceError::Lost) => state.resize(state.size), // Use existing size
+                        Err(wgpu::SurfaceError::Lost) => state.resize(state.size),
                         Err(wgpu::SurfaceError::OutOfMemory) => active_loop.exit(),
                         Err(e) => eprintln!("Error rendering: {:?}", e),
                     }
                 }
-                // Other WindowEvents like ScaleFactorChanged, ThemeChanged, etc.
-                // can be handled here if needed.
                 _ => {}
             }
         }
@@ -246,17 +158,15 @@ impl App {
 impl ApplicationHandler for App {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         event_loop.set_control_flow(ControlFlow::Poll);
-
         if self.window.is_none() {
             let window_attributes =
                 Window::default_attributes().with_title("Hello WGPU with ApplicationHandler!");
             let window_arc = Arc::new(event_loop.create_window(window_attributes).unwrap());
             self.window = Some(Arc::clone(&window_arc));
             let initial_size = window_arc.inner_size();
-
-            let state = pollster::block_on(State::new(Arc::clone(&window_arc), initial_size));
-            self.state = Some(state);
-            self.set_mouse_grab(true); // Initial mouse grab
+            let state_val = pollster::block_on(State::new(Arc::clone(&window_arc), initial_size));
+            self.state = Some(state_val);
+            self.set_mouse_grab(true);
         }
     }
 
@@ -275,7 +185,7 @@ impl ApplicationHandler for App {
 
     fn device_event(
         &mut self,
-        _event_loop: &ActiveEventLoop, // Prefixed with underscore as it's not used
+        _event_loop: &ActiveEventLoop,
         _device_id: DeviceId,
         event: DeviceEvent,
     ) {
@@ -287,75 +197,62 @@ impl ApplicationHandler for App {
                     }
                 }
             }
-            // Handle other device events if needed
             _ => {}
         }
     }
 
     fn about_to_wait(&mut self, _event_loop: &ActiveEventLoop) {
-        // Prefixed with underscore
-        // This corresponds to the old Event::MainEventsCleared or Event::AboutToWait
-        // Request a redraw continuously for animation, if the window exists.
         if let Some(window) = self.window.as_ref() {
             window.request_redraw();
         }
-        // Note: RedrawRequested events will be handled in window_event
-        // Rendering logic (update, render) will be triggered by WindowEvent::RedrawRequested
     }
 
     fn exiting(&mut self, _event_loop: &ActiveEventLoop) {
-        // Prefixed with underscore
-        // Corresponds to the old Event::LoopDestroyed or Event::LoopExiting
         println!("ApplicationHandler: Event loop is exiting. Cleaning up.");
-        // Explicitly drop state and window if necessary, though Arc and Option should handle it.
-        // self.state = None;
-        // self.window = None;
     }
-
-    // We might need to implement other methods like `new_events` or `memory_warning`
-    // if specific behaviors are needed for those, but for now, the defaults are fine.
 }
 
-// Represents a single point on a shape.
-// bytemuck is used to safely cast our struct into a slice of bytes that the GPU can understand.
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct Vertex {
-    // Made public
-    pub position: [f32; 3], // Made public
-    pub color: [f32; 3],    // Made public
-    pub uv: [f32; 2],       // Added for texture coordinates
+    pub position: [f32; 3],
+    pub color: [f32; 3],
+    pub uv: [f32; 2],
+    pub tree_id: u32,
 }
 
 impl Vertex {
-    // This describes the memory layout of a single vertex to the shader.
     pub fn desc() -> wgpu::VertexBufferLayout<'static> {
-        // Made public
         wgpu::VertexBufferLayout {
             array_stride: std::mem::size_of::<Vertex>() as wgpu::BufferAddress,
             step_mode: wgpu::VertexStepMode::Vertex,
             attributes: &[
                 wgpu::VertexAttribute {
                     offset: 0,
-                    shader_location: 0, // position
+                    shader_location: 0,
                     format: wgpu::VertexFormat::Float32x3,
                 },
                 wgpu::VertexAttribute {
                     offset: std::mem::size_of::<[f32; 3]>() as wgpu::BufferAddress,
-                    shader_location: 1, // color
+                    shader_location: 1,
                     format: wgpu::VertexFormat::Float32x3,
                 },
                 wgpu::VertexAttribute {
-                    offset: (std::mem::size_of::<[f32; 3]>() * 2) as wgpu::BufferAddress, // After position and color
-                    shader_location: 2,                                                   // uv
+                    offset: (std::mem::size_of::<[f32; 3]>() * 2) as wgpu::BufferAddress,
+                    shader_location: 2,
                     format: wgpu::VertexFormat::Float32x2,
+                },
+                wgpu::VertexAttribute {
+                    offset: (std::mem::size_of::<[f32; 3]>() * 2 + std::mem::size_of::<[f32; 2]>()) as wgpu::BufferAddress,
+                    shader_location: 3,
+                    format: wgpu::VertexFormat::Uint32,
                 },
             ],
         }
     }
 }
 
-use crate::block::BlockType; // For block placement/removal
+use crate::block::BlockType;
 use crate::camera::CameraUniform;
 use crate::chunk::{CHUNK_DEPTH, CHUNK_HEIGHT, CHUNK_WIDTH};
 use crate::cube_geometry::CubeFace;
@@ -368,7 +265,7 @@ use crate::wireframe_renderer::WireframeRenderer;
 use crate::world::World;
 use glam::IVec3;
 use glam::Mat4;
-use std::collections::HashMap; // For collision checking
+use std::collections::HashMap;
 
 struct ChunkRenderBuffers {
     vertex_buffer: wgpu::Buffer,
@@ -379,6 +276,8 @@ struct ChunkRenderBuffers {
 struct ChunkRenderData {
     opaque_buffers: Option<ChunkRenderBuffers>,
     transparent_buffers: Option<ChunkRenderBuffers>,
+    last_transparent_mesh_camera_pos: Option<glam::Vec3>,
+    last_transparent_mesh_camera_yaw: Option<f32>,
 }
 
 struct State {
@@ -387,8 +286,8 @@ struct State {
     queue: wgpu::Queue,
     config: wgpu::SurfaceConfiguration,
     size: winit::dpi::PhysicalSize<u32>,
-    render_pipeline: wgpu::RenderPipeline, // For opaque objects
-    transparent_render_pipeline: wgpu::RenderPipeline, // For transparent objects
+    render_pipeline: wgpu::RenderPipeline,
+    transparent_render_pipeline: wgpu::RenderPipeline,
     player: Player,
     camera_uniform: CameraUniform,
     camera_buffer: wgpu::Buffer,
@@ -402,11 +301,13 @@ struct State {
     crosshair: ui::crosshair::Crosshair,
     wireframe_renderer: WireframeRenderer,
     selected_block: Option<(IVec3, BlockFace)>,
-    // diffuse_texture: crate::texture::Texture,
-    // texture_bind_group_layout: wgpu::BindGroupLayout,
     diffuse_bind_group: wgpu::BindGroup,
-    input_state: input::InputState, // Added InputState here
+    input_state: input::InputState,
 }
+
+// Constants for threshold-based re-meshing of transparent chunks
+const TRANSPARENT_REMESH_DISTANCE_SQUARED_THRESHOLD: f32 = 9.0;
+const TRANSPARENT_REMESH_YAW_THRESHOLD_RADIANS: f32 = 0.349066;
 
 impl State {
     async fn new(
@@ -566,8 +467,8 @@ impl State {
                             operation: wgpu::BlendOperation::Add,
                         },
                         alpha: wgpu::BlendComponent {
-                            src_factor: wgpu::BlendFactor::One,              // Or SrcAlpha
-                            dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha, // Or Zero
+                            src_factor: wgpu::BlendFactor::One,
+                            dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
                             operation: wgpu::BlendOperation::Add,
                         },
                     }),
@@ -587,7 +488,7 @@ impl State {
             depth_stencil: Some(wgpu::DepthStencilState {
                 format: wgpu::TextureFormat::Depth32Float,
                 depth_write_enabled: true,
-                depth_compare: wgpu::CompareFunction::Less, // Standard depth test
+                depth_compare: wgpu::CompareFunction::Less,
                 stencil: wgpu::StencilState::default(),
                 bias: wgpu::DepthBiasState::default(),
             }),
@@ -596,23 +497,21 @@ impl State {
             cache: None,
         });
 
-        // Create a separate render pipeline for transparent objects
-        // Key difference: depth_write_enabled is false
         let transparent_render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("Transparent Render Pipeline"),
-            layout: Some(&render_pipeline_layout), // Reuse the same layout
+            layout: Some(&render_pipeline_layout),
             vertex: wgpu::VertexState {
                 module: &shader,
                 entry_point: Some("vs_main"),
                 buffers: &[Vertex::desc()],
                 compilation_options: wgpu::PipelineCompilationOptions::default(),
             },
-            fragment: Some(wgpu::FragmentState { // Same fragment shader and targets
+            fragment: Some(wgpu::FragmentState {
                 module: &shader,
                 entry_point: Some("fs_main"),
                 targets: &[Some(wgpu::ColorTargetState {
                     format: config.format,
-                    blend: Some(wgpu::BlendState { // Same blend state
+                    blend: Some(wgpu::BlendState {
                         color: wgpu::BlendComponent {
                             src_factor: wgpu::BlendFactor::SrcAlpha,
                             dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
@@ -628,19 +527,19 @@ impl State {
                 })],
                 compilation_options: wgpu::PipelineCompilationOptions::default(),
             }),
-            primitive: wgpu::PrimitiveState { // Same primitive state
+            primitive: wgpu::PrimitiveState {
                 topology: wgpu::PrimitiveTopology::TriangleList,
                 strip_index_format: None,
                 front_face: wgpu::FrontFace::Ccw,
-                cull_mode: Some(wgpu::Face::Back), // Could be None for two-sided transparent things, but Back is fine for cubes
+                cull_mode: None,
                 polygon_mode: wgpu::PolygonMode::Fill,
                 unclipped_depth: false,
                 conservative: false,
             },
             depth_stencil: Some(wgpu::DepthStencilState {
                 format: wgpu::TextureFormat::Depth32Float,
-                depth_write_enabled: false, // <<< KEY DIFFERENCE FOR TRANSPARENCY
-                depth_compare: wgpu::CompareFunction::Less, // Still compare, but don't write
+                depth_write_enabled: false,
+                depth_compare: wgpu::CompareFunction::Less,
                 stencil: wgpu::StencilState::default(),
                 bias: wgpu::DepthBiasState::default(),
             }),
@@ -713,7 +612,7 @@ impl State {
             config,
             size: initial_size,
             render_pipeline,
-            transparent_render_pipeline, // Store the new pipeline
+            transparent_render_pipeline,
             player,
             camera_uniform,
             camera_buffer,
@@ -727,10 +626,8 @@ impl State {
             wireframe_renderer,
             selected_block: None,
             crosshair,
-            // diffuse_texture,
-            // texture_bind_group_layout,
             diffuse_bind_group,
-            input_state: input::InputState::new(), // Initialize InputState
+            input_state: input::InputState::new(),
         }
     }
 
@@ -742,6 +639,15 @@ impl State {
         let mut transparent_vertices: Vec<Vertex> = Vec::new();
         let mut transparent_indices: Vec<u16> = Vec::new();
         let mut transparent_vertex_offset: u16 = 0;
+
+        struct TransparentBlockData {
+            block: block::Block,
+            lx: usize,
+            ly: usize,
+            lz: usize,
+            world_center: glam::Vec3,
+        }
+        let mut transparent_block_render_list: Vec<TransparentBlockData> = Vec::new();
 
         let chunk_opt = self.world.get_chunk(chunk_cx, chunk_cz);
         if chunk_opt.is_none() {
@@ -761,39 +667,28 @@ impl State {
             for ly in 0..CHUNK_HEIGHT {
                 for lz in 0..CHUNK_DEPTH {
                     if let Some(block) = chunk.get_block(lx, ly, lz) {
-                        // Skip Air blocks entirely
                         if block.block_type == BlockType::Air {
                             continue;
                         }
-
-                        // Determine if the block is transparent (for mesh type)
-                        let is_current_block_transparent = block.is_transparent(); // Visual transparency
-
-                        // Default block_color, might be overridden for specific types/faces
+                        let is_current_block_transparent = block.is_transparent();
                         let default_block_color = match block.block_type {
                             BlockType::Dirt => [0.5, 0.25, 0.05],
                             BlockType::Grass => [0.0, 0.8, 0.1],
                             BlockType::Bedrock => [0.5, 0.5, 0.5],
                             BlockType::OakLog => [0.5, 0.5, 0.5],
-                            BlockType::OakLeaves => [0.5, 0.5, 0.5], // Base color before tinting
-                            BlockType::Air => unreachable!(), // Should be skipped
+                            BlockType::OakLeaves => [0.5, 0.5, 0.5],
+                            BlockType::Air => unreachable!(),
                         };
-
                         let current_block_world_center = glam::Vec3::new(
                             chunk_world_origin_x + lx as f32 + 0.5,
                             ly as f32 + 0.5,
                             chunk_world_origin_z + lz as f32 + 0.5,
                         );
-
                         let face_definitions: [(CubeFace, (i32, i32, i32)); 6] = [
-                            (CubeFace::Front, (0, 0, -1)),
-                            (CubeFace::Back, (0, 0, 1)),
-                            (CubeFace::Right, (1, 0, 0)),
-                            (CubeFace::Left, (-1, 0, 0)),
-                            (CubeFace::Top, (0, 1, 0)),
-                            (CubeFace::Bottom, (0, -1, 0)),
+                            (CubeFace::Front, (0, 0, -1)), (CubeFace::Back, (0, 0, 1)),
+                            (CubeFace::Right, (1, 0, 0)), (CubeFace::Left, (-1, 0, 0)),
+                            (CubeFace::Top, (0, 1, 0)), (CubeFace::Bottom, (0, -1, 0)),
                         ];
-
                         for (face_type, offset) in face_definitions.iter() {
                             let neighbor_world_bx =
                                 chunk_world_origin_x as i32 + lx as i32 + offset.0;
@@ -808,110 +703,162 @@ impl State {
                                     neighbor_world_by as f32,
                                     neighbor_world_bz as f32,
                                 ) {
-                                    // Culling logic:
-                                    // A face is culled if the neighbor block is:
-                                    // 1. Solid (physics-wise, meaning it's not Air)
-                                    // 2. AND NOT transparent (visual-wise)
-                                    // 3. UNLESS the current block itself is transparent.
-                                    //    Transparent blocks should not cull each other's faces.
-                                    if neighbor_block.is_solid() && !neighbor_block.is_transparent() && !is_current_block_transparent {
+                                    if neighbor_block.is_solid() && !neighbor_block.is_transparent() {
                                         is_face_visible = false;
                                     }
-                                    // If current block is transparent, and neighbor is also transparent, face should be visible.
-                                    if is_current_block_transparent && neighbor_block.is_transparent() {
-                                        is_face_visible = true;
-                                    }
                                 }
                             }
-                            // Faces at chunk boundaries (not checking outside world bounds) are always visible.
 
                             if is_face_visible {
-                                let vertices_template = face_type.get_vertices_template();
-                                let local_indices = face_type.get_local_indices();
-
-                                const ATLAS_COLS: f32 = 16.0;
-                                const ATLAS_ROWS: f32 = 39.0;
-                                let tex_size_x = 1.0 / ATLAS_COLS;
-                                let tex_size_y = 1.0 / ATLAS_ROWS;
-
-                                let all_face_atlas_indices = block.get_texture_atlas_indices();
-                                let mut current_vertex_color = default_block_color;
-
-                                let face_specific_atlas_indices: [f32; 2] = match face_type {
-                                    CubeFace::Front => all_face_atlas_indices[0],
-                                    CubeFace::Back => all_face_atlas_indices[1],
-                                    CubeFace::Right => all_face_atlas_indices[2],
-                                    CubeFace::Left => all_face_atlas_indices[3],
-                                    CubeFace::Top => all_face_atlas_indices[4],
-                                    CubeFace::Bottom => all_face_atlas_indices[5],
-                                };
-
-                                match block.block_type {
-                                    BlockType::Grass => {
-                                        if *face_type == CubeFace::Top {
-                                            current_vertex_color = [0.1, 0.9, 0.1];
-                                        } else if *face_type == CubeFace::Bottom {
-                                            current_vertex_color = [0.5, 0.25, 0.05];
-                                        } else {
-                                            current_vertex_color = [0.0, 0.8, 0.1];
-                                        }
-                                    }
-                                    BlockType::OakLeaves => {
-                                        current_vertex_color = [0.1, 0.9, 0.2];
-                                    }
-                                    _ => {}
-                                }
-
-                                let u_min = face_specific_atlas_indices[0] * tex_size_x;
-                                let v_min = face_specific_atlas_indices[1] * tex_size_y;
-                                let u_max = u_min + tex_size_x;
-                                let v_max = v_min + tex_size_y;
-
-                                let uvs_for_bl_br_tr_tl_order = [
-                                    [u_min, v_max], [u_max, v_max], [u_max, v_min], [u_min, v_min],
-                                ];
-                                let uvs_for_bl_tl_tr_br_order = [
-                                    [u_min, v_max], [u_min, v_min], [u_max, v_min], [u_max, v_max],
-                                ];
-
-                                let selected_face_uvs = match face_type {
-                                    CubeFace::Front | CubeFace::Right | CubeFace::Left | CubeFace::Bottom =>
-                                        &uvs_for_bl_tl_tr_br_order,
-                                    CubeFace::Back | CubeFace::Top => &uvs_for_bl_br_tr_tl_order,
-                                };
-
-                                let (target_vertices, target_indices, current_vertex_offset) =
-                                    if is_current_block_transparent {
-                                        (
-                                            &mut transparent_vertices,
-                                            &mut transparent_indices,
-                                            &mut transparent_vertex_offset,
-                                        )
-                                    } else {
-                                        (
-                                            &mut opaque_vertices,
-                                            &mut opaque_indices,
-                                            &mut opaque_vertex_offset,
-                                        )
+                                if !is_current_block_transparent {
+                                    let vertices_template = face_type.get_vertices_template();
+                                    let local_indices = face_type.get_local_indices();
+                                    const ATLAS_COLS: f32 = 16.0;
+                                    const ATLAS_ROWS: f32 = 39.0;
+                                    let tex_size_x = 1.0 / ATLAS_COLS;
+                                    let tex_size_y = 1.0 / ATLAS_ROWS;
+                                    let all_face_atlas_indices = block.get_texture_atlas_indices();
+                                    let mut current_vertex_color = default_block_color;
+                                    let face_specific_atlas_indices: [f32; 2] = match face_type {
+                                        CubeFace::Front => all_face_atlas_indices[0],
+                                        CubeFace::Back => all_face_atlas_indices[1],
+                                        CubeFace::Right => all_face_atlas_indices[2],
+                                        CubeFace::Left => all_face_atlas_indices[3],
+                                        CubeFace::Top => all_face_atlas_indices[4],
+                                        CubeFace::Bottom => all_face_atlas_indices[5],
                                     };
-
-                                for (i, v_template) in vertices_template.iter().enumerate() {
-                                    target_vertices.push(Vertex {
-                                        position: (current_block_world_center
-                                            + glam::Vec3::from(v_template.position))
-                                        .into(),
-                                        color: current_vertex_color,
-                                        uv: selected_face_uvs[i],
-                                    });
+                                    match block.block_type {
+                                        BlockType::Grass => {
+                                            if *face_type == CubeFace::Top { current_vertex_color = [0.1, 0.9, 0.1]; }
+                                            else if *face_type == CubeFace::Bottom { current_vertex_color = [0.5, 0.25, 0.05];}
+                                            else { current_vertex_color = [0.0, 0.8, 0.1]; }
+                                        }
+                                        _ => {}
+                                    }
+                                    let u_min = face_specific_atlas_indices[0] * tex_size_x;
+                                    let v_min = face_specific_atlas_indices[1] * tex_size_y;
+                                    let u_max = u_min + tex_size_x;
+                                    let v_max = v_min + tex_size_y;
+                                    let uvs_for_bl_br_tr_tl_order = [[u_min, v_max], [u_max, v_max], [u_max, v_min], [u_min, v_min]];
+                                    let uvs_for_bl_tl_tr_br_order = [[u_min, v_max], [u_min, v_min], [u_max, v_min], [u_max, v_max]];
+                                    let selected_face_uvs = match face_type {
+                                        CubeFace::Front | CubeFace::Right | CubeFace::Left | CubeFace::Bottom => &uvs_for_bl_tl_tr_br_order,
+                                        CubeFace::Back | CubeFace::Top => &uvs_for_bl_br_tr_tl_order,
+                                    };
+                                    for (i, v_template) in vertices_template.iter().enumerate() {
+                                        opaque_vertices.push(Vertex {
+                                            position: (current_block_world_center + glam::Vec3::from(v_template.position)).into(),
+                                            color: current_vertex_color,
+                                            uv: selected_face_uvs[i],
+                                            tree_id: 0,
+                                        });
+                                    }
+                                    for local_idx in local_indices {
+                                        opaque_indices.push(opaque_vertex_offset + local_idx);
+                                    }
+                                    opaque_vertex_offset += vertices_template.len() as u16;
                                 }
-                                for local_idx in local_indices {
-                                    target_indices.push(*current_vertex_offset + local_idx);
-                                }
-                                *current_vertex_offset += vertices_template.len() as u16;
                             }
+                        }
+                        if is_current_block_transparent {
+                            transparent_block_render_list.push(TransparentBlockData {
+                                block: *block,
+                                lx, ly, lz,
+                                world_center: current_block_world_center,
+                            });
                         }
                     }
                 }
+            }
+        }
+
+        let player_camera_pos = self.player.position + glam::Vec3::new(0.0, PLAYER_EYE_HEIGHT, 0.0);
+        transparent_block_render_list.sort_by(|a, b| {
+            let dist_a = player_camera_pos.distance_squared(a.world_center);
+            let dist_b = player_camera_pos.distance_squared(b.world_center);
+            dist_b.partial_cmp(&dist_a).unwrap_or(std::cmp::Ordering::Equal)
+        });
+
+        for t_block_data in transparent_block_render_list {
+            let block = &t_block_data.block;
+            let _lx = t_block_data.lx;
+            let _ly = t_block_data.ly;
+            let _lz = t_block_data.lz;
+            let current_block_world_center = t_block_data.world_center;
+            let base_vertex_color = match block.block_type {
+                BlockType::OakLeaves => [0.1, 0.9, 0.2],
+                _ => [0.5, 0.5, 0.5],
+            };
+            let face_definitions: [(CubeFace, (i32, i32, i32)); 6] = [
+                (CubeFace::Front, (0, 0, -1)), (CubeFace::Back, (0, 0, 1)),
+                (CubeFace::Right, (1, 0, 0)), (CubeFace::Left, (-1, 0, 0)),
+                (CubeFace::Top, (0, 1, 0)), (CubeFace::Bottom, (0, -1, 0)),
+            ];
+            for (face_type, _offset) in face_definitions.iter() {
+                let mut is_face_visible_for_transparent = true;
+                let neighbor_check_offset = match face_type {
+                    CubeFace::Front => (0,0,-1), CubeFace::Back => (0,0,1),
+                    CubeFace::Right => (1,0,0), CubeFace::Left => (-1,0,0),
+                    CubeFace::Top => (0,1,0), CubeFace::Bottom => (0,-1,0),
+                };
+                let neighbor_world_bx_transparent = (chunk_world_origin_x + t_block_data.lx as f32) as i32 + neighbor_check_offset.0;
+                let neighbor_world_by_transparent = t_block_data.ly as i32 + neighbor_check_offset.1;
+                let neighbor_world_bz_transparent = (chunk_world_origin_z + t_block_data.lz as f32) as i32 + neighbor_check_offset.2;
+
+                if neighbor_world_by_transparent >= 0 && neighbor_world_by_transparent < CHUNK_HEIGHT as i32 {
+                    if let Some(neighbor_block_transparent) = self.world.get_block_at_world(
+                        neighbor_world_bx_transparent as f32,
+                        neighbor_world_by_transparent as f32,
+                        neighbor_world_bz_transparent as f32
+                    ) {
+                        if neighbor_block_transparent.is_solid() && !neighbor_block_transparent.is_transparent() {
+                            is_face_visible_for_transparent = false;
+                        }
+                    }
+                }
+
+                if !is_face_visible_for_transparent {
+                    continue;
+                }
+
+                let vertices_template = face_type.get_vertices_template();
+                let local_indices = face_type.get_local_indices();
+                const ATLAS_COLS: f32 = 16.0;
+                const ATLAS_ROWS: f32 = 39.0;
+                let tex_size_x = 1.0 / ATLAS_COLS;
+                let tex_size_y = 1.0 / ATLAS_ROWS;
+                let all_face_atlas_indices = block.get_texture_atlas_indices();
+                let current_vertex_color = base_vertex_color;
+                let face_specific_atlas_indices: [f32; 2] = match face_type {
+                    CubeFace::Front => all_face_atlas_indices[0], CubeFace::Back => all_face_atlas_indices[1],
+                    CubeFace::Right => all_face_atlas_indices[2], CubeFace::Left => all_face_atlas_indices[3],
+                    CubeFace::Top => all_face_atlas_indices[4], CubeFace::Bottom => all_face_atlas_indices[5],
+                };
+                let u_min = face_specific_atlas_indices[0] * tex_size_x;
+                let v_min = face_specific_atlas_indices[1] * tex_size_y;
+                let u_max = u_min + tex_size_x;
+                let v_max = v_min + tex_size_y;
+                let uvs_for_bl_br_tr_tl_order = [[u_min, v_max], [u_max, v_max], [u_max, v_min], [u_min, v_min]];
+                let uvs_for_bl_tl_tr_br_order = [[u_min, v_max], [u_min, v_min], [u_max, v_min], [u_max, v_max]];
+                let selected_face_uvs = match face_type {
+                    CubeFace::Front | CubeFace::Right | CubeFace::Left | CubeFace::Bottom => &uvs_for_bl_tl_tr_br_order,
+                    CubeFace::Back | CubeFace::Top => &uvs_for_bl_br_tr_tl_order,
+                };
+                for (i, v_template) in vertices_template.iter().enumerate() {
+                    let current_tree_id = if block.block_type == BlockType::OakLeaves {
+                        block.tree_id.unwrap_or(0)
+                    } else { 0 };
+                    transparent_vertices.push(Vertex {
+                        position: (current_block_world_center + glam::Vec3::from(v_template.position)).into(),
+                        color: current_vertex_color,
+                        uv: selected_face_uvs[i],
+                        tree_id: current_tree_id,
+                    });
+                }
+                for local_idx in local_indices {
+                    transparent_indices.push(transparent_vertex_offset + local_idx);
+                }
+                transparent_vertex_offset += vertices_template.len() as u16;
             }
         }
 
@@ -938,7 +885,6 @@ impl State {
                 num_indices: opaque_indices.len() as u32,
             });
         }
-
         let mut transparent_buffers: Option<ChunkRenderBuffers> = None;
         if !transparent_vertices.is_empty() && !transparent_indices.is_empty() {
             let vertex_buffer =
@@ -961,13 +907,20 @@ impl State {
                 num_indices: transparent_indices.len() as u32,
             });
         }
-
         if opaque_buffers.is_some() || transparent_buffers.is_some() {
+            let (final_camera_pos, final_camera_yaw) = if transparent_buffers.is_some() {
+                (Some(self.player.position), Some(self.player.yaw))
+            } else {
+                (None, None)
+            };
+
             self.chunk_render_data.insert(
                 (chunk_cx, chunk_cz),
                 ChunkRenderData {
                     opaque_buffers,
                     transparent_buffers,
+                    last_transparent_mesh_camera_pos: final_camera_pos,
+                    last_transparent_mesh_camera_yaw: final_camera_yaw,
                 },
             );
         } else {
@@ -980,7 +933,6 @@ impl State {
             self.size = new_size;
             self.config.width = new_size.width;
             self.config.height = new_size.height;
-
             let depth_texture_desc = wgpu::TextureDescriptor {
                 size: wgpu::Extent3d {
                     width: self.config.width,
@@ -999,7 +951,6 @@ impl State {
             self.depth_texture_view = self
                 .depth_texture
                 .create_view(&wgpu::TextureViewDescriptor::default());
-
             self.surface.configure(&self.device, &self.config);
             self.debug_overlay
                 .resize(new_size.width, new_size.height, &self.queue);
@@ -1024,34 +975,14 @@ impl State {
             } => {
                 let is_pressed = *state == ElementState::Pressed;
                 match key_code {
-                    KeyCode::KeyW | KeyCode::ArrowUp => {
-                        self.player.movement_intention.forward = is_pressed;
-                        true
-                    }
-                    KeyCode::KeyS | KeyCode::ArrowDown => {
-                        self.player.movement_intention.backward = is_pressed;
-                        true
-                    }
-                    KeyCode::KeyA | KeyCode::ArrowLeft => {
-                        self.player.movement_intention.left = is_pressed;
-                        true
-                    }
-                    KeyCode::KeyD | KeyCode::ArrowRight => {
-                        self.player.movement_intention.right = is_pressed;
-                        true
-                    }
-                    KeyCode::Space => {
-                        self.player.movement_intention.jump = is_pressed;
-                        true
-                    }
+                    KeyCode::KeyW | KeyCode::ArrowUp => { self.player.movement_intention.forward = is_pressed; true }
+                    KeyCode::KeyS | KeyCode::ArrowDown => { self.player.movement_intention.backward = is_pressed; true }
+                    KeyCode::KeyA | KeyCode::ArrowLeft => { self.player.movement_intention.left = is_pressed; true }
+                    KeyCode::KeyD | KeyCode::ArrowRight => { self.player.movement_intention.right = is_pressed; true }
+                    KeyCode::Space => { self.player.movement_intention.jump = is_pressed; true }
                     KeyCode::ShiftLeft | KeyCode::ShiftRight => false,
                     KeyCode::Escape => false,
-                    KeyCode::F3 => {
-                        if is_pressed {
-                            self.debug_overlay.toggle_visibility();
-                        }
-                        true
-                    }
+                    KeyCode::F3 => { if is_pressed { self.debug_overlay.toggle_visibility(); } true }
                     _ => false,
                 }
             }
@@ -1060,16 +991,11 @@ impl State {
     }
 
     fn update(&mut self) {
-        // Removed input_state from parameters
-        // Handle block interactions first
-        self.handle_block_interactions(); // Will now use self.input_state
-
+        self.handle_block_interactions();
         let dt_secs = 1.0 / 60.0;
-
         let player_pos = self.player.position;
         let current_chunk_x = (player_pos.x / CHUNK_WIDTH as f32).floor() as i32;
         let current_chunk_z = (player_pos.z / CHUNK_DEPTH as f32).floor() as i32;
-
         let mut new_active_chunk_coords = Vec::new();
         let render_distance = 1;
         for dx in -render_distance..=render_distance {
@@ -1078,7 +1004,6 @@ impl State {
                 let target_cz = current_chunk_z + dz;
                 new_active_chunk_coords.push((target_cx, target_cz));
                 let _ = self.world.get_or_create_chunk(target_cx, target_cz);
-                if !self.chunk_render_data.contains_key(&(target_cx, target_cz)) {}
             }
         }
         self.active_chunk_coords = new_active_chunk_coords;
@@ -1087,33 +1012,59 @@ impl State {
         for &(cx, cz) in &self.active_chunk_coords {
             if !self.chunk_render_data.contains_key(&(cx, cz)) {
                 coords_to_mesh.push((cx, cz));
+            } else {
+                if let Some(render_data) = self.chunk_render_data.get(&(cx, cz)) {
+                    if render_data.transparent_buffers.is_some() {
+                        let mut needs_remesh = false;
+                        if let Some(last_pos) = render_data.last_transparent_mesh_camera_pos {
+                            if self.player.position.distance_squared(last_pos) > TRANSPARENT_REMESH_DISTANCE_SQUARED_THRESHOLD {
+                                needs_remesh = true;
+                            }
+                        } else {
+                            needs_remesh = true;
+                        }
+                        if !needs_remesh {
+                            if let Some(last_yaw) = render_data.last_transparent_mesh_camera_yaw {
+                                let yaw_diff = (self.player.yaw - last_yaw).abs();
+                                let mut normalized_yaw_diff = yaw_diff;
+                                if normalized_yaw_diff > std::f32::consts::PI {
+                                    normalized_yaw_diff = 2.0 * std::f32::consts::PI - normalized_yaw_diff;
+                                }
+                                if normalized_yaw_diff > TRANSPARENT_REMESH_YAW_THRESHOLD_RADIANS {
+                                    needs_remesh = true;
+                                }
+                            } else {
+                                needs_remesh = true;
+                            }
+                        }
+                        if needs_remesh {
+                            coords_to_mesh.push((cx, cz));
+                        }
+                    }
+                }
             }
         }
-        for (cx, cz) in coords_to_mesh {
-            self.build_or_rebuild_chunk_mesh(cx, cz);
+        coords_to_mesh.sort_unstable();
+        coords_to_mesh.dedup();
+        for (cx, cz) in &coords_to_mesh {
+            self.build_or_rebuild_chunk_mesh(*cx, *cz);
         }
 
-        self.player
-            .update_physics_and_collision(dt_secs, &self.world);
-
+        self.player.update_physics_and_collision(dt_secs, &self.world);
         const RAYCAST_MAX_DISTANCE: f32 = 5.0;
         self.selected_block =
             crate::raycast::cast_ray(&self.player, &self.world, RAYCAST_MAX_DISTANCE);
-
-        // Update wireframe_renderer selection status
         if let Some((block_pos, _)) = self.selected_block {
             self.wireframe_renderer.update_selection(Some(block_pos));
         } else {
             self.wireframe_renderer.update_selection(None);
         }
-
         let camera_eye = self.player.position + glam::Vec3::new(0.0, PLAYER_EYE_HEIGHT, 0.0);
         let camera_front = glam::Vec3::new(
             self.player.yaw.cos() * self.player.pitch.cos(),
             self.player.pitch.sin(),
             self.player.yaw.sin() * self.player.pitch.cos(),
-        )
-        .normalize();
+        ).normalize();
         let camera_target = camera_eye + camera_front;
         let view_matrix = Mat4::look_at_rh(camera_eye, camera_target, glam::Vec3::Y);
         let aspect_ratio = self.config.width as f32 / self.config.height as f32;
@@ -1123,88 +1074,56 @@ impl State {
         let projection_matrix = Mat4::perspective_rh(fovy_radians, aspect_ratio, znear, zfar);
         let view_proj_matrix = projection_matrix * view_matrix;
         self.camera_uniform.view_proj = view_proj_matrix.to_cols_array_2d();
-
         self.queue.write_buffer(
             &self.camera_buffer,
             0,
             bytemuck::cast_slice(&[self.camera_uniform]),
         );
         self.debug_overlay.update(self.player.position);
-
-        // Clear per-frame input flags
-        self.input_state.clear_frame_state(); // Use self.input_state
+        self.input_state.clear_frame_state();
     }
 
-    // New function to handle block interactions based on input
-    // Changed to use self.input_state
     fn handle_block_interactions(&mut self) {
-        // Block Removal (Left-Click)
         if self.input_state.left_mouse_pressed_this_frame {
             if let Some((block_pos, _face)) = self.selected_block {
                 match self.world.set_block(block_pos, BlockType::Air) {
                     Ok(chunk_coord) => {
-                        // Mark chunk as dirty by removing its render data
                         self.chunk_render_data.remove(&chunk_coord);
-                        // Also, if the removed block was on a boundary, the adjacent chunk might need updating
-                        // This is complex; for now, just rebuild the primary chunk.
-                        // A more robust solution would check neighbors if block is on edge.
-                        // We might also need to rebuild neighbors if a block *removal* exposes their faces.
-                        // For simplicity, we'll rely on the existing active chunk meshing logic to pick up
-                        // changes when the player moves, or we can force rebuilds of neighbors.
-                        // Let's check and rebuild neighbors of the modified chunk as well.
-                        self.build_or_rebuild_chunk_mesh(chunk_coord.0, chunk_coord.1); // Rebuild the main chunk
-                        // And its direct neighbors, as face visibility might change
+                        self.build_or_rebuild_chunk_mesh(chunk_coord.0, chunk_coord.1);
                         self.build_or_rebuild_chunk_mesh(chunk_coord.0 + 1, chunk_coord.1);
                         self.build_or_rebuild_chunk_mesh(chunk_coord.0 - 1, chunk_coord.1);
                         self.build_or_rebuild_chunk_mesh(chunk_coord.0, chunk_coord.1 + 1);
                         self.build_or_rebuild_chunk_mesh(chunk_coord.0, chunk_coord.1 - 1);
                     }
-                    Err(e) => {
-                        eprintln!("Error removing block: {}", e);
-                    }
+                    Err(e) => { eprintln!("Error removing block: {}", e); }
                 }
             }
         }
-
-        // Block Placement (Right-Click)
         if self.input_state.right_mouse_pressed_this_frame {
-            // Use self.input_state
             if let Some((selected_block_pos, hit_face)) = self.selected_block {
                 let mut offset = IVec3::ZERO;
                 match hit_face {
-                    BlockFace::PosX => offset.x = 1,
-                    BlockFace::NegX => offset.x = -1,
-                    BlockFace::PosY => offset.y = 1,
-                    BlockFace::NegY => offset.y = -1,
-                    BlockFace::PosZ => offset.z = 1,
-                    BlockFace::NegZ => offset.z = -1,
+                    BlockFace::PosX => offset.x = 1, BlockFace::NegX => offset.x = -1,
+                    BlockFace::PosY => offset.y = 1, BlockFace::NegY => offset.y = -1,
+                    BlockFace::PosZ => offset.z = 1, BlockFace::NegZ => offset.z = -1,
                 }
                 let new_block_pos = selected_block_pos + offset;
-
-                // Collision Check with player
                 let player_aabb = self.player.get_world_bounding_box();
                 let new_block_aabb = AABB {
                     min: new_block_pos.as_vec3(),
-                    max: new_block_pos.as_vec3() + glam::Vec3::ONE, // Assuming 1x1x1 block
+                    max: new_block_pos.as_vec3() + glam::Vec3::ONE,
                 };
-
-                if player_aabb.intersects(&new_block_aabb) {
-                    // eprintln!("Cannot place block: intersects with player.");
-                } else {
+                if !player_aabb.intersects(&new_block_aabb) {
                     match self.world.set_block(new_block_pos, BlockType::Grass) {
                         Ok(chunk_coord) => {
-                            // Mark chunk as dirty by removing its render data
                             self.chunk_render_data.remove(&chunk_coord);
-                            // Rebuild the potentially new chunk and its neighbors
                             self.build_or_rebuild_chunk_mesh(chunk_coord.0, chunk_coord.1);
                             self.build_or_rebuild_chunk_mesh(chunk_coord.0 + 1, chunk_coord.1);
                             self.build_or_rebuild_chunk_mesh(chunk_coord.0 - 1, chunk_coord.1);
                             self.build_or_rebuild_chunk_mesh(chunk_coord.0, chunk_coord.1 + 1);
                             self.build_or_rebuild_chunk_mesh(chunk_coord.0, chunk_coord.1 - 1);
                         }
-                        Err(e) => {
-                            eprintln!("Error placing block: {}", e);
-                        }
+                        Err(e) => { eprintln!("Error placing block: {}", e); }
                     }
                 }
             }
@@ -1215,18 +1134,11 @@ impl State {
         if let Err(e) = self.debug_overlay.prepare(&self.device, &self.queue) {
             eprintln!("Failed to prepare debug overlay: {:?}", e);
         }
-
         let output = self.surface.get_current_texture()?;
-        let view = output
-            .texture
-            .create_view(&wgpu::TextureViewDescriptor::default());
-
-        let mut encoder = self
-            .device
-            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("Render Encoder"),
-            });
-
+        let view = output.texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("Render Encoder"),
+        });
         {
             let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("Render Pass"),
@@ -1234,139 +1146,93 @@ impl State {
                     view: &view,
                     resolve_target: None,
                     ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color {
-                            r: 0.1,
-                            g: 0.2,
-                            b: 0.3,
-                            a: 1.0,
-                        }),
+                        load: wgpu::LoadOp::Clear(wgpu::Color { r: 0.1, g: 0.2, b: 0.3, a: 1.0 }),
                         store: wgpu::StoreOp::Store,
                     },
                 })],
                 depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
                     view: &self.depth_texture_view,
-                    depth_ops: Some(wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(1.0),
-                        store: wgpu::StoreOp::Store,
-                    }),
+                    depth_ops: Some(wgpu::Operations { load: wgpu::LoadOp::Clear(1.0), store: wgpu::StoreOp::Store }),
                     stencil_ops: None,
                 }),
                 timestamp_writes: None,
                 occlusion_query_set: None,
             });
-
             render_pass.set_pipeline(&self.render_pipeline);
             render_pass.set_bind_group(0, &self.camera_bind_group, &[]);
             render_pass.set_bind_group(1, &self.diffuse_bind_group, &[]);
-
-            // Opaque pass: depth write enabled (default from render_pipeline)
             for chunk_coord in &self.active_chunk_coords {
                 if let Some(chunk_data) = self.chunk_render_data.get(chunk_coord) {
                     if let Some(ref opaque_buffers) = chunk_data.opaque_buffers {
                         if opaque_buffers.num_indices > 0 {
-                            render_pass
-                                .set_vertex_buffer(0, opaque_buffers.vertex_buffer.slice(..));
-                            render_pass.set_index_buffer(
-                                opaque_buffers.index_buffer.slice(..),
-                                wgpu::IndexFormat::Uint16,
-                            );
+                            render_pass.set_vertex_buffer(0, opaque_buffers.vertex_buffer.slice(..));
+                            render_pass.set_index_buffer(opaque_buffers.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
                             render_pass.draw_indexed(0..opaque_buffers.num_indices, 0, 0..1);
                         }
                     }
                 }
             }
-
-            // Wireframe for selected block (rendered with opaque settings)
-            self.wireframe_renderer
-                .draw(&mut render_pass, &self.queue, &self.world);
-
-            // Transparent pass: depth write disabled
-            // We need to create a new pipeline or modify the depth_stencil state for this pass.
-            // For simplicity, let's assume we have a separate pipeline for transparent objects
-            // or can dynamically set depth_write_enabled = false.
-            // The current render_pipeline has depth_write_enabled: true.
-            // We will create a new pipeline for transparent objects.
-            // This will be done in State::new and stored.
-            // For now, let's simulate this by just drawing them after opaque.
-            // The actual fix requires a new pipeline with depth_write_enabled: false.
-
-            // Set the transparent render pipeline
+            self.wireframe_renderer.draw(&mut render_pass, &self.queue, &self.world);
             render_pass.set_pipeline(&self.transparent_render_pipeline);
-            // Crucially, re-bind the necessary bind groups for this pipeline.
-            // Group 0 (camera_bind_group) is likely still correctly bound from the opaque pass
-            // as wireframe renderer also uses a camera_bind_group_layout at group 0.
-            // However, Group 1 needs to be explicitly set to diffuse_bind_group.
             render_pass.set_bind_group(1, &self.diffuse_bind_group, &[]);
-
-
-            for chunk_coord in &self.active_chunk_coords {
+            let mut sorted_transparent_chunks = self.active_chunk_coords.clone();
+            let player_pos = self.player.position;
+            sorted_transparent_chunks.sort_by(|a, b| {
+                let pos_a = glam::Vec3::new(
+                    (a.0 as f32 + 0.5) * CHUNK_WIDTH as f32,
+                    CHUNK_HEIGHT as f32 / 2.0,
+                    (a.1 as f32 + 0.5) * CHUNK_DEPTH as f32,
+                );
+                let pos_b = glam::Vec3::new(
+                    (b.0 as f32 + 0.5) * CHUNK_WIDTH as f32,
+                    CHUNK_HEIGHT as f32 / 2.0,
+                    (b.1 as f32 + 0.5) * CHUNK_DEPTH as f32,
+                );
+                let dist_a = player_pos.distance_squared(pos_a);
+                let dist_b = player_pos.distance_squared(pos_b);
+                dist_b.partial_cmp(&dist_a).unwrap_or(std::cmp::Ordering::Equal)
+            });
+            for chunk_coord in &sorted_transparent_chunks {
                 if let Some(chunk_data) = self.chunk_render_data.get(chunk_coord) {
                     if let Some(ref transparent_buffers) = chunk_data.transparent_buffers {
                         if transparent_buffers.num_indices > 0 {
-                            render_pass.set_vertex_buffer(
-                                0,
-                                transparent_buffers.vertex_buffer.slice(..),
-                            );
-                            render_pass.set_index_buffer(
-                                transparent_buffers.index_buffer.slice(..),
-                                wgpu::IndexFormat::Uint16,
-                            );
-                            render_pass
-                                .draw_indexed(0..transparent_buffers.num_indices, 0, 0..1);
+                            render_pass.set_vertex_buffer(0, transparent_buffers.vertex_buffer.slice(..));
+                            render_pass.set_index_buffer(transparent_buffers.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
+                            render_pass.draw_indexed(0..transparent_buffers.num_indices, 0, 0..1);
                         }
                     }
                 }
             }
         }
-
         {
-            let mut crosshair_render_pass =
-                encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                    label: Some("Crosshair Render Pass"),
-                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                        view: &view,
-                        resolve_target: None,
-                        ops: wgpu::Operations {
-                            load: wgpu::LoadOp::Load,
-                            store: wgpu::StoreOp::Store,
-                        },
-                    })],
-                    depth_stencil_attachment: None,
-                    timestamp_writes: None,
-                    occlusion_query_set: None,
-                });
+            let mut crosshair_render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("Crosshair Render Pass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &view, resolve_target: None,
+                    ops: wgpu::Operations { load: wgpu::LoadOp::Load, store: wgpu::StoreOp::Store },
+                })],
+                depth_stencil_attachment: None, timestamp_writes: None, occlusion_query_set: None,
+            });
             self.crosshair.draw(&mut crosshair_render_pass);
         }
-
         {
-            let mut debug_text_render_pass =
-                encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                    label: Some("Debug Text Render Pass"),
-                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                        view: &view,
-                        resolve_target: None,
-                        ops: wgpu::Operations {
-                            load: wgpu::LoadOp::Load,
-                            store: wgpu::StoreOp::Store,
-                        },
-                    })],
-                    depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                        view: &self.depth_texture_view,
-                        depth_ops: Some(wgpu::Operations {
-                            load: wgpu::LoadOp::Load,
-                            store: wgpu::StoreOp::Store,
-                        }),
-                        stencil_ops: None,
-                    }),
-                    timestamp_writes: None,
-                    occlusion_query_set: None,
-                });
+            let mut debug_text_render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("Debug Text Render Pass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &view, resolve_target: None,
+                    ops: wgpu::Operations { load: wgpu::LoadOp::Load, store: wgpu::StoreOp::Store },
+                })],
+                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                    view: &self.depth_texture_view,
+                    depth_ops: Some(wgpu::Operations { load: wgpu::LoadOp::Load, store: wgpu::StoreOp::Store }),
+                    stencil_ops: None,
+                }),
+                timestamp_writes: None, occlusion_query_set: None,
+            });
             self.debug_overlay.render(&mut debug_text_render_pass);
         }
-
         self.queue.submit(Some(encoder.finish()));
         output.present();
-
         Ok(())
     }
 }
@@ -1381,3 +1247,6 @@ pub async fn run() {
 fn main() {
     pollster::block_on(run());
 }
+// ... (rest of main.rs, if any) ...
+
+
