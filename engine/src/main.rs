@@ -14,6 +14,7 @@ mod texture;
 mod ui;
 mod wireframe_renderer;
 mod world;
+mod lighting; // Added lighting module
 
 use std::sync::Arc;
 use wgpu::Trace;
@@ -219,6 +220,7 @@ pub struct Vertex {
     pub color: [f32; 3],
     pub uv: [f32; 2],
     pub tree_id: u32,
+    pub light_level: f32, // Added for dynamic lighting
 }
 
 impl Vertex {
@@ -227,25 +229,30 @@ impl Vertex {
             array_stride: std::mem::size_of::<Vertex>() as wgpu::BufferAddress,
             step_mode: wgpu::VertexStepMode::Vertex,
             attributes: &[
-                wgpu::VertexAttribute {
+                wgpu::VertexAttribute { // Position
                     offset: 0,
                     shader_location: 0,
                     format: wgpu::VertexFormat::Float32x3,
                 },
-                wgpu::VertexAttribute {
+                wgpu::VertexAttribute { // Color
                     offset: std::mem::size_of::<[f32; 3]>() as wgpu::BufferAddress,
                     shader_location: 1,
                     format: wgpu::VertexFormat::Float32x3,
                 },
-                wgpu::VertexAttribute {
+                wgpu::VertexAttribute { // UV
                     offset: (std::mem::size_of::<[f32; 3]>() * 2) as wgpu::BufferAddress,
                     shader_location: 2,
                     format: wgpu::VertexFormat::Float32x2,
                 },
-                wgpu::VertexAttribute {
+                wgpu::VertexAttribute { // Tree ID
                     offset: (std::mem::size_of::<[f32; 3]>() * 2 + std::mem::size_of::<[f32; 2]>()) as wgpu::BufferAddress,
                     shader_location: 3,
                     format: wgpu::VertexFormat::Uint32,
+                },
+                wgpu::VertexAttribute { // Light Level
+                    offset: (std::mem::size_of::<[f32; 3]>() * 2 + std::mem::size_of::<[f32; 2]>() + std::mem::size_of::<u32>()) as wgpu::BufferAddress,
+                    shader_location: 4, // Next available shader location
+                    format: wgpu::VertexFormat::Float32,
                 },
             ],
         }
@@ -745,12 +752,18 @@ impl State {
                                         CubeFace::Front | CubeFace::Right | CubeFace::Left | CubeFace::Bottom => &uvs_for_bl_tl_tr_br_order,
                                         CubeFace::Back | CubeFace::Top => &uvs_for_bl_br_tr_tl_order,
                                     };
+                                    let sky_light = chunk.get_sky_light(lx, ly, lz);
+                                    let block_light_val = chunk.get_block_light(lx, ly, lz);
+                                    let final_light_int = sky_light.max(block_light_val);
+                                    let final_light_float = final_light_int as f32 / 15.0;
+
                                     for (i, v_template) in vertices_template.iter().enumerate() {
                                         opaque_vertices.push(Vertex {
                                             position: (current_block_world_center + glam::Vec3::from(v_template.position)).into(),
                                             color: current_vertex_color,
                                             uv: selected_face_uvs[i],
                                             tree_id: 0,
+                                            light_level: final_light_float,
                                         });
                                     }
                                     for local_idx in local_indices {
@@ -848,11 +861,19 @@ impl State {
                     let current_tree_id = if block.block_type == BlockType::OakLeaves {
                         block.tree_id.unwrap_or(0)
                     } else { 0 };
+
+                    // Get light levels for transparent blocks as well
+                    let sky_light = chunk.get_sky_light(t_block_data.lx, t_block_data.ly, t_block_data.lz);
+                    let block_light_val = chunk.get_block_light(t_block_data.lx, t_block_data.ly, t_block_data.lz);
+                    let final_light_int = sky_light.max(block_light_val);
+                    let final_light_float = final_light_int as f32 / 15.0;
+
                     transparent_vertices.push(Vertex {
                         position: (current_block_world_center + glam::Vec3::from(v_template.position)).into(),
                         color: current_vertex_color,
                         uv: selected_face_uvs[i],
                         tree_id: current_tree_id,
+                        light_level: final_light_float,
                     });
                 }
                 for local_idx in local_indices {
@@ -991,29 +1012,56 @@ impl State {
     }
 
     fn update(&mut self) {
-        self.handle_block_interactions();
+        self.handle_block_interactions(); // Handles block changes, which now call lighting updates in world.set_block
+
         let dt_secs = 1.0 / 60.0;
         let player_pos = self.player.position;
         let current_chunk_x = (player_pos.x / CHUNK_WIDTH as f32).floor() as i32;
         let current_chunk_z = (player_pos.z / CHUNK_DEPTH as f32).floor() as i32;
-        let mut new_active_chunk_coords = Vec::new();
-        let render_distance = 1;
+
+        let mut new_active_chunk_coords_set = std::collections::HashSet::new();
+        let render_distance = 1; // TODO: Make this configurable
         for dx in -render_distance..=render_distance {
             for dz in -render_distance..=render_distance {
-                let target_cx = current_chunk_x + dx;
-                let target_cz = current_chunk_z + dz;
-                new_active_chunk_coords.push((target_cx, target_cz));
-                let _ = self.world.get_or_create_chunk(target_cx, target_cz);
+                new_active_chunk_coords_set.insert((current_chunk_x + dx, current_chunk_z + dz));
             }
         }
-        self.active_chunk_coords = new_active_chunk_coords;
 
+        let mut newly_created_chunk_coords: Vec<(i32, i32)> = Vec::new();
+
+        for &(target_cx, target_cz) in &new_active_chunk_coords_set {
+            // Check if chunk exists. If not, get_or_create_chunk will make it.
+            // We need a way to know if it was *just* created by this call.
+            let chunk_existed_before = self.world.get_chunk(target_cx, target_cz).is_some();
+            self.world.get_or_create_chunk(target_cx, target_cz); // Ensures chunk exists
+            if !chunk_existed_before && self.world.get_chunk(target_cx, target_cz).is_some() {
+                 // It was created NOW
+                newly_created_chunk_coords.push((target_cx, target_cz));
+            }
+        }
+
+        // Update active_chunk_coords list for rendering
+        self.active_chunk_coords = new_active_chunk_coords_set.into_iter().collect();
+
+
+        // Propagate initial sky light for newly created chunks
+        for &(cx, cz) in &newly_created_chunk_coords {
+            crate::lighting::propagate_sky_light(&mut self.world, cx, cz);
+            // Potentially propagate to neighbors if lighting affects them significantly
+            // For now, each chunk's initial sky light is self-contained propagation from its top.
+            // Cross-chunk propagation happens during the BFS within propagate_sky_light.
+        }
+
+        // Remeshing logic (includes newly lit chunks and chunks affected by block changes)
         let mut coords_to_mesh: Vec<(i32, i32)> = Vec::new();
+        // Add newly created (and now lit) chunks to remesh queue
+        coords_to_mesh.extend(newly_created_chunk_coords.iter());
+
         for &(cx, cz) in &self.active_chunk_coords {
-            if !self.chunk_render_data.contains_key(&(cx, cz)) {
-                coords_to_mesh.push((cx, cz));
-            } else {
-                if let Some(render_data) = self.chunk_render_data.get(&(cx, cz)) {
+             // If not already added from newly_created_chunk_coords and needs remeshing for other reasons (e.g. transparency sort)
+            if !newly_created_chunk_coords.contains(&(cx,cz)) && !self.chunk_render_data.contains_key(&(cx, cz)) {
+                 coords_to_mesh.push((cx,cz));
+            } else if let Some(render_data) = self.chunk_render_data.get(&(cx, cz)) {
                     if render_data.transparent_buffers.is_some() {
                         let mut needs_remesh = false;
                         if let Some(last_pos) = render_data.last_transparent_mesh_camera_pos {

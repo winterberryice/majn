@@ -5,20 +5,97 @@ pub const CHUNK_WIDTH: usize = 16;
 pub const CHUNK_HEIGHT: usize = 32;
 pub const CHUNK_DEPTH: usize = 16;
 
+pub const CHUNK_SIZE: usize = CHUNK_WIDTH * CHUNK_HEIGHT * CHUNK_DEPTH;
+
 pub struct Chunk {
     pub coord: (i32, i32),
-    blocks: Vec<Vec<Vec<Block>>>,
+    blocks: Vec<Vec<Vec<Block>>>, // TODO: Consider flattening this for cache performance later if needed
+    light_map: Vec<u8>, // Each u8 stores two 4-bit nibbles: sky_light (upper), block_light (lower)
 }
 
 impl Chunk {
     pub fn new(coord_x: i32, coord_z: i32) -> Self {
         let blocks =
             vec![vec![vec![Block::new(BlockType::Air); CHUNK_DEPTH]; CHUNK_HEIGHT]; CHUNK_WIDTH];
+        let light_map = vec![0; CHUNK_SIZE]; // Initialize all light levels to 0
         Chunk {
             coord: (coord_x, coord_z),
             blocks,
+            light_map,
         }
     }
+
+    // Helper to get the 1D index for light_map
+    #[inline]
+    fn get_light_map_index(x: usize, y: usize, z: usize) -> usize {
+        // (y * CHUNK_WIDTH * CHUNK_DEPTH) + (z * CHUNK_WIDTH) + x // Y-major order
+        // (x * CHUNK_HEIGHT * CHUNK_DEPTH) + (y * CHUNK_DEPTH) + z // X-major order (consistent with blocks if it were flat)
+        // Let's use YZX order as it's common for iterating columns first (Y) then rows (Z) then X
+        // Or more simply, if blocks is x,y,z, then light_map should be too for consistency.
+        // Current blocks Vec<Vec<Vec< is effectively blocks[x][y][z]
+        // So for a flat array, index = x * (CHUNK_HEIGHT * CHUNK_DEPTH) + y * CHUNK_DEPTH + z
+        // However, a more common Minecraft-like flattening is YZX: (y * CHUNK_DEPTH + z) * CHUNK_WIDTH + x
+        // Let's stick to X primary, then Y, then Z for consistency with the blocks structure if it were flattened.
+        // index = x * CHUNK_HEIGHT * CHUNK_DEPTH + y * CHUNK_DEPTH + z;
+        // This matches common array flattening where outer dimension changes slowest.
+        // Given blocks[x][y][z], this is:
+        // x_stride = CHUNK_HEIGHT * CHUNK_DEPTH
+        // y_stride = CHUNK_DEPTH
+        // z_stride = 1
+        // index = x * x_stride + y * y_stride + z
+        // This should be efficient for iterating over x, then y, then z.
+        // Let's confirm typical iteration patterns. Usually it's x, z, then y (columns).
+        // If we iterate Y primarily for sky light (downwards), then YZX is good:
+        // (y * CHUNK_DEPTH + z) * CHUNK_WIDTH + x
+        // Let's use (y * CHUNK_WIDTH * CHUNK_DEPTH) + (z * CHUNK_WIDTH) + x for now. This is Y-major.
+        // No, let's use XZY: x * CHUNK_DEPTH * CHUNK_HEIGHT + z * CHUNK_HEIGHT + y
+        // This seems more natural for iterating columns x,z then going down y.
+        // The most common way is (y * height_stride) + (z * depth_stride) + x
+        // height_stride = CHUNK_DEPTH * CHUNK_WIDTH
+        // depth_stride = CHUNK_WIDTH
+        // index = y * CHUNK_DEPTH * CHUNK_WIDTH + z * CHUNK_WIDTH + x
+        // This is YZX order.
+        (y * CHUNK_DEPTH + z) * CHUNK_WIDTH + x
+    }
+
+    #[inline]
+    pub fn get_sky_light(&self, x: usize, y: usize, z: usize) -> u8 {
+        if x < CHUNK_WIDTH && y < CHUNK_HEIGHT && z < CHUNK_DEPTH {
+            let index = Self::get_light_map_index(x, y, z);
+            (self.light_map[index] >> 4) & 0x0F
+        } else {
+            0 // Or handle error/option
+        }
+    }
+
+    #[inline]
+    pub fn set_sky_light(&mut self, x: usize, y: usize, z: usize, level: u8) {
+        if x < CHUNK_WIDTH && y < CHUNK_HEIGHT && z < CHUNK_DEPTH {
+            let index = Self::get_light_map_index(x, y, z);
+            let clamped_level = level.min(15); // Ensure it's a 4-bit value
+            self.light_map[index] = (self.light_map[index] & 0x0F) | (clamped_level << 4);
+        }
+    }
+
+    #[inline]
+    pub fn get_block_light(&self, x: usize, y: usize, z: usize) -> u8 {
+        if x < CHUNK_WIDTH && y < CHUNK_HEIGHT && z < CHUNK_DEPTH {
+            let index = Self::get_light_map_index(x, y, z);
+            self.light_map[index] & 0x0F
+        } else {
+            0 // Or handle error/option
+        }
+    }
+
+    #[inline]
+    pub fn set_block_light(&mut self, x: usize, y: usize, z: usize, level: u8) {
+        if x < CHUNK_WIDTH && y < CHUNK_HEIGHT && z < CHUNK_DEPTH {
+            let index = Self::get_light_map_index(x, y, z);
+            let clamped_level = level.min(15); // Ensure it's a 4-bit value
+            self.light_map[index] = (self.light_map[index] & 0xF0) | clamped_level;
+        }
+    }
+
 
     pub fn generate_terrain(&mut self) {
         let surface_level = CHUNK_HEIGHT / 2;

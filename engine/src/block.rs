@@ -46,6 +46,18 @@ impl Block {
     // based on BlockType and potentially block face.
     // For now, we'll keep it simple.
 
+    pub fn get_light_emission(&self) -> u8 {
+        match self.block_type {
+            // For now, let's make OakLog emit light for testing.
+            // Later, a proper Torch block can be added.
+            BlockType::OakLog => 14, // Emits a strong light
+            // Potentially add other light sources here
+            // BlockType::Torch => 14,
+            // BlockType::Lava => 15,
+            _ => 0, // Most blocks emit no light
+        }
+    }
+
     // Returns atlas indices (column, row) for each face: [Front, Back, Right, Left, Top, Bottom]
     pub fn get_texture_atlas_indices(&self) -> [[f32; 2]; 6] {
         match self.block_type {

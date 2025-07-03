@@ -11,6 +11,7 @@ struct VertexInput {
     @location(1) color: vec3<f32>,    // Kept for potential future use (tinting, etc.)
     @location(2) uv: vec2<f32>,       // Texture coordinates
     @location(3) tree_id: u32,      // Tree ID
+    @location(4) light_level: f32,  // Light level (0.0 - 1.0)
 };
 
 struct VertexOutput {
@@ -18,6 +19,7 @@ struct VertexOutput {
     @location(0) original_color: vec3<f32>, // Pass original color through
     @location(1) tex_coords: vec2<f32>,   // Pass UVs to fragment shader
     @location(2) tree_id: u32,           // Pass Tree ID to fragment shader
+    @location(3) light_level: f32,       // Pass light level to fragment shader
 };
 
 @vertex
@@ -27,6 +29,7 @@ fn vs_main(model: VertexInput) -> VertexOutput {
     out.original_color = model.color; // Pass through the original vertex color
     out.tex_coords = model.uv;        // Pass through UV coordinates
     out.tree_id = model.tree_id;      // Pass through Tree ID
+    out.light_level = model.light_level; // Pass through light level
     return out;
 }
 
@@ -41,6 +44,7 @@ struct FragmentInput {
     @location(0) original_color: vec3<f32>,
     @location(1) tex_coords: vec2<f32>,
     @location(2) tree_id: u32,
+    @location(3) light_level: f32,
 }
 
 // Simple hash function to generate a color from a u32
@@ -56,7 +60,11 @@ fn hash_to_color(id: u32) -> vec3<f32> {
 
 @fragment
 fn fs_main(in: FragmentInput) -> @location(0) vec4<f32> {
-    let sampled_color = textureSample(t_diffuse, s_sampler, in.tex_coords);
+    var final_color_rgb: vec3<f32>;
+    var final_alpha: f32 = 1.0;
+
+    let sampled_texture_color = textureSample(t_diffuse, s_sampler, in.tex_coords);
+    final_alpha = sampled_texture_color.a; // Preserve alpha from texture
 
     // Sentinel color for Grass Top, set in main.rs: [0.1, 0.9, 0.1]
     let grass_top_sentinel = vec3<f32>(0.1, 0.9, 0.1);
@@ -73,26 +81,31 @@ fn fs_main(in: FragmentInput) -> @location(0) vec4<f32> {
     if (is_grass_top) {
         // Texture for grass top is at (0,0) which is grayscale.
         // Use the intensity (e.g., from red channel) from the sampled texture.
-        let intensity = sampled_color.r;
+        let intensity = sampled_texture_color.r;
         // Apply a greenish tint for grass.
-        let tinted_color = vec3<f32>(intensity * 0.4, intensity * 0.9, intensity * 0.35);
-        return vec4<f32>(tinted_color, sampled_color.a);
+        final_color_rgb = vec3<f32>(intensity * 0.4, intensity * 0.9, intensity * 0.35);
     } else if (is_potential_oak_leaves) { // No longer checking in.tree_id for unique color
         // Texture for oak leaves is at (4,3) which is also grayscale.
         // Use the intensity (e.g., from red channel) from the sampled texture.
-        let intensity = sampled_color.r;
+        let intensity = sampled_texture_color.r;
         // Apply a standard Minecraft-like oak leaf tint.
-        // These values aim for a slightly desaturated, classic green.
-        // Example: R: intensity * 0.3, G: intensity * 0.5, B: intensity * 0.2
-        // Let's use similar factors as the original grass/leaves tint for consistency,
-        // but potentially adjust if a different shade is desired.
-        // The original "similar tint" was (intensity * 0.4, intensity * 0.9, intensity * 0.35)
-        // This might be too vibrant for typical oak leaves. Let's try a slightly darker/more muted green.
-        let oak_tinted_color = vec3<f32>(intensity * 0.25, intensity * 0.55, intensity * 0.15);
-        return vec4<f32>(oak_tinted_color, sampled_color.a);
+        final_color_rgb = vec3<f32>(intensity * 0.25, intensity * 0.55, intensity * 0.15);
     }
     else {
         // For all other blocks/faces, use the sampled texture color directly.
-        return sampled_color;
+        final_color_rgb = sampled_texture_color.rgb;
     }
+
+    // Apply lighting. Ensure light_level is clamped between 0 and 1 if it isn't already.
+    // The problem states it will be normalized to 0.0-1.0 before putting it in the vertex.
+    let light_multiplier = clamp(in.light_level, 0.0, 1.0);
+    final_color_rgb = final_color_rgb * light_multiplier;
+
+    // A minimum ambient light to prevent pitch black areas where light is 0.
+    // This can be adjusted or made configurable.
+    let ambient_light_floor = 0.05; // Small amount of light even in darkness
+    final_color_rgb = final_color_rgb + vec3<f32>(ambient_light_floor);
+    final_color_rgb = clamp(final_color_rgb, vec3<f32>(0.0), vec3<f32>(1.0)); // Ensure color components stay in [0,1]
+
+    return vec4<f32>(final_color_rgb, final_alpha);
 }
