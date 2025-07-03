@@ -68,8 +68,7 @@ fn fs_main(in: FragmentInput) -> @location(0) vec4<f32> {
     let clamped_light_level = clamp(in.light_level, 0.0, 1.0);
 
     // A minimum ambient light can be added to prevent pitch black even at light_level 0.
-    // For example, a minimum of 10% brightness:
-    let min_ambient = 0.1;
+    let min_ambient = 0.0; // Changed from 0.1 to 0.0 for starker contrast
     let effective_light = min_ambient + clamped_light_level * (1.0 - min_ambient);
 
     return vec4<f32>(final_color.rgb * effective_light, final_color.a);

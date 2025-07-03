@@ -14,12 +14,14 @@ pub enum BlockType {
     Bedrock,
     OakLog,
     OakLeaves,
+    TestLightSource, // Added new block type
     // TODO: Add Torch with emission: 14
 }
 
 // Array to store properties for each block type.
 // This allows us to define block properties in one place.
-pub const BLOCK_TYPE_PROPERTIES: [BlockTypeProperties; 6] = [
+// IMPORTANT: The order must match the BlockType enum definition.
+pub const BLOCK_TYPE_PROPERTIES: [BlockTypeProperties; 7] = [ // Increased size to 7
     // Air
     BlockTypeProperties {
         is_solid: false,
@@ -73,8 +75,15 @@ pub const BLOCK_TYPE_PROPERTIES: [BlockTypeProperties; 6] = [
     BlockTypeProperties {
         is_solid: false, // Leaves are not solid for physics but opaque for light initially
         is_transparent: true, // Visually transparent, but consider light opacity separately
-        texture_atlas_indices: [[4.0, 3.0]; 6],
+        texture_atlas_indices: [[4.0, 3.0]; 6], // OakLeaves texture
         emission: 0,
+    },
+    // TestLightSource
+    BlockTypeProperties {
+        is_solid: true,
+        is_transparent: false, // Opaque so light doesn't pass through it, only emits
+        texture_atlas_indices: [[1.0, 1.0]; 6], // Bedrock texture for visual distinction
+        emission: 14, // Strong light emission
     },
 ];
 

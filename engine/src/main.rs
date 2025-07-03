@@ -1136,6 +1136,15 @@ impl State {
     // New function to handle block interactions based on input
     // Changed to use self.input_state
     fn handle_block_interactions(&mut self) {
+        // Debug: Print light level of selected block when a mouse button is pressed
+        if (self.input_state.left_mouse_pressed_this_frame || self.input_state.right_mouse_pressed_this_frame) {
+            if let Some((selected_block_pos, _)) = self.selected_block {
+                let sky = self.world.get_sky_light_world_space(selected_block_pos).unwrap_or(0);
+                let block = self.world.get_block_light_world_space(selected_block_pos).unwrap_or(0);
+                println!("Selected block at {:?}: Sky Light = {}, Block Light = {}", selected_block_pos, sky, block);
+            }
+        }
+
         // Block Removal (Left-Click)
         if self.input_state.left_mouse_pressed_this_frame {
             if let Some((block_pos_world, _face)) = self.selected_block {
@@ -1177,7 +1186,7 @@ impl State {
 
         // Block Placement (Right-Click)
         if self.input_state.right_mouse_pressed_this_frame {
-            if let Some((selected_block_pos, hit_face)) = self.selected_block {
+            if let Some((selected_block_pos, hit_face)) = self.selected_block { // `selected_block_pos` is the block we are looking at
                 let mut offset = IVec3::ZERO;
                 match hit_face {
                     BlockFace::PosX => offset.x = 1,
@@ -1199,13 +1208,18 @@ impl State {
                 if player_aabb.intersects(&new_block_aabb) {
                     // eprintln!("Cannot place block: intersects with player.");
                 } else {
+                    // Debug: Print light level of the target placement position
+                    let target_sky = self.world.get_sky_light_world_space(new_block_pos_world).unwrap_or(0);
+                    let target_block_light = self.world.get_block_light_world_space(new_block_pos_world).unwrap_or(0);
+                    println!("Target placement pos at {:?}: Sky Light = {}, Block Light = {}", new_block_pos_world, target_sky, target_block_light);
+
                     // Get properties of the block currently at new_block_pos_world (likely Air)
                     let old_block_opt = self.world.get_block_world_space(new_block_pos_world);
                     let old_block_was_opaque = old_block_opt.map_or(false, |b| b.is_opaque_for_light());
                     let old_emission = old_block_opt.map_or(0, |b| b.get_light_emission());
 
-                    // For now, placing Grass. Later, this will be the selected block type from inventory.
-                    let new_block_to_place = BlockType::Grass; // TODO: Change to selected block type
+                    // For now, placing TestLightSource. Later, this will be the selected block type from inventory.
+                    let new_block_to_place = BlockType::TestLightSource;
 
                     match self.world.set_block_world_space(new_block_pos_world, new_block_to_place) {
                         Ok(chunk_coord) => {
