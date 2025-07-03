@@ -767,6 +767,7 @@ impl State {
                             BlockType::Bedrock => [0.5, 0.5, 0.5],
                             BlockType::OakLog => [0.5, 0.5, 0.5],
                             BlockType::OakLeaves => [0.5, 0.5, 0.5], // Base color before tinting
+                            BlockType::TestLightSource => [1.0, 1.0, 0.0], // Yellow for TestLightSource
                             BlockType::Air => unreachable!(), // Should be skipped
                         };
 
@@ -1137,7 +1138,7 @@ impl State {
     // Changed to use self.input_state
     fn handle_block_interactions(&mut self) {
         // Debug: Print light level of selected block when a mouse button is pressed
-        if (self.input_state.left_mouse_pressed_this_frame || self.input_state.right_mouse_pressed_this_frame) {
+        if self.input_state.left_mouse_pressed_this_frame || self.input_state.right_mouse_pressed_this_frame {
             if let Some((selected_block_pos, _)) = self.selected_block {
                 let sky = self.world.get_sky_light_world_space(selected_block_pos).unwrap_or(0);
                 let block = self.world.get_block_light_world_space(selected_block_pos).unwrap_or(0);
