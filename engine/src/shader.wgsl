@@ -11,6 +11,7 @@ struct VertexInput {
     @location(1) color: vec3<f32>,    // Kept for potential future use (tinting, etc.)
     @location(2) uv: vec2<f32>,       // Texture coordinates
     @location(3) tree_id: u32,      // Tree ID
+    @location(4) light: u32,
 };
 
 struct VertexOutput {
@@ -18,6 +19,7 @@ struct VertexOutput {
     @location(0) original_color: vec3<f32>, // Pass original color through
     @location(1) tex_coords: vec2<f32>,   // Pass UVs to fragment shader
     @location(2) tree_id: u32,           // Pass Tree ID to fragment shader
+    @location(3) light_level: vec2<f32>,
 };
 
 @vertex
@@ -27,6 +29,13 @@ fn vs_main(model: VertexInput) -> VertexOutput {
     out.original_color = model.color; // Pass through the original vertex color
     out.tex_coords = model.uv;        // Pass through UV coordinates
     out.tree_id = model.tree_id;      // Pass through Tree ID
+
+    // Unpack the light levels and pass them to the fragment shader
+    // We'll store sun_light in .x and block_light in .y
+    let sun_light = f32(model.light & 0xFFu);
+    let block_light = f32((model.light >> 8u) & 0xFFu);
+    out.light_level = vec2<f32>(sun_light, block_light);
+
     return out;
 }
 
