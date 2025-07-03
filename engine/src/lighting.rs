@@ -97,38 +97,47 @@ pub fn propagate_queued_light(world: &mut World, light_queue: &mut VecDeque<Ligh
                         continue;
                     }
 
-                    // Check if neighbor block is opaque
-                    if let Some(block) = world.get_block_world_space(neighbor_world_pos) {
-                        if block.is_opaque_for_light() {
-                            // If the opaque block itself is the neighbor_world_pos, it cannot receive this light.
-                            // However, if we are calculating for block light sources, the source itself might be opaque
-                            // but still emit light. This distinction is handled by how sources are added.
-                            // For propagation, light stops *entering* an opaque block.
-                            continue;
-                        }
-                    }
-                    // If block is None (e.g. air in a loaded chunk), it's not opaque, proceed.
-                    // If block is in an *unloaded* chunk, get_block_world_space would return None.
-                    // We must ensure we only operate on loaded chunks.
+                    // Get neighbor block properties (if it exists and its chunk is loaded)
+                    let mut neighbor_is_opaque = false; // Default to not opaque (like air)
+                    let mut neighbor_chunk_is_loaded = false;
 
                     let ((ncx, ncz), _n_local_pos) = World::world_to_chunk_and_local_coords(neighbor_world_pos);
-                    if world.get_chunk(ncx, ncz).is_some() { // Check if neighbor chunk is loaded
-                        let existing_light = if is_sky_light {
-                            world.get_sky_light_world_space(neighbor_world_pos).unwrap_or(0)
-                        } else {
-                            world.get_block_light_world_space(neighbor_world_pos).unwrap_or(0)
-                        };
+                    if let Some(neighbor_chunk_ref) = world.get_chunk(ncx, ncz) { // Use immutable borrow to check existence
+                        neighbor_chunk_is_loaded = true;
+                        if let Some(block) = neighbor_chunk_ref.get_block(_n_local_pos.x as usize, _n_local_pos.y as usize, _n_local_pos.z as usize) {
+                             neighbor_is_opaque = block.is_opaque_for_light();
+                        }
+                        // If block is None (e.g. air in a loaded chunk), neighbor_is_opaque remains false.
+                    }
 
-                        if new_light_level > existing_light {
-                            if is_sky_light {
-                                world.set_sky_light_world_space(neighbor_world_pos, new_light_level);
-                            } else {
-                                world.set_block_light_world_space(neighbor_world_pos, new_light_level);
-                            }
-                            light_queue.push_back(LightNode { pos: neighbor_world_pos, level: new_light_level });
+                    if !neighbor_chunk_is_loaded { // If neighbor chunk is not loaded, skip.
+                        continue;
+                    }
+
+                    // Now, determine if we can update light and if we should queue for further propagation.
+                    let existing_light = if is_sky_light {
+                        world.get_sky_light_world_space(neighbor_world_pos).unwrap_or(0)
+                    } else {
+                        world.get_block_light_world_space(neighbor_world_pos).unwrap_or(0)
+                    };
+
+                    if new_light_level > existing_light {
+                        // Always set the light on the neighbor if it's brighter, regardless of neighbor's opacity.
+                        // The opacity determines if it propagates *further*.
+                        if is_sky_light {
+                            world.set_sky_light_world_space(neighbor_world_pos, new_light_level);
+                        } else {
+                            world.set_block_light_world_space(neighbor_world_pos, new_light_level);
+                        }
+
+                        // Only add to queue for further propagation if the neighbor is NOT opaque
+                        // and the light still has strength (new_light_level > 0, already checked).
+                        // For block light, it effectively stops inside the opaque block.
+                        // For sky light, it also stops (it lit the surface of the opaque block).
+                        if !neighbor_is_opaque {
+                             light_queue.push_back(LightNode { pos: neighbor_world_pos, level: new_light_level });
                         }
                     }
-                    // Else: neighbor chunk is not loaded, so we don't attempt to propagate light into it or queue it.
                 }
             }
         }
