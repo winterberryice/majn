@@ -13,24 +13,36 @@ pub enum BlockType {
 pub struct Block {
     pub block_type: BlockType,
     pub tree_id: Option<u32>, // Added to identify trees
+    pub sun_light: u8,
+    pub block_light: u8,
     // We can add more properties later, like light levels, custom data, etc.
 }
 
 impl Block {
     pub fn new(block_type: BlockType) -> Self {
-        Block { block_type, tree_id: None }
+        Block {
+            block_type,
+            tree_id: None,
+            sun_light: 0,
+            block_light: 0,
+        }
     }
 
     // Helper to create a block with a tree_id
     pub fn new_with_tree_id(block_type: BlockType, tree_id: u32) -> Self {
-        Block { block_type, tree_id: Some(tree_id) }
+        Block {
+            block_type,
+            tree_id: Some(tree_id),
+            sun_light: 0,
+            block_light: 0,
+        }
     }
 
     pub fn is_solid(&self) -> bool {
         match self.block_type {
             BlockType::Air => false,
             BlockType::OakLeaves => false, // Leaves are not solid for physics
-            _ => true, // All other current types are solid
+            _ => true,                     // All other current types are solid
         }
     }
 
