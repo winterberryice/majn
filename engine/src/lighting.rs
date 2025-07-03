@@ -34,10 +34,15 @@ pub fn calculate_initial_sky_light_for_chunk_columns(world: &mut World, chunk_co
                         world.set_sky_light_world_space(current_world_pos, MAX_LIGHT_LEVEL);
                         light_queue.push_back(LightNode { pos: current_world_pos, level: MAX_LIGHT_LEVEL });
                     } else {
-                        // This block is opaque, so sky light stops here for this column from direct downward path.
+                        // This block is opaque. It's the first opaque block hit from the sky.
+                        // It should receive full sky light.
+                        world.set_sky_light_world_space(current_world_pos, MAX_LIGHT_LEVEL);
+                        light_queue.push_back(LightNode { pos: current_world_pos, level: MAX_LIGHT_LEVEL });
+                        // Sky light stops *past* this block for this column's direct downward path.
                         break;
                     }
                 } else {
+                    // No block (treat as Air / transparent)
                     // Block (and likely chunk) doesn't exist at this position.
                     // Consider this as transparent for sky light to continue downwards.
                     // If it's above any generated terrain, it should get full light.
