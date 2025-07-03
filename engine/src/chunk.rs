@@ -1,5 +1,6 @@
 use crate::block::{Block, BlockType};
-use rand::Rng; // Assuming block.rs is in the same directory
+use rand::Rng;
+use std::collections::VecDeque;
 
 pub const CHUNK_WIDTH: usize = 16;
 pub const CHUNK_HEIGHT: usize = 32;
@@ -56,6 +57,59 @@ impl Chunk {
                 }
             }
         }
+
+        // --- NEW: Sunlight Spreading (Flood Fill) ---
+        // 1. Create the queue
+        let mut sunlight_queue: VecDeque<(usize, usize, usize)> = VecDeque::new();
+
+        // 2. Populate the queue with all initially lit blocks
+        for x in 0..CHUNK_WIDTH {
+            for y in 0..CHUNK_HEIGHT {
+                for z in 0..CHUNK_DEPTH {
+                    if self.blocks[x][y][z].sun_light > 0 {
+                        sunlight_queue.push_back((x, y, z));
+                    }
+                }
+            }
+        }
+
+        // 3. Process the queue
+        while let Some((x, y, z)) = sunlight_queue.pop_front() {
+            let current_light_level = self.get_block(x, y, z).unwrap().sun_light;
+
+            // Check all 6 neighbors
+            let neighbors = [
+                (x + 1, y, z),
+                (x.wrapping_sub(1), y, z),
+                (x, y + 1, z),
+                (x, y.wrapping_sub(1), z),
+                (x, y, z + 1),
+                (x, y, z.wrapping_sub(1)),
+            ];
+
+            for (nx, ny, nz) in neighbors.iter().cloned() {
+                // Check if neighbor is within chunk bounds
+                if nx < CHUNK_WIDTH && ny < CHUNK_HEIGHT && nz < CHUNK_DEPTH {
+                    let neighbor_block = self.get_block(nx, ny, nz).unwrap();
+                    let new_light_level = if current_light_level == MAX_SUN_LIGHT
+                        && self.blocks[x][y][z].is_transparent()
+                        && ny < y
+                    {
+                        // Sunlight doesn't decrease when going straight down through transparent blocks
+                        MAX_SUN_LIGHT
+                    } else {
+                        current_light_level - 1
+                    };
+
+                    // If we can make the neighbor brighter, update it and add it to the queue
+                    if new_light_level > neighbor_block.sun_light {
+                        self.blocks[nx][ny][nz].sun_light = new_light_level;
+                        sunlight_queue.push_back((nx, ny, nz));
+                    }
+                }
+            }
+        }
+        // --- END of new flood-fill code ---
 
         let mut rng = rand::rng(); // Per compiler hint
         const TREE_CHANCE: f64 = 0.02;
