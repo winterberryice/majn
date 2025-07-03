@@ -112,17 +112,27 @@ impl Chunk {
                         }
                     }
 
-                    let mut probability = 0.65;
-                    let radius_check = if y_dist_from_canopy_center > 0 {
-                        (current_layer_radius * current_layer_radius) as f64 * 0.5
+                    let probability = if current_layer_radius == 0 {
+                        0.0
                     } else {
-                        (current_layer_radius * current_layer_radius) as f64 * 0.75
-                    };
-                    if (dist_sq_horiz as f64) > radius_check {
-                        probability *= 0.5;
-                    }
+                        // Ensure radius - 1 does not underflow for isize if current_layer_radius is 0,
+                        // though current_layer_radius logic already ensures it's at least 1 if not 0.
+                        let r_core_sq = ((current_layer_radius - 1).max(0) as f32).powi(2);
+                        let r_edge_sq = (current_layer_radius as f32).powi(2);
+                        // let r_fuzzy_sq = ((current_layer_radius + 1) as f32).powi(2); // Optional outer fuzzy layer
 
-                    if rng.random_bool(probability) { // Per compiler hint
+                        if (dist_sq_horiz as f32) <= r_core_sq {
+                            0.95 // Core part: almost always place
+                        } else if (dist_sq_horiz as f32) <= r_edge_sq {
+                            0.6  // Edge part: moderate chance
+                        // } else if (dist_sq_horiz as f32) <= r_fuzzy_sq { // Uncomment for fuzzier edges
+                        //     0.25 // Fuzzy outer part: lower chance
+                        } else {
+                            0.0  // Outside defined canopy for this layer
+                        }
+                    };
+
+                    if probability > 0.0 && rng.random_bool(probability) {
                         if self.blocks[ux][uy][uz].block_type == BlockType::Air {
                             self.set_block_with_tree_id(ux, uy, uz, BlockType::OakLeaves, tree_id).unwrap_or_default();
                         }
