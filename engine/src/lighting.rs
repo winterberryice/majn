@@ -101,27 +101,29 @@ pub fn propagate_queued_light(world: &mut World, light_queue: &mut VecDeque<Ligh
                             // For propagation, light stops *entering* an opaque block.
                             continue;
                         }
-                    } else {
-                        // No block at neighbor_world_pos (e.g., in an unloaded chunk or air).
-                        // Light should propagate through it. If the chunk is unloaded,
-                        // world.set_sky_light_world_space might do nothing or might need to handle it.
-                        // For now, assume propagation continues.
                     }
+                    // If block is None (e.g. air in a loaded chunk), it's not opaque, proceed.
+                    // If block is in an *unloaded* chunk, get_block_world_space would return None.
+                    // We must ensure we only operate on loaded chunks.
 
-                    let existing_light = if is_sky_light {
-                        world.get_sky_light_world_space(neighbor_world_pos).unwrap_or(0)
-                    } else {
-                        world.get_block_light_world_space(neighbor_world_pos).unwrap_or(0)
-                    };
-
-                    if new_light_level > existing_light {
-                        if is_sky_light {
-                            world.set_sky_light_world_space(neighbor_world_pos, new_light_level);
+                    let ((ncx, ncz), _n_local_pos) = World::world_to_chunk_and_local_coords(neighbor_world_pos);
+                    if world.get_chunk(ncx, ncz).is_some() { // Check if neighbor chunk is loaded
+                        let existing_light = if is_sky_light {
+                            world.get_sky_light_world_space(neighbor_world_pos).unwrap_or(0)
                         } else {
-                            world.set_block_light_world_space(neighbor_world_pos, new_light_level);
+                            world.get_block_light_world_space(neighbor_world_pos).unwrap_or(0)
+                        };
+
+                        if new_light_level > existing_light {
+                            if is_sky_light {
+                                world.set_sky_light_world_space(neighbor_world_pos, new_light_level);
+                            } else {
+                                world.set_block_light_world_space(neighbor_world_pos, new_light_level);
+                            }
+                            light_queue.push_back(LightNode { pos: neighbor_world_pos, level: new_light_level });
                         }
-                        light_queue.push_back(LightNode { pos: neighbor_world_pos, level: new_light_level });
                     }
+                    // Else: neighbor chunk is not loaded, so we don't attempt to propagate light into it or queue it.
                 }
             }
         }
