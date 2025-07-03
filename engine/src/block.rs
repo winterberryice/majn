@@ -42,6 +42,10 @@ impl Block {
         }
     }
 
+    pub fn is_opaque(&self) -> bool {
+        !self.is_transparent()
+    }
+
     // Later, we can add methods here to get texture coordinates
     // based on BlockType and potentially block face.
     // For now, we'll keep it simple.

@@ -1,6 +1,7 @@
-use crate::chunk::{Chunk, CHUNK_WIDTH, CHUNK_HEIGHT, CHUNK_DEPTH};
-use crate::world::World; // Assuming World will be needed for cross-chunk access
-use crate::block::{BlockType, Block}; // For checking block properties like transparency
+use crate::chunk::{CHUNK_WIDTH, CHUNK_HEIGHT, CHUNK_DEPTH}; // Chunk import removed as it's not directly used.
+use crate::world::World;
+// BlockType and Block are not directly used here, block properties are accessed via world/chunk methods.
+// use crate::block::{BlockType, Block};
 use glam::IVec3;
 use std::collections::VecDeque;
 
@@ -65,7 +66,7 @@ pub fn propagate_sky_light(world: &mut World, chunk_cx: i32, chunk_cz: i32) {
 
             // Handle cross-chunk boundaries
             let mut new_local_x = neighbor_local_pos.x;
-            let mut new_local_y = neighbor_local_pos.y;
+            let new_local_y = neighbor_local_pos.y; // Made non-mutable as it's not changed before use in this scope
             let mut new_local_z = neighbor_local_pos.z;
 
             if new_local_x < 0 {
@@ -166,7 +167,7 @@ pub fn propagate_block_light(world: &mut World, source_chunk_coord: (i32, i32), 
             let mut neighbor_chunk_coord = node.chunk_coord;
 
             let mut new_local_x = neighbor_local_pos.x;
-            let mut new_local_y = neighbor_local_pos.y;
+            let new_local_y = neighbor_local_pos.y; // Made non-mutable
             let mut new_local_z = neighbor_local_pos.z;
 
             // Boundary checks and transitions for X
@@ -297,7 +298,7 @@ pub fn remove_light(world: &mut World,
             let mut neighbor_chunk_coord = node.chunk_coord;
 
             let mut new_local_x = neighbor_local_pos.x;
-            let mut new_local_y = neighbor_local_pos.y;
+            let new_local_y = neighbor_local_pos.y; // Made non-mutable
             let mut new_local_z = neighbor_local_pos.z;
 
             // Boundary checks and transitions
@@ -312,8 +313,9 @@ pub fn remove_light(world: &mut World,
             let nl_z_usize = new_local_z as usize;
 
             if let Some(neighbor_chunk) = world.get_chunk_mut(neighbor_chunk_coord.0, neighbor_chunk_coord.1) {
-                let neighbor_block_is_opaque = neighbor_chunk.get_block(nl_x_usize, nl_y_usize, nl_z_usize)
-                                                 .map_or(true, |b| !b.is_transparent());
+                // let neighbor_block_is_opaque = neighbor_chunk.get_block(nl_x_usize, nl_y_usize, nl_z_usize)
+                //                                  .map_or(true, |b| !b.is_transparent());
+                // This variable `neighbor_block_is_opaque` was unused. Logic directly uses transparency/emission.
 
                 let neighbor_current_light = if is_sky_light_removal {
                     neighbor_chunk.get_sky_light(nl_x_usize, nl_y_usize, nl_z_usize)
