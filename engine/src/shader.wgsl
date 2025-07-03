@@ -74,18 +74,22 @@ fn fs_main(in: FragmentInput) -> @location(0) vec4<f32> {
         // Texture for grass top is at (0,0) which is grayscale.
         // Use the intensity (e.g., from red channel) from the sampled texture.
         let intensity = sampled_color.r;
-        // Apply a greenish tint.
+        // Apply a greenish tint for grass.
         let tinted_color = vec3<f32>(intensity * 0.4, intensity * 0.9, intensity * 0.35);
         return vec4<f32>(tinted_color, sampled_color.a);
-    } else if (is_potential_oak_leaves && in.tree_id > 0u) { // Check for tree_id > 0
+    } else if (is_potential_oak_leaves) { // No longer checking in.tree_id for unique color
         // Texture for oak leaves is at (4,3) which is also grayscale.
         // Use the intensity (e.g., from red channel) from the sampled texture.
         let intensity = sampled_color.r;
-        // Generate a unique color based on tree_id
-        let tree_base_color = hash_to_color(in.tree_id);
-        // Modulate by texture intensity
-        let tinted_color = tree_base_color * intensity;
-        return vec4<f32>(tinted_color, sampled_color.a);
+        // Apply a standard Minecraft-like oak leaf tint.
+        // These values aim for a slightly desaturated, classic green.
+        // Example: R: intensity * 0.3, G: intensity * 0.5, B: intensity * 0.2
+        // Let's use similar factors as the original grass/leaves tint for consistency,
+        // but potentially adjust if a different shade is desired.
+        // The original "similar tint" was (intensity * 0.4, intensity * 0.9, intensity * 0.35)
+        // This might be too vibrant for typical oak leaves. Let's try a slightly darker/more muted green.
+        let oak_tinted_color = vec3<f32>(intensity * 0.25, intensity * 0.55, intensity * 0.15);
+        return vec4<f32>(oak_tinted_color, sampled_color.a);
     }
     else {
         // For all other blocks/faces, use the sampled texture color directly.

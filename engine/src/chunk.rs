@@ -41,22 +41,17 @@ impl Chunk {
         }
 
         // --- TASK: Pass 2: Generate Trees ---
-        // After the main terrain is set, we make a second pass to add features like trees.
-        let mut rng = rand::rng(); // Create a random number generator
-        const TREE_CHANCE: f64 = 0.02; // 2% chance to try and place a tree at any given spot
-        let mut next_tree_id: u32 = 1; // Start tree IDs from 1
+        let mut rng = rand::thread_rng();
+        const TREE_CHANCE: f64 = 0.02;
+        let mut next_tree_id: u32 = 1;
 
-        for x in 2..(CHUNK_WIDTH - 2) {
-            // Iterate with a margin to keep trees from chunk edges
-            for z in 2..(CHUNK_DEPTH - 2) {
-                // Check if the block at the surface level is grass
-                if self.blocks[x][surface_level][z].block_type == BlockType::Grass {
-                    // Use the random number generator to decide if a tree should grow here
-                    if rng.random_bool(TREE_CHANCE) {
-                        // The ground level for the tree trunk is one block above the grass.
-                        self.place_tree(x, surface_level + 1, z, next_tree_id);
-                        next_tree_id = next_tree_id.wrapping_add(1); // Increment for next tree
-                        if next_tree_id == 0 { // Avoid tree_id 0 if it wraps around, as 0 is default/non-tree
+        for x_coord in 2..(CHUNK_WIDTH - 2) {
+            for z_coord in 2..(CHUNK_DEPTH - 2) {
+                if self.blocks[x_coord][surface_level][z_coord].block_type == BlockType::Grass {
+                    if rng.gen_bool(TREE_CHANCE) {
+                        self.place_tree(x_coord, surface_level + 1, z_coord, next_tree_id, &mut rng);
+                        next_tree_id = next_tree_id.wrapping_add(1);
+                        if next_tree_id == 0 {
                             next_tree_id = 1;
                         }
                     }
@@ -65,56 +60,85 @@ impl Chunk {
         }
     }
 
-    // TASK: Create a helper function to place a tree at a specific location.
-    // This makes the generation logic cleaner.
-    fn place_tree(&mut self, x: usize, y_base: usize, z: usize, tree_id: u32) { // Added tree_id parameter
-        // A simple tree structure.
-        let trunk_height: usize = 4;
-        let leaves_radius: usize = 2;
+    fn place_tree(&mut self, x: usize, y_base: usize, z: usize, tree_id: u32, rng: &mut impl Rng) {
+        let trunk_height: usize = rng.gen_range(3..=5);
+        let canopy_radius: isize = 2;
+        let canopy_base_y_offset: usize = trunk_height.saturating_sub(2); // Canopy starts relative to trunk top
+        let canopy_max_height_above_base: usize = 3; // How many layers of leaves max
 
-        // Don't place trees if they would grow out of the top of the chunk
-        if y_base + trunk_height + leaves_radius >= CHUNK_HEIGHT {
+        let tree_top_y = y_base + trunk_height;
+        if tree_top_y + canopy_max_height_above_base >= CHUNK_HEIGHT { // Check overall tree height
             return;
         }
 
-        // Place the trunk (Log blocks)
+        // Place the trunk
         for i in 0..trunk_height {
-            self.set_block(x, y_base + i, z, BlockType::OakLog)
-                .unwrap_or_default();
+            if y_base + i < CHUNK_HEIGHT { // Ensure trunk is within bounds
+                 self.set_block(x, y_base + i, z, BlockType::OakLog).unwrap_or_default();
+            }
         }
 
-        // Place the leaves canopy (a simple cube for now)
-        let leaves_y_base = y_base + trunk_height - 1;
-        for ly in 0..=leaves_radius {
-            for lx in -(leaves_radius as isize)..=leaves_radius as isize {
-                for lz in -(leaves_radius as isize)..=leaves_radius as isize {
-                    // Simple square canopy shape
-                    if lx == 0 && lz == 0 && ly < leaves_radius {
-                        // Don't place leaves inside the top of the trunk
+        // Place the leaves canopy (randomized)
+        let canopy_center_y_world = y_base + trunk_height -1; // Top of the trunk block
+
+        // Iterate a bounding box for potential leaves
+        // Y iterates from a bit below the top of the trunk to a bit above
+        let y_start_canopy = (y_base + canopy_base_y_offset).max(0); // Ensure non-negative
+        let y_end_canopy = (y_base + trunk_height + 1).min(CHUNK_HEIGHT -1) ; // Extend a bit above trunk
+
+        for ly_world in y_start_canopy..=y_end_canopy {
+            // Adjust radius based on y level (e.g. smaller at very top/bottom of canopy)
+            let y_dist_from_canopy_center = (ly_world as isize - canopy_center_y_world as isize).abs();
+            let current_layer_radius = if y_dist_from_canopy_center <= 0 { // center layer (around top of trunk)
+                canopy_radius
+            } else if y_dist_from_canopy_center == 1 {
+                canopy_radius // one layer above/below also full radius
+            } else {
+                (canopy_radius - 1).max(1) // taper off for layers further away
+            };
+
+            for lx_offset in -current_layer_radius..=current_layer_radius {
+                for lz_offset in -current_layer_radius..=current_layer_radius {
+                    let current_x_world = x as isize + lx_offset;
+                    let current_z_world = z as isize + lz_offset;
+
+                    // Boundary checks for X and Z
+                    if current_x_world < 0 || current_x_world >= CHUNK_WIDTH as isize ||
+                       current_z_world < 0 || current_z_world >= CHUNK_DEPTH as isize {
                         continue;
                     }
-                    let block_x = x as isize + lx;
-                    let block_y = leaves_y_base + ly;
-                    let block_z = z as isize + lz;
 
-                    // Check bounds before placing leaves
-                    if block_x < CHUNK_WIDTH as isize
-                        && block_y < CHUNK_HEIGHT
-                        && block_z < CHUNK_DEPTH as isize
-                    {
-                        // Only place leaves if the spot is currently empty (Air)
-                        if self.blocks[block_x as usize][block_y][block_z as usize].block_type
-                            == BlockType::Air
-                        {
-                            // Set OakLeaves block with tree_id
-                            self.set_block_with_tree_id(
-                                block_x as usize,
-                                block_y,
-                                block_z as usize,
-                                BlockType::OakLeaves,
-                                tree_id,
-                            )
-                            .unwrap_or_default();
+                    let (ux, uy, uz) = (current_x_world as usize, ly_world, current_z_world as usize);
+
+                    // Don't place leaves inside the trunk core, except for the very top layer
+                    if lx_offset == 0 && lz_offset == 0 && uy < canopy_center_y_world {
+                        continue;
+                    }
+
+                    // Simple spherical/rounded shape check (optional, can be adjusted)
+                    if lx_offset * lx_offset + lz_offset * lz_offset > current_layer_radius * current_layer_radius {
+                        if y_dist_from_canopy_center > 0 { // Only apply stricter spherical for non-central Y layers
+                           continue;
+                        } else if lx_offset*lx_offset + lz_offset*lz_offset > (canopy_radius+1)*(canopy_radius+1) { // allow slightly more spread on central layer
+                            continue;
+                        }
+                    }
+
+                    let mut probability = 0.65; // Base probability
+                    // Reduce probability for outer parts of a layer, more aggressively for non-central y-layers
+                    let radius_check = if y_dist_from_canopy_center > 0 {
+                        (current_layer_radius * current_layer_radius) as f64 * 0.5 // Tighter for upper/lower layers
+                    } else {
+                        (current_layer_radius * current_layer_radius) as f64 * 0.75 // Looser for main canopy layer
+                    };
+                    if (dist_sq_horiz as f64) > radius_check {
+                        probability *= 0.5; // Halve probability if further out
+                    }
+
+
+                    if rng.gen_bool(probability) {
+                        if self.blocks[ux][uy][uz].block_type == BlockType::Air {
+                            self.set_block_with_tree_id(ux, uy, uz, BlockType::OakLeaves, tree_id).unwrap_or_default();
                         }
                     }
                 }
@@ -122,8 +146,6 @@ impl Chunk {
         }
     }
 
-    // Helper to get a block at a given coordinate
-    // Returns Option<&Block> because coordinates might be out of bounds
     pub fn get_block(&self, x: usize, y: usize, z: usize) -> Option<&Block> {
         if x < CHUNK_WIDTH && y < CHUNK_HEIGHT && z < CHUNK_DEPTH {
             Some(&self.blocks[x][y][z])
@@ -132,8 +154,6 @@ impl Chunk {
         }
     }
 
-    // Helper to set a block at a given coordinate
-    // Returns Result<(), &str> to indicate success or out-of-bounds error
     pub fn set_block(
         &mut self,
         x: usize,
@@ -149,7 +169,6 @@ impl Chunk {
         }
     }
 
-    // Helper to set a block with a tree_id at a given coordinate
     pub fn set_block_with_tree_id(
         &mut self,
         x: usize,
@@ -166,12 +185,3 @@ impl Chunk {
         }
     }
 }
-
-// Default implementation for Chunk, useful for initialization
-// Now requires coordinates, so a generic default might not make sense
-// unless we default to (0,0). For now, let's remove it or make it explicit.
-// impl Default for Chunk {
-//     fn default() -> Self {
-//         Self::new(0, 0) // Default to chunk at (0,0)
-//     }
-// }
