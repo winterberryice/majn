@@ -1,11 +1,4 @@
-// This will be the entire content of engine/src/main.rs
-// with the State::update method modified for the diagnostic.
-// I'll copy the existing content from the last read_files output
-// and paste it here, then modify ONLY the State::update method's
-// chunk processing loop.
-
-// ... (all content from main.rs before State::update) ...
-// (Assuming the content read previously is accurate up to State::update)
+// Content of main.rs from last read_files, with is_face_visible logic updated
 
 mod block;
 mod camera;
@@ -15,23 +8,22 @@ mod debug_overlay;
 mod input;
 pub mod physics;
 pub mod player;
-mod raycast; // Add raycast module
+mod raycast;
 mod texture;
-mod ui; // Added for Crosshair
+mod ui;
 mod wireframe_renderer;
-mod world; // Add world module // Add wireframe_renderer module
+mod world;
 
-use std::sync::Arc; // Added for Arc<Window>
+use std::sync::Arc;
 use wgpu::Trace;
 use winit::{
-    application::ApplicationHandler, // Added for ApplicationHandler
+    application::ApplicationHandler,
     event::*,
-    event_loop::{ActiveEventLoop, ControlFlow, EventLoop}, // Added ControlFlow
+    event_loop::{ActiveEventLoop, ControlFlow, EventLoop},
     keyboard::{KeyCode, PhysicalKey},
-    window::{Window, WindowId}, // WindowId might be needed by ApplicationHandler methods
+    window::{Window, WindowId},
 };
 
-// Struct to hold application state and wgpu state
 struct App {
     window: Option<Arc<Window>>,
     state: Option<State>,
@@ -313,8 +305,8 @@ struct State {
 }
 
 // Constants for threshold-based re-meshing of transparent chunks
-const TRANSPARENT_REMESH_DISTANCE_SQUARED_THRESHOLD: f32 = 9.0; // e.g., 3 units distance (3*3=9)
-const TRANSPARENT_REMESH_YAW_THRESHOLD_RADIANS: f32 = 0.349066; // approx 20 degrees (20 * PI / 180)
+const TRANSPARENT_REMESH_DISTANCE_SQUARED_THRESHOLD: f32 = 9.0;
+const TRANSPARENT_REMESH_YAW_THRESHOLD_RADIANS: f32 = 0.349066;
 
 impl State {
     async fn new(
@@ -702,20 +694,30 @@ impl State {
                             let neighbor_world_by = ly as i32 + offset.1;
                             let neighbor_world_bz =
                                 chunk_world_origin_z as i32 + lz as i32 + offset.2;
-                            let mut is_face_visible = true;
+
+                            // MODIFIED CPU CULLING LOGIC FOR Z-FIGHTING
+                            let mut is_face_visible = true; // Default to visible
                             if neighbor_world_by >= 0 && neighbor_world_by < CHUNK_HEIGHT as i32 {
                                 if let Some(neighbor_block) = self.world.get_block_at_world(
                                     neighbor_world_bx as f32,
                                     neighbor_world_by as f32,
                                     neighbor_world_bz as f32,
                                 ) {
-                                    if !is_current_block_transparent {
-                                        if neighbor_block.is_solid() && !neighbor_block.is_transparent() {
-                                            is_face_visible = false;
-                                        }
+                                    // A face is culled if the neighbor block is solid and opaque.
+                                    // This applies whether the current block is transparent (to prevent Z-fighting with opaque blocks like logs)
+                                    // or opaque (standard internal face culling).
+                                    if neighbor_block.is_solid() && !neighbor_block.is_transparent() {
+                                        is_face_visible = false;
                                     }
+                                    // Otherwise (neighbor is Air or another Transparent block), the face is visible (is_face_visible remains true).
                                 }
+                                // If neighbor_block is None (e.g., because the adjacent chunk is not loaded),
+                                // is_face_visible remains true, so the face is rendered (correct for world edges).
                             }
+                            // If neighbor_world_by is outside chunk vertical bounds,
+                            // is_face_visible also remains true (correct for faces at top/bottom of world).
+                            // END OF MODIFIED CULLING LOGIC
+
                             if is_face_visible {
                                 if !is_current_block_transparent {
                                     let vertices_template = face_type.get_vertices_template();
@@ -788,7 +790,7 @@ impl State {
 
         for t_block_data in transparent_block_render_list {
             let block = &t_block_data.block;
-            let _lx = t_block_data.lx; // Renamed as lx, ly, lz from t_block_data are not directly used for neighbor checks here
+            let _lx = t_block_data.lx;
             let _ly = t_block_data.ly;
             let _lz = t_block_data.lz;
             let current_block_world_center = t_block_data.world_center;
@@ -801,7 +803,35 @@ impl State {
                 (CubeFace::Right, (1, 0, 0)), (CubeFace::Left, (-1, 0, 0)),
                 (CubeFace::Top, (0, 1, 0)), (CubeFace::Bottom, (0, -1, 0)),
             ];
-            for (face_type, _offset) in face_definitions.iter() { // _offset not needed as we generate all 6 faces
+            for (face_type, _offset) in face_definitions.iter() {
+                // For transparent blocks from the sorted list, we re-evaluate face visibility
+                // against their direct neighbors to prevent Z-fighting with solid opaque blocks.
+                let mut is_face_visible_for_transparent = true;
+                let neighbor_check_offset = match face_type { // Get the correct offset for this face
+                    CubeFace::Front => (0,0,-1), CubeFace::Back => (0,0,1),
+                    CubeFace::Right => (1,0,0), CubeFace::Left => (-1,0,0),
+                    CubeFace::Top => (0,1,0), CubeFace::Bottom => (0,-1,0),
+                };
+                let neighbor_world_bx_transparent = (chunk_world_origin_x + t_block_data.lx as f32) as i32 + neighbor_check_offset.0;
+                let neighbor_world_by_transparent = t_block_data.ly as i32 + neighbor_check_offset.1;
+                let neighbor_world_bz_transparent = (chunk_world_origin_z + t_block_data.lz as f32) as i32 + neighbor_check_offset.2;
+
+                if neighbor_world_by_transparent >= 0 && neighbor_world_by_transparent < CHUNK_HEIGHT as i32 {
+                    if let Some(neighbor_block_transparent) = self.world.get_block_at_world(
+                        neighbor_world_bx_transparent as f32,
+                        neighbor_world_by_transparent as f32,
+                        neighbor_world_bz_transparent as f32
+                    ) {
+                        if neighbor_block_transparent.is_solid() && !neighbor_block_transparent.is_transparent() {
+                            is_face_visible_for_transparent = false;
+                        }
+                    }
+                }
+
+                if !is_face_visible_for_transparent {
+                    continue; // Skip this face for this transparent block
+                }
+
                 let vertices_template = face_type.get_vertices_template();
                 let local_indices = face_type.get_local_indices();
                 const ATLAS_COLS: f32 = 16.0;
@@ -905,8 +935,6 @@ impl State {
                 },
             );
         } else {
-            // If the chunk becomes entirely empty, remove its data.
-            // If it had transparent data before, its camera pos/yaw will be removed too.
             self.chunk_render_data.remove(&(chunk_cx, chunk_cz));
         }
     }
@@ -991,14 +1019,11 @@ impl State {
         }
         self.active_chunk_coords = new_active_chunk_coords;
 
-        // Determine chunks that need meshing (new) or re-meshing (transparent & moved/rotated)
         let mut coords_to_mesh: Vec<(i32, i32)> = Vec::new();
         for &(cx, cz) in &self.active_chunk_coords {
             if !self.chunk_render_data.contains_key(&(cx, cz)) {
-                // Chunk is new, needs meshing
                 coords_to_mesh.push((cx, cz));
             } else {
-                // Existing chunk, check if it needs re-meshing due to camera movement (for transparents)
                 if let Some(render_data) = self.chunk_render_data.get(&(cx, cz)) {
                     if render_data.transparent_buffers.is_some() {
                         let mut needs_remesh = false;
@@ -1007,28 +1032,22 @@ impl State {
                                 needs_remesh = true;
                             }
                         } else {
-                            needs_remesh = true; // No last pos stored, treat as needing update
+                            needs_remesh = true;
                         }
-
-                        if !needs_remesh { // Only check yaw if distance didn't already trigger
+                        if !needs_remesh {
                             if let Some(last_yaw) = render_data.last_transparent_mesh_camera_yaw {
                                 let yaw_diff = (self.player.yaw - last_yaw).abs();
-                                // Normalize yaw difference to be within [0, PI] for comparison
-                                // A more robust way handles the wrap-around from -PI to PI or 0 to 2PI.
-                                // E.g., diff = (new - old + PI) % (2*PI) - PI
                                 let mut normalized_yaw_diff = yaw_diff;
-                                if normalized_yaw_diff > std::f32::consts::PI { // shortest angle
+                                if normalized_yaw_diff > std::f32::consts::PI {
                                     normalized_yaw_diff = 2.0 * std::f32::consts::PI - normalized_yaw_diff;
                                 }
-
                                 if normalized_yaw_diff > TRANSPARENT_REMESH_YAW_THRESHOLD_RADIANS {
                                     needs_remesh = true;
                                 }
                             } else {
-                                needs_remesh = true; // No last yaw stored
+                                needs_remesh = true;
                             }
                         }
-
                         if needs_remesh {
                             coords_to_mesh.push((cx, cz));
                         }
@@ -1036,10 +1055,8 @@ impl State {
                 }
             }
         }
-
         coords_to_mesh.sort_unstable();
         coords_to_mesh.dedup();
-
         for (cx, cz) in &coords_to_mesh {
             self.build_or_rebuild_chunk_mesh(*cx, *cz);
         }
@@ -1242,3 +1259,5 @@ fn main() {
     pollster::block_on(run());
 }
 // ... (rest of main.rs, if any) ...
+
+[end of engine/src/main.rs]
