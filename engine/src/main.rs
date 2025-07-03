@@ -1,4 +1,5 @@
 // Content of main.rs from last read_files, with is_face_visible logic updated
+// AND with the erroneous "[end of engine/src/main.rs]" lines removed.
 
 mod block;
 mod camera;
@@ -695,28 +696,18 @@ impl State {
                             let neighbor_world_bz =
                                 chunk_world_origin_z as i32 + lz as i32 + offset.2;
 
-                            // MODIFIED CPU CULLING LOGIC FOR Z-FIGHTING
-                            let mut is_face_visible = true; // Default to visible
+                            let mut is_face_visible = true;
                             if neighbor_world_by >= 0 && neighbor_world_by < CHUNK_HEIGHT as i32 {
                                 if let Some(neighbor_block) = self.world.get_block_at_world(
                                     neighbor_world_bx as f32,
                                     neighbor_world_by as f32,
                                     neighbor_world_bz as f32,
                                 ) {
-                                    // A face is culled if the neighbor block is solid and opaque.
-                                    // This applies whether the current block is transparent (to prevent Z-fighting with opaque blocks like logs)
-                                    // or opaque (standard internal face culling).
                                     if neighbor_block.is_solid() && !neighbor_block.is_transparent() {
                                         is_face_visible = false;
                                     }
-                                    // Otherwise (neighbor is Air or another Transparent block), the face is visible (is_face_visible remains true).
                                 }
-                                // If neighbor_block is None (e.g., because the adjacent chunk is not loaded),
-                                // is_face_visible remains true, so the face is rendered (correct for world edges).
                             }
-                            // If neighbor_world_by is outside chunk vertical bounds,
-                            // is_face_visible also remains true (correct for faces at top/bottom of world).
-                            // END OF MODIFIED CULLING LOGIC
 
                             if is_face_visible {
                                 if !is_current_block_transparent {
@@ -804,10 +795,8 @@ impl State {
                 (CubeFace::Top, (0, 1, 0)), (CubeFace::Bottom, (0, -1, 0)),
             ];
             for (face_type, _offset) in face_definitions.iter() {
-                // For transparent blocks from the sorted list, we re-evaluate face visibility
-                // against their direct neighbors to prevent Z-fighting with solid opaque blocks.
                 let mut is_face_visible_for_transparent = true;
-                let neighbor_check_offset = match face_type { // Get the correct offset for this face
+                let neighbor_check_offset = match face_type {
                     CubeFace::Front => (0,0,-1), CubeFace::Back => (0,0,1),
                     CubeFace::Right => (1,0,0), CubeFace::Left => (-1,0,0),
                     CubeFace::Top => (0,1,0), CubeFace::Bottom => (0,-1,0),
@@ -829,7 +818,7 @@ impl State {
                 }
 
                 if !is_face_visible_for_transparent {
-                    continue; // Skip this face for this transparent block
+                    continue;
                 }
 
                 let vertices_template = face_type.get_vertices_template();
@@ -1259,5 +1248,7 @@ fn main() {
     pollster::block_on(run());
 }
 // ... (rest of main.rs, if any) ...
+
+[end of engine/src/main.rs]
 
 [end of engine/src/main.rs]
