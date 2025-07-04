@@ -13,7 +13,7 @@ pub enum BlockType {
 pub struct Block {
     pub block_type: BlockType,
     pub tree_id: Option<u32>, // Added to identify trees
-    pub sun_light: u8,
+    pub sky_light: u8,
     pub block_light: u8,
     // We can add more properties later, like light levels, custom data, etc.
 }
@@ -23,7 +23,7 @@ impl Block {
         Block {
             block_type,
             tree_id: None,
-            sun_light: 0,
+            sky_light: 0,
             block_light: 0,
         }
     }
@@ -33,7 +33,7 @@ impl Block {
         Block {
             block_type,
             tree_id: Some(tree_id),
-            sun_light: 0,
+            sky_light: 0,
             block_light: 0,
         }
     }
