@@ -1,6 +1,3 @@
-// Content of main.rs from last read_files, with is_face_visible logic updated
-// AND with the erroneous "[end of engine/src/main.rs]" lines removed.
-
 mod block;
 mod camera;
 mod chunk;
@@ -254,7 +251,7 @@ impl Vertex {
                         + std::mem::size_of::<[f32; 2]>()
                         + std::mem::size_of::<u32>())
                         as wgpu::BufferAddress,
-                    shader_location: 4, // Next available location
+                    shader_location: 4,
                     format: wgpu::VertexFormat::Uint32,
                 },
             ],
@@ -315,7 +312,6 @@ struct State {
     input_state: input::InputState,
 }
 
-// Constants for threshold-based re-meshing of transparent chunks
 const TRANSPARENT_REMESH_DISTANCE_SQUARED_THRESHOLD: f32 = 9.0;
 const TRANSPARENT_REMESH_YAW_THRESHOLD_RADIANS: f32 = 0.349066;
 
@@ -341,16 +337,13 @@ impl State {
             .unwrap();
 
         let (device, queue) = adapter
-            .request_device(
-                &wgpu::DeviceDescriptor {
-                    required_features: wgpu::Features::empty(),
-                    required_limits: wgpu::Limits::default(),
-                    label: None,
-                    memory_hints: wgpu::MemoryHints::default(),
-                    trace: Trace::Off,
-                },
-                // None, // trace_path argument removed
-            )
+            .request_device(&wgpu::DeviceDescriptor {
+                required_features: wgpu::Features::empty(),
+                required_limits: wgpu::Limits::default(),
+                label: None,
+                memory_hints: wgpu::MemoryHints::default(),
+                trace: Trace::Off,
+            })
             .await
             .unwrap();
 
@@ -642,9 +635,6 @@ impl State {
         }
     }
 
-    // in engine/src/main.rs
-    // Replace the entire build_or_rebuild_chunk_mesh function with this one.
-
     fn build_or_rebuild_chunk_mesh(&mut self, chunk_cx: i32, chunk_cz: i32) {
         let mut opaque_vertices: Vec<Vertex> = Vec::new();
         let mut opaque_indices: Vec<u16> = Vec::new();
@@ -728,16 +718,13 @@ impl State {
                             };
 
                             if is_face_visible {
-                                // --- THE FIX IS HERE! ---
-                                // We get the light level from the NEIGHBOR block (the air), not the current solid block.
                                 let (sun_light, block_light) =
                                     if let Some(neighbor_block) = neighbor_block_opt {
                                         (neighbor_block.sun_light, neighbor_block.block_light)
                                     } else {
-                                        (15, 0) // If neighbor is outside the world, assume full sunlight.
+                                        (15, 0)
                                     };
                                 let packed_light = ((block_light as u32) << 8) | (sun_light as u32);
-                                // --- END OF FIX ---
 
                                 let vertices_template = face_type.get_vertices_template();
                                 let local_indices = face_type.get_local_indices();
@@ -800,7 +787,7 @@ impl State {
                                         color: current_vertex_color,
                                         uv: selected_face_uvs[i],
                                         tree_id: 0,
-                                        light: packed_light, // Use the new packed_light from the neighbor!
+                                        light: packed_light,
                                     });
                                 }
                                 for local_idx in local_indices {
@@ -860,7 +847,6 @@ impl State {
                 };
 
                 if is_face_visible {
-                    // --- THE SAME FIX for transparent blocks ---
                     let (sun_light, block_light) = if let Some(neighbor_block) = neighbor_block_opt
                     {
                         (neighbor_block.sun_light, neighbor_block.block_light)
@@ -868,7 +854,6 @@ impl State {
                         (15, 0)
                     };
                     let packed_light = ((block_light as u32) << 8) | (sun_light as u32);
-                    // --- END OF FIX ---
 
                     let vertices_template = face_type.get_vertices_template();
                     let local_indices = face_type.get_local_indices();
@@ -921,7 +906,7 @@ impl State {
                             color: base_vertex_color,
                             uv: selected_face_uvs[i],
                             tree_id: block.tree_id.unwrap_or(0),
-                            light: packed_light, // Use the new packed_light from the neighbor!
+                            light: packed_light,
                         });
                     }
                     for local_idx in local_indices {
@@ -1156,27 +1141,19 @@ impl State {
         const RAYCAST_MAX_DISTANCE: f32 = 5.0;
         self.selected_block =
             crate::raycast::cast_ray(&self.player, &self.world, RAYCAST_MAX_DISTANCE);
-
-        // --- MODIFIED SECTION ---
         if let Some((block_pos, _)) = self.selected_block {
             self.wireframe_renderer.update_selection(Some(block_pos));
-            // Get the actual block data from the world
             let block_ref = self.world.get_block_at_world(
                 block_pos.x as f32,
                 block_pos.y as f32,
                 block_pos.z as f32,
             );
-            // Pass the block data to the debug overlay
             self.debug_overlay.update_selection_info(block_ref);
         } else {
             self.wireframe_renderer.update_selection(None);
-            // If no block is selected, clear the info
             self.debug_overlay.update_selection_info(None);
         }
-        // --- END OF MODIFIED SECTION ---
-
         let camera_eye = self.player.position + glam::Vec3::new(0.0, PLAYER_EYE_HEIGHT, 0.0);
-
         let camera_front = glam::Vec3::new(
             self.player.yaw.cos() * self.player.pitch.cos(),
             self.player.pitch.sin(),
@@ -1206,6 +1183,9 @@ impl State {
             if let Some((block_pos, _face)) = self.selected_block {
                 match self.world.set_block(block_pos, BlockType::Air) {
                     Ok(chunk_coord) => {
+                        let chunk = self.world.get_or_create_chunk(chunk_coord.0, chunk_coord.1);
+                        chunk.propagate_sunlight();
+
                         self.chunk_render_data.remove(&chunk_coord);
                         self.build_or_rebuild_chunk_mesh(chunk_coord.0, chunk_coord.1);
                         self.build_or_rebuild_chunk_mesh(chunk_coord.0 + 1, chunk_coord.1);
@@ -1411,4 +1391,3 @@ pub async fn run() {
 fn main() {
     pollster::block_on(run());
 }
-// ... (rest of main.rs, if any) ...

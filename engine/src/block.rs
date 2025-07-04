@@ -54,6 +54,15 @@ impl Block {
         }
     }
 
+    pub fn light_cost(&self) -> u8 {
+        match self.block_type {
+            BlockType::Air => 1,
+            // You could add other transparent types here, e.g., leaves might cost 2
+            BlockType::OakLeaves => 2,
+            _ => 15, // Solid blocks are opaque and cost all the light
+        }
+    }
+
     // Later, we can add methods here to get texture coordinates
     // based on BlockType and potentially block face.
     // For now, we'll keep it simple.

@@ -21,6 +21,74 @@ impl Chunk {
         }
     }
 
+    // in engine/src/chunk.rs
+
+    // Replace the entire propagate_sunlight function with this one.
+    pub fn propagate_sunlight(&mut self) {
+        const MAX_SUN_LIGHT: u8 = 15;
+        let mut sunlight_queue: VecDeque<(usize, usize, usize)> = VecDeque::new();
+
+        // 1. Initial downward pass from the sky.
+        for x in 0..CHUNK_WIDTH {
+            for z in 0..CHUNK_DEPTH {
+                let mut light_can_pass = true;
+                for y in (0..CHUNK_HEIGHT).rev() {
+                    let block = &mut self.blocks[x][y][z];
+                    // Always reset light level before recalculating.
+                    block.sun_light = 0;
+
+                    if light_can_pass {
+                        // If the block is transparent, light passes through at full strength.
+                        if block.is_transparent() {
+                            block.sun_light = MAX_SUN_LIGHT;
+                            sunlight_queue.push_back((x, y, z));
+                        } else {
+                            // If it's the first solid block we hit, it gets full light.
+                            block.sun_light = MAX_SUN_LIGHT;
+                            sunlight_queue.push_back((x, y, z));
+                            // But light can no longer pass down this column.
+                            light_can_pass = false;
+                        }
+                    }
+                }
+            }
+        }
+
+        // 2. Flood-fill propagation to spread light sideways and into caves.
+        //    This part uses the light_cost system.
+        while let Some((x, y, z)) = sunlight_queue.pop_front() {
+            let current_light_level = self.get_block(x, y, z).unwrap().sun_light;
+
+            let neighbors = [
+                (x + 1, y, z),
+                (x.wrapping_sub(1), y, z),
+                (x, y + 1, z),
+                (x, y.wrapping_sub(1), z),
+                (x, y, z + 1),
+                (x, y, z.wrapping_sub(1)),
+            ];
+
+            for (nx, ny, nz) in neighbors.iter().cloned() {
+                if nx < CHUNK_WIDTH && ny < CHUNK_HEIGHT && nz < CHUNK_DEPTH {
+                    let neighbor_block = self.get_block(nx, ny, nz).unwrap();
+                    // Get the cost to enter the NEIGHBOR block.
+                    let cost = neighbor_block.light_cost();
+
+                    // Check if we have enough light to overcome the cost.
+                    if current_light_level > cost {
+                        let new_light_level = current_light_level - cost;
+
+                        // If this new path is brighter than the neighbor's current light, update it.
+                        if new_light_level > neighbor_block.sun_light {
+                            self.blocks[nx][ny][nz].sun_light = new_light_level;
+                            sunlight_queue.push_back((nx, ny, nz));
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     pub fn generate_terrain(&mut self) {
         let surface_level = CHUNK_HEIGHT / 2;
 
@@ -37,81 +105,10 @@ impl Chunk {
             }
         }
 
-        const MAX_SUN_LIGHT: u8 = 15;
+        // --- Lighting logic is now in its own function ---
+        self.propagate_sunlight();
 
-        for x in 0..CHUNK_WIDTH {
-            for z in 0..CHUNK_DEPTH {
-                let mut light_level = MAX_SUN_LIGHT;
-                for y in (0..CHUNK_HEIGHT).rev() {
-                    let block = &mut self.blocks[x][y][z];
-                    if light_level > 0 {
-                        if block.is_transparent() {
-                            block.sun_light = light_level;
-                        } else {
-                            block.sun_light = light_level;
-                            light_level = 0;
-                        }
-                    } else {
-                        block.sun_light = 0;
-                    }
-                }
-            }
-        }
-
-        // --- NEW: Sunlight Spreading (Flood Fill) ---
-        // 1. Create the queue
-        let mut sunlight_queue: VecDeque<(usize, usize, usize)> = VecDeque::new();
-
-        // 2. Populate the queue with all initially lit blocks
-        for x in 0..CHUNK_WIDTH {
-            for y in 0..CHUNK_HEIGHT {
-                for z in 0..CHUNK_DEPTH {
-                    if self.blocks[x][y][z].sun_light > 0 {
-                        sunlight_queue.push_back((x, y, z));
-                    }
-                }
-            }
-        }
-
-        // 3. Process the queue
-        while let Some((x, y, z)) = sunlight_queue.pop_front() {
-            let current_light_level = self.get_block(x, y, z).unwrap().sun_light;
-
-            // Check all 6 neighbors
-            let neighbors = [
-                (x + 1, y, z),
-                (x.wrapping_sub(1), y, z),
-                (x, y + 1, z),
-                (x, y.wrapping_sub(1), z),
-                (x, y, z + 1),
-                (x, y, z.wrapping_sub(1)),
-            ];
-
-            for (nx, ny, nz) in neighbors.iter().cloned() {
-                // Check if neighbor is within chunk bounds
-                if nx < CHUNK_WIDTH && ny < CHUNK_HEIGHT && nz < CHUNK_DEPTH {
-                    let neighbor_block = self.get_block(nx, ny, nz).unwrap();
-                    let new_light_level = if current_light_level == MAX_SUN_LIGHT
-                        && self.blocks[x][y][z].is_transparent()
-                        && ny < y
-                    {
-                        // Sunlight doesn't decrease when going straight down through transparent blocks
-                        MAX_SUN_LIGHT
-                    } else {
-                        current_light_level - 1
-                    };
-
-                    // If we can make the neighbor brighter, update it and add it to the queue
-                    if new_light_level > neighbor_block.sun_light {
-                        self.blocks[nx][ny][nz].sun_light = new_light_level;
-                        sunlight_queue.push_back((nx, ny, nz));
-                    }
-                }
-            }
-        }
-        // --- END of new flood-fill code ---
-
-        let mut rng = rand::rng(); // Per compiler hint
+        let mut rng = rand::thread_rng();
         const TREE_CHANCE: f64 = 0.02;
         let mut next_tree_id: u32 = 1;
 
@@ -119,7 +116,6 @@ impl Chunk {
             for z_coord in 2..(CHUNK_DEPTH - 2) {
                 if self.blocks[x_coord][surface_level][z_coord].block_type == BlockType::Grass {
                     if rng.random_bool(TREE_CHANCE) {
-                        // Per compiler hint
                         self.place_tree(
                             x_coord,
                             surface_level + 1,
@@ -138,7 +134,7 @@ impl Chunk {
     }
 
     fn place_tree(&mut self, x: usize, y_base: usize, z: usize, tree_id: u32, rng: &mut impl Rng) {
-        let trunk_height: usize = rng.random_range(3..=5); // Per compiler hint
+        let trunk_height: usize = rng.random_range(3..=5);
         let canopy_radius: isize = 2;
         let canopy_base_y_offset: usize = trunk_height.saturating_sub(2);
         let canopy_max_height_above_base: usize = 3;
@@ -190,7 +186,7 @@ impl Chunk {
                         continue;
                     }
 
-                    let dist_sq_horiz = lx_offset * lx_offset + lz_offset * lz_offset; // Defined here
+                    let dist_sq_horiz = lx_offset * lx_offset + lz_offset * lz_offset;
 
                     if dist_sq_horiz > current_layer_radius * current_layer_radius {
                         if y_dist_from_canopy_center > 0 {
@@ -203,24 +199,19 @@ impl Chunk {
                     let probability = if current_layer_radius == 0 {
                         0.0
                     } else {
-                        // Ensure radius - 1 does not underflow for isize if current_layer_radius is 0,
-                        // though current_layer_radius logic already ensures it's at least 1 if not 0.
                         let r_core_sq = ((current_layer_radius - 1).max(0) as f32).powi(2);
                         let r_edge_sq = (current_layer_radius as f32).powi(2);
-                        // let r_fuzzy_sq = ((current_layer_radius + 1) as f32).powi(2); // Optional outer fuzzy layer
 
                         if (dist_sq_horiz as f32) <= r_core_sq {
-                            0.95 // Core part: almost always place
+                            0.95
                         } else if (dist_sq_horiz as f32) <= r_edge_sq {
-                            0.6 // Edge part: moderate chance
-                        // } else if (dist_sq_horiz as f32) <= r_fuzzy_sq { // Uncomment for fuzzier edges
-                        //     0.25 // Fuzzy outer part: lower chance
+                            0.6
                         } else {
-                            0.0 // Outside defined canopy for this layer
+                            0.0
                         }
                     };
 
-                    if probability > 0.0 && rng.random_bool(probability) {
+                    if probability > 0.0 && rng.gen_bool(probability) {
                         if self.blocks[ux][uy][uz].block_type == BlockType::Air {
                             self.set_block_with_tree_id(ux, uy, uz, BlockType::OakLeaves, tree_id)
                                 .unwrap_or_default();
