@@ -1,6 +1,6 @@
-use std::collections::HashMap;
-use crate::chunk::{Chunk, CHUNK_WIDTH, CHUNK_HEIGHT, CHUNK_DEPTH};
-use crate::block::Block; // Removed BlockType as it's unused
+use crate::block::Block;
+use crate::chunk::{CHUNK_DEPTH, CHUNK_HEIGHT, CHUNK_WIDTH, Chunk};
+use std::collections::HashMap; // Removed BlockType as it's unused
 
 pub struct World {
     chunks: HashMap<(i32, i32), Chunk>,
@@ -15,13 +15,11 @@ impl World {
 
     // Gets a reference to a chunk if it exists, otherwise generates/loads it.
     pub fn get_or_create_chunk(&mut self, chunk_x: i32, chunk_z: i32) -> &mut Chunk {
-        self.chunks
-            .entry((chunk_x, chunk_z))
-            .or_insert_with(|| {
-                let mut new_chunk = Chunk::new(chunk_x, chunk_z);
-                new_chunk.generate_terrain(); // Or some other generation logic
-                new_chunk
-            })
+        self.chunks.entry((chunk_x, chunk_z)).or_insert_with(|| {
+            let mut new_chunk = Chunk::new(chunk_x, chunk_z);
+            new_chunk.generate_terrain(); // Or some other generation logic
+            new_chunk
+        })
     }
 
     // Gets an immutable reference to a chunk if it exists.
@@ -30,7 +28,11 @@ impl World {
     }
 
     // Converts world block coordinates to chunk coordinates and local block coordinates.
-    pub fn world_to_chunk_coords(world_x: f32, world_y: f32, world_z: f32) -> ((i32, i32), (usize, usize, usize)) {
+    pub fn world_to_chunk_coords(
+        world_x: f32,
+        world_y: f32,
+        world_z: f32,
+    ) -> ((i32, i32), (usize, usize, usize)) {
         let chunk_x = (world_x / CHUNK_WIDTH as f32).floor() as i32;
         let chunk_z = (world_z / CHUNK_DEPTH as f32).floor() as i32;
 
@@ -42,14 +44,20 @@ impl World {
         // world_y interacts with chunk vertical slices if that becomes a feature.
         let clamped_y = world_y.max(0.0).min(CHUNK_HEIGHT as f32 - 1.0);
 
-        ((chunk_x, chunk_z), (local_x as usize, clamped_y as usize, local_z as usize))
+        (
+            (chunk_x, chunk_z),
+            (local_x as usize, clamped_y as usize, local_z as usize),
+        )
     }
 
     // Gets a block at absolute world coordinates.
+    // TODO this type should be not float?
     pub fn get_block_at_world(&self, world_x: f32, world_y: f32, world_z: f32) -> Option<&Block> {
-        let ((chunk_x, chunk_z), (local_x, local_y, local_z)) = World::world_to_chunk_coords(world_x, world_y, world_z);
+        let ((chunk_x, chunk_z), (local_x, local_y, local_z)) =
+            World::world_to_chunk_coords(world_x, world_y, world_z);
 
-        if local_y >= CHUNK_HEIGHT { // Check against actual CHUNK_HEIGHT
+        if local_y >= CHUNK_HEIGHT {
+            // Check against actual CHUNK_HEIGHT
             return None; // y is out of any possible chunk's bounds
         }
 
@@ -64,18 +72,25 @@ impl World {
     // pub fn set_block_at_world(&mut self, world_x: f32, world_y: f32, world_z: f32, block_type: BlockType) -> Result<(), &'static str> { // Old signature
     // New set_block method using IVec3 and returning modified chunk coordinates
     // Returns the world chunk coordinates (cx, cz) of the modified chunk if successful.
-    pub fn set_block(&mut self, world_block_pos: glam::IVec3, block_type: crate::block::BlockType) -> Result<(i32, i32), &'static str> {
+    pub fn set_block(
+        &mut self,
+        world_block_pos: glam::IVec3,
+        block_type: crate::block::BlockType,
+    ) -> Result<(i32, i32), &'static str> {
         if world_block_pos.y < 0 || world_block_pos.y >= CHUNK_HEIGHT as i32 {
             return Err("Y coordinate out of world bounds");
         }
 
-        let ((chunk_x, chunk_z), (local_x, local_y, local_z)) =
-            World::world_to_chunk_coords(world_block_pos.x as f32, world_block_pos.y as f32, world_block_pos.z as f32);
+        let ((chunk_x, chunk_z), (local_x, local_y, local_z)) = World::world_to_chunk_coords(
+            world_block_pos.x as f32,
+            world_block_pos.y as f32,
+            world_block_pos.z as f32,
+        );
 
         // Ensure local_y is also valid after conversion, though the initial check should mostly cover it.
         if local_y >= CHUNK_HEIGHT {
-             // This case should ideally not be hit if the initial Y check is correct
-             // and world_to_chunk_coords handles y correctly.
+            // This case should ideally not be hit if the initial Y check is correct
+            // and world_to_chunk_coords handles y correctly.
             return Err("Calculated local Y coordinate out of chunk bounds");
         }
 

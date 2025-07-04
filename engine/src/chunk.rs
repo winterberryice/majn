@@ -1,5 +1,4 @@
 use crate::block::{Block, BlockType};
-use pollster::block_on;
 use rand::Rng; // Assuming block.rs is in the same directory
 
 pub const CHUNK_WIDTH: usize = 16;

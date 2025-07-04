@@ -1,4 +1,5 @@
 // Corrected use statement based on glyph_brush re-exports
+use crate::block::Block;
 use glam::Vec3;
 use std::time::Instant;
 use wgpu::TextureFormat; // Import TextureFormat
@@ -67,7 +68,7 @@ impl DebugOverlay {
     //     self.visible
     // }
 
-    pub fn update(&mut self, player_position: Vec3) {
+    pub fn update(&mut self, player_position: Vec3, selected_block: Option<&Block>) {
         if !self.visible {
             // Reset FPS calculation when not visible to avoid large delta_time on re-enabling
             self.last_frame_time = Instant::now();
@@ -90,10 +91,17 @@ impl DebugOverlay {
             self.accumulated_time -= 1.0;
         }
 
-        let text_content = format!(
+        let mut text_content = format!(
             "FPS: {}\nPosition: {:.2}, {:.2}, {:.2}",
             self.fps, player_position.x, player_position.y, player_position.z
         );
+
+        if let Some(block) = selected_block {
+            text_content.push_str(&format!(
+                "\n\nSelected Block: type: {:?}, sky_light: {}, block_light: {}",
+                block.block_type, block.sky_light, block.block_light
+            ));
+        }
 
         // Update the section's text.
         self.section.text = vec![
