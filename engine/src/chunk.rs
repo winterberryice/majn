@@ -1,4 +1,5 @@
 use crate::block::{Block, BlockType};
+use pollster::block_on;
 use rand::Rng; // Assuming block.rs is in the same directory
 
 pub const CHUNK_WIDTH: usize = 16;
@@ -43,8 +44,15 @@ impl Chunk {
         for x_coord in 2..(CHUNK_WIDTH - 2) {
             for z_coord in 2..(CHUNK_DEPTH - 2) {
                 if self.blocks[x_coord][surface_level][z_coord].block_type == BlockType::Grass {
-                    if rng.random_bool(TREE_CHANCE) { // Per compiler hint
-                        self.place_tree(x_coord, surface_level + 1, z_coord, next_tree_id, &mut rng);
+                    if rng.random_bool(TREE_CHANCE) {
+                        // Per compiler hint
+                        self.place_tree(
+                            x_coord,
+                            surface_level + 1,
+                            z_coord,
+                            next_tree_id,
+                            &mut rng,
+                        );
                         next_tree_id = next_tree_id.wrapping_add(1);
                         if next_tree_id == 0 {
                             next_tree_id = 1;
@@ -68,16 +76,18 @@ impl Chunk {
 
         for i in 0..trunk_height {
             if y_base + i < CHUNK_HEIGHT {
-                 self.set_block(x, y_base + i, z, BlockType::OakLog).unwrap_or_default();
+                self.set_block(x, y_base + i, z, BlockType::OakLog)
+                    .unwrap_or_default();
             }
         }
 
-        let canopy_center_y_world = y_base + trunk_height -1;
+        let canopy_center_y_world = y_base + trunk_height - 1;
         let y_start_canopy = (y_base + canopy_base_y_offset).max(0);
-        let y_end_canopy = (y_base + trunk_height + 1).min(CHUNK_HEIGHT -1) ;
+        let y_end_canopy = (y_base + trunk_height + 1).min(CHUNK_HEIGHT - 1);
 
         for ly_world in y_start_canopy..=y_end_canopy {
-            let y_dist_from_canopy_center = (ly_world as isize - canopy_center_y_world as isize).abs();
+            let y_dist_from_canopy_center =
+                (ly_world as isize - canopy_center_y_world as isize).abs();
             let current_layer_radius = if y_dist_from_canopy_center <= 0 {
                 canopy_radius
             } else if y_dist_from_canopy_center == 1 {
@@ -91,12 +101,16 @@ impl Chunk {
                     let current_x_world = x as isize + lx_offset;
                     let current_z_world = z as isize + lz_offset;
 
-                    if current_x_world < 0 || current_x_world >= CHUNK_WIDTH as isize ||
-                       current_z_world < 0 || current_z_world >= CHUNK_DEPTH as isize {
+                    if current_x_world < 0
+                        || current_x_world >= CHUNK_WIDTH as isize
+                        || current_z_world < 0
+                        || current_z_world >= CHUNK_DEPTH as isize
+                    {
                         continue;
                     }
 
-                    let (ux, uy, uz) = (current_x_world as usize, ly_world, current_z_world as usize);
+                    let (ux, uy, uz) =
+                        (current_x_world as usize, ly_world, current_z_world as usize);
 
                     if lx_offset == 0 && lz_offset == 0 && uy < canopy_center_y_world {
                         continue;
@@ -106,8 +120,8 @@ impl Chunk {
 
                     if dist_sq_horiz > current_layer_radius * current_layer_radius {
                         if y_dist_from_canopy_center > 0 {
-                           continue;
-                        } else if dist_sq_horiz > (canopy_radius+1)*(canopy_radius+1) {
+                            continue;
+                        } else if dist_sq_horiz > (canopy_radius + 1) * (canopy_radius + 1) {
                             continue;
                         }
                     }
@@ -124,17 +138,18 @@ impl Chunk {
                         if (dist_sq_horiz as f32) <= r_core_sq {
                             0.95 // Core part: almost always place
                         } else if (dist_sq_horiz as f32) <= r_edge_sq {
-                            0.6  // Edge part: moderate chance
+                            0.6 // Edge part: moderate chance
                         // } else if (dist_sq_horiz as f32) <= r_fuzzy_sq { // Uncomment for fuzzier edges
                         //     0.25 // Fuzzy outer part: lower chance
                         } else {
-                            0.0  // Outside defined canopy for this layer
+                            0.0 // Outside defined canopy for this layer
                         }
                     };
 
                     if probability > 0.0 && rng.random_bool(probability) {
                         if self.blocks[ux][uy][uz].block_type == BlockType::Air {
-                            self.set_block_with_tree_id(ux, uy, uz, BlockType::OakLeaves, tree_id).unwrap_or_default();
+                            self.set_block_with_tree_id(ux, uy, uz, BlockType::OakLeaves, tree_id)
+                                .unwrap_or_default();
                         }
                     }
                 }
@@ -179,5 +194,30 @@ impl Chunk {
         } else {
             Err("Coordinates out of chunk bounds")
         }
+    }
+
+    pub fn calculate_sky_light(&mut self) {
+        for x in 0..CHUNK_WIDTH {
+            for z in 0..CHUNK_DEPTH {
+                let mut light_level = 15;
+
+                for y in (0..CHUNK_HEIGHT).rev() {
+                    let block = &mut self.blocks[x][y][z];
+
+                    if light_level == 0 {
+                        block.sky_light = 0;
+                        continue;
+                    }
+
+                    if block.is_transparent() {
+                        block.sky_light = light_level;
+                    } else {
+                        block.sky_light = light_level;
+                        light_level = 0;
+                    }
+                }
+            }
+        }
+        //
     }
 }
