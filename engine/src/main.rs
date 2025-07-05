@@ -1,6 +1,3 @@
-// Content of main.rs from last read_files, with is_face_visible logic updated
-// AND with the erroneous "[end of engine/src/main.rs]" lines removed.
-
 mod block;
 mod camera;
 mod chunk;
@@ -277,8 +274,6 @@ struct ChunkRenderBuffers {
 struct ChunkRenderData {
     opaque_buffers: Option<ChunkRenderBuffers>,
     transparent_buffers: Option<ChunkRenderBuffers>,
-    last_transparent_mesh_camera_pos: Option<glam::Vec3>,
-    last_transparent_mesh_camera_yaw: Option<f32>,
 }
 
 struct State {
@@ -305,10 +300,6 @@ struct State {
     diffuse_bind_group: wgpu::BindGroup,
     input_state: input::InputState,
 }
-
-// Constants for threshold-based re-meshing of transparent chunks
-const TRANSPARENT_REMESH_DISTANCE_SQUARED_THRESHOLD: f32 = 9.0;
-const TRANSPARENT_REMESH_YAW_THRESHOLD_RADIANS: f32 = 0.349066;
 
 impl State {
     async fn new(
@@ -513,18 +504,7 @@ impl State {
                     entry_point: Some("fs_main"),
                     targets: &[Some(wgpu::ColorTargetState {
                         format: config.format,
-                        blend: Some(wgpu::BlendState {
-                            color: wgpu::BlendComponent {
-                                src_factor: wgpu::BlendFactor::SrcAlpha,
-                                dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
-                                operation: wgpu::BlendOperation::Add,
-                            },
-                            alpha: wgpu::BlendComponent {
-                                src_factor: wgpu::BlendFactor::One,
-                                dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
-                                operation: wgpu::BlendOperation::Add,
-                            },
-                        }),
+                        blend: None,
                         write_mask: wgpu::ColorWrites::ALL,
                     })],
                     compilation_options: wgpu::PipelineCompilationOptions::default(),
@@ -540,7 +520,7 @@ impl State {
                 },
                 depth_stencil: Some(wgpu::DepthStencilState {
                     format: wgpu::TextureFormat::Depth32Float,
-                    depth_write_enabled: false,
+                    depth_write_enabled: true,
                     depth_compare: wgpu::CompareFunction::Less,
                     stencil: wgpu::StencilState::default(),
                     bias: wgpu::DepthBiasState::default(),
@@ -801,15 +781,6 @@ impl State {
             }
         }
 
-        let player_camera_pos = self.player.position + glam::Vec3::new(0.0, PLAYER_EYE_HEIGHT, 0.0);
-        transparent_block_render_list.sort_by(|a, b| {
-            let dist_a = player_camera_pos.distance_squared(a.world_center);
-            let dist_b = player_camera_pos.distance_squared(b.world_center);
-            dist_b
-                .partial_cmp(&dist_a)
-                .unwrap_or(std::cmp::Ordering::Equal)
-        });
-
         for t_block_data in transparent_block_render_list {
             let block = &t_block_data.block;
             let _lx = t_block_data.lx;
@@ -855,8 +826,8 @@ impl State {
                         neighbor_world_by_transparent as f32,
                         neighbor_world_bz_transparent as f32,
                     ) {
-                        if neighbor_block_transparent.is_solid()
-                            && !neighbor_block_transparent.is_transparent()
+                        if !neighbor_block_transparent.is_transparent()
+                            || neighbor_block_transparent.block_type == block.block_type
                         {
                             is_face_visible_for_transparent = false;
                         }
@@ -979,19 +950,11 @@ impl State {
             });
         }
         if opaque_buffers.is_some() || transparent_buffers.is_some() {
-            let (final_camera_pos, final_camera_yaw) = if transparent_buffers.is_some() {
-                (Some(self.player.position), Some(self.player.yaw))
-            } else {
-                (None, None)
-            };
-
             self.chunk_render_data.insert(
                 (chunk_cx, chunk_cz),
                 ChunkRenderData {
                     opaque_buffers,
                     transparent_buffers,
-                    last_transparent_mesh_camera_pos: final_camera_pos,
-                    last_transparent_mesh_camera_yaw: final_camera_yaw,
                 },
             );
         } else {
@@ -1103,39 +1066,6 @@ impl State {
         for &(cx, cz) in &self.active_chunk_coords {
             if !self.chunk_render_data.contains_key(&(cx, cz)) {
                 coords_to_mesh.push((cx, cz));
-            } else {
-                if let Some(render_data) = self.chunk_render_data.get(&(cx, cz)) {
-                    if render_data.transparent_buffers.is_some() {
-                        let mut needs_remesh = false;
-                        if let Some(last_pos) = render_data.last_transparent_mesh_camera_pos {
-                            if self.player.position.distance_squared(last_pos)
-                                > TRANSPARENT_REMESH_DISTANCE_SQUARED_THRESHOLD
-                            {
-                                needs_remesh = true;
-                            }
-                        } else {
-                            needs_remesh = true;
-                        }
-                        if !needs_remesh {
-                            if let Some(last_yaw) = render_data.last_transparent_mesh_camera_yaw {
-                                let yaw_diff = (self.player.yaw - last_yaw).abs();
-                                let mut normalized_yaw_diff = yaw_diff;
-                                if normalized_yaw_diff > std::f32::consts::PI {
-                                    normalized_yaw_diff =
-                                        2.0 * std::f32::consts::PI - normalized_yaw_diff;
-                                }
-                                if normalized_yaw_diff > TRANSPARENT_REMESH_YAW_THRESHOLD_RADIANS {
-                                    needs_remesh = true;
-                                }
-                            } else {
-                                needs_remesh = true;
-                            }
-                        }
-                        if needs_remesh {
-                            coords_to_mesh.push((cx, cz));
-                        }
-                    }
-                }
             }
         }
         coords_to_mesh.sort_unstable();
@@ -1305,6 +1235,25 @@ impl State {
                 .draw(&mut render_pass, &self.queue, &self.world);
             render_pass.set_pipeline(&self.transparent_render_pipeline);
             render_pass.set_bind_group(1, &self.diffuse_bind_group, &[]);
+            let mut sorted_transparent_chunks = self.active_chunk_coords.clone();
+            let player_pos = self.player.position;
+            sorted_transparent_chunks.sort_by(|a, b| {
+                let pos_a = glam::Vec3::new(
+                    (a.0 as f32 + 0.5) * CHUNK_WIDTH as f32,
+                    CHUNK_HEIGHT as f32 / 2.0,
+                    (a.1 as f32 + 0.5) * CHUNK_DEPTH as f32,
+                );
+                let pos_b = glam::Vec3::new(
+                    (b.0 as f32 + 0.5) * CHUNK_WIDTH as f32,
+                    CHUNK_HEIGHT as f32 / 2.0,
+                    (b.1 as f32 + 0.5) * CHUNK_DEPTH as f32,
+                );
+                let dist_a = player_pos.distance_squared(pos_a);
+                let dist_b = player_pos.distance_squared(pos_b);
+                dist_b
+                    .partial_cmp(&dist_a)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            });
             let mut sorted_transparent_chunks = self.active_chunk_coords.clone();
             let player_pos = self.player.position;
             sorted_transparent_chunks.sort_by(|a, b| {

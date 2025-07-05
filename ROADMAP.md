@@ -46,6 +46,8 @@ The primary goal of this version is to refine the existing gameplay loop and imp
 
 This is a list of major features and ideas for consideration in future development cycles.
 
+fix fps drop on camera movement caused by commit (e19f4d4e0aad359b9c5607298b6b79438fad31ee)
+
 * **World Generation:**
     * Integrate a noise library (e.g., `noise-rs`).
     * Implement procedural chunk generation using a noise-based heightmap.
