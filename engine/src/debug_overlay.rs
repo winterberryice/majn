@@ -97,8 +97,9 @@ impl DebugOverlay {
         );
 
         if let Some(block) = selected_block {
+            text_content.push_str("\n---\n");
             text_content.push_str(&format!(
-                "\n---\nSelected Block:\n   type: {:?}\n  sky_light: {}\n   block_light: {}",
+                "block_type: {:?}\nsky_light: {}\nblock_light: {}",
                 block.block_type, block.sky_light, block.block_light
             ));
         }
