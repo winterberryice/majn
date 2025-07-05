@@ -838,8 +838,8 @@ impl State {
                         neighbor_world_by_transparent as f32,
                         neighbor_world_bz_transparent as f32,
                     ) {
-                        if neighbor_block_transparent.is_solid()
-                            && !neighbor_block_transparent.is_transparent()
+                        if !neighbor_block_transparent.is_transparent()
+                            || neighbor_block_transparent.block_type == block.block_type
                         {
                             is_face_visible_for_transparent = false;
                         }
