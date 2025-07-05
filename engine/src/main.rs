@@ -1,6 +1,3 @@
-// Content of main.rs from last read_files, with is_face_visible logic updated
-// AND with the erroneous "[end of engine/src/main.rs]" lines removed.
-
 mod block;
 mod camera;
 mod chunk;
@@ -784,15 +781,6 @@ impl State {
             }
         }
 
-        // let player_camera_pos = self.player.position + glam::Vec3::new(0.0, PLAYER_EYE_HEIGHT, 0.0);
-        // transparent_block_render_list.sort_by(|a, b| {
-        //     let dist_a = player_camera_pos.distance_squared(a.world_center);
-        //     let dist_b = player_camera_pos.distance_squared(b.world_center);
-        //     dist_b
-        //         .partial_cmp(&dist_a)
-        //         .unwrap_or(std::cmp::Ordering::Equal)
-        // });
-
         for t_block_data in transparent_block_render_list {
             let block = &t_block_data.block;
             let _lx = t_block_data.lx;
@@ -1091,11 +1079,20 @@ impl State {
         const RAYCAST_MAX_DISTANCE: f32 = 5.0;
         self.selected_block =
             crate::raycast::cast_ray(&self.player, &self.world, RAYCAST_MAX_DISTANCE);
+
+        let selected_block_data = if let Some((pos, _face)) = self.selected_block {
+            self.world
+                .get_block_at_world(pos.x as f32, pos.y as f32, pos.z as f32)
+        } else {
+            None
+        };
+
         if let Some((block_pos, _)) = self.selected_block {
             self.wireframe_renderer.update_selection(Some(block_pos));
         } else {
             self.wireframe_renderer.update_selection(None);
         }
+
         let camera_eye = self.player.position + glam::Vec3::new(0.0, PLAYER_EYE_HEIGHT, 0.0);
         let camera_front = glam::Vec3::new(
             self.player.yaw.cos() * self.player.pitch.cos(),
@@ -1117,7 +1114,8 @@ impl State {
             0,
             bytemuck::cast_slice(&[self.camera_uniform]),
         );
-        self.debug_overlay.update(self.player.position);
+        self.debug_overlay
+            .update(self.player.position, selected_block_data);
         self.input_state.clear_frame_state();
     }
 
@@ -1256,21 +1254,6 @@ impl State {
                     .partial_cmp(&dist_a)
                     .unwrap_or(std::cmp::Ordering::Equal)
             });
-            // for chunk_coord in &sorted_transparent_chunks {
-            //     if let Some(chunk_data) = self.chunk_render_data.get(chunk_coord) {
-            //         if let Some(ref transparent_buffers) = chunk_data.transparent_buffers {
-            //             if transparent_buffers.num_indices > 0 {
-            //                 render_pass
-            //                     .set_vertex_buffer(0, transparent_buffers.vertex_buffer.slice(..));
-            //                 render_pass.set_index_buffer(
-            //                     transparent_buffers.index_buffer.slice(..),
-            //                     wgpu::IndexFormat::Uint16,
-            //                 );
-            //                 render_pass.draw_indexed(0..transparent_buffers.num_indices, 0, 0..1);
-            //             }
-            //         }
-            //     }
-            // }
             let mut sorted_transparent_chunks = self.active_chunk_coords.clone();
             let player_pos = self.player.position;
             sorted_transparent_chunks.sort_by(|a, b| {
@@ -1365,4 +1348,3 @@ pub async fn run() {
 fn main() {
     pollster::block_on(run());
 }
-// ... (rest of main.rs, if any) ...
