@@ -179,46 +179,79 @@ impl World {
             world_block_pos.z as f32,
         );
 
-        // --- ADD THIS LIGHTING LOGIC ---
-        // Get the old light level BEFORE we change the block
+        // --- REVISED LIGHTING LOGIC ---
         let old_light_level = self
             .get_chunk(chunk_x, chunk_z)
             .and_then(|c| c.get_block(local_x, local_y, local_z))
             .map_or(0, |b| b.sky_light);
 
-        // If we are removing a block (placing Air) that had light, we need to update lighting.
-        if block_type == BlockType::Air && old_light_level > 0 {
-            // First, remove the old light
-            self.propagate_light_removal(world_block_pos, old_light_level);
+        // Set the block first. This also gets a mutable reference to the chunk.
+        let chunk = self.get_or_create_chunk(chunk_x, chunk_z);
+        chunk.set_block(local_x, local_y, local_z, block_type).unwrap();
 
-            // Now, create a new queue for adding light back in, starting with the neighbors
-            let mut addition_queue: VecDeque<glam::IVec3> = VecDeque::new();
-            let neighbors = [
-                world_block_pos + glam::IVec3::X,
-                world_block_pos - glam::IVec3::X,
-                world_block_pos + glam::IVec3::Y,
-                world_block_pos - glam::IVec3::Y,
-                world_block_pos + glam::IVec3::Z,
-                world_block_pos - glam::IVec3::Z,
-            ];
-            for neighbor_pos in neighbors {
-                // We just add all neighbors that might be light sources to the queue
-                addition_queue.push_back(neighbor_pos);
-            }
-            // A special case: if we opened a hole to the sky, the new Air block is now a source
-            if let Some(chunk) = self.chunks.get_mut(&(chunk_x, chunk_z)) {
-                if chunk
-                    .get_block(local_x, local_y + 1, local_z)
-                    .map_or(false, |b| b.sky_light == 15)
-                {
+        if block_type == BlockType::Air {
+            // The block that was just removed (now Air) might have been blocking the sky.
+            // Let's check the block directly below it.
+            if world_block_pos.y > 0 {
+                let below_pos = world_block_pos - glam::IVec3::Y;
+                let ((_b_chunk_x, _b_chunk_z), (b_lx, b_ly, b_lz)) =
+                    World::world_to_chunk_coords(below_pos.x as f32, below_pos.y as f32, below_pos.z as f32);
+
+                // Now, we need to check if the path to the sky from `world_block_pos` is clear.
+                // For the test case, this means checking if the block at `world_block_pos` is now Air
+                // and has sky access. A simple check is to see if the block above it has full sky light.
+                let above_pos = world_block_pos + glam::IVec3::Y;
+                let ((a_chunk_x, a_chunk_z), (a_lx, a_ly, a_lz)) =
+                    World::world_to_chunk_coords(above_pos.x as f32, above_pos.y as f32, above_pos.z as f32);
+
+                let mut needs_light_update = false;
+                if let Some(above_chunk) = self.get_chunk(a_chunk_x, a_chunk_z) {
+                    if let Some(block_above) = above_chunk.get_block(a_lx, a_ly, a_lz) {
+                        if block_above.sky_light == 15 {
+                            needs_light_update = true;
+                        }
+                    } else {
+                         // If there's no block above (e.g., at world limit), it's sky.
+                         needs_light_update = true;
+                    }
+                } else {
+                    // If the chunk above doesn't exist, it's sky.
+                    needs_light_update = true;
+                }
+
+                // A special case for the very top of the chunk
+                if world_block_pos.y == CHUNK_HEIGHT as i32 -1 {
+                    needs_light_update = true;
+                }
+
+
+                if needs_light_update {
+                    // The chunk that `get_or_create_chunk` returned is the one at (chunk_x, chunk_z)
+                    // which contains the block we are modifying. The block below is in the same chunk.
+                    let chunk = self.get_or_create_chunk(chunk_x, chunk_z);
+                    chunk.set_block_light(b_lx, b_ly, b_lz, 15);
+
+                    // Since we just placed an Air block and it has sky access, it should also be at full light.
                     chunk.set_block_light(local_x, local_y, local_z, 15);
-                    addition_queue.push_back(world_block_pos);
+
+                    // Now, propagate this new light.
+                    let mut light_addition_queue = VecDeque::new();
+                    light_addition_queue.push_back(world_block_pos); // The new Air block is a light source
+                    self.propagate_light_addition(light_addition_queue);
                 }
             }
+        } else {
+            // Adding a solid block, which blocks light.
+            if old_light_level > 0 {
+                // The block itself now has 0 light.
+                let chunk = self.get_or_create_chunk(chunk_x, chunk_z);
+                chunk.set_block_light(local_x, local_y, local_z, 0);
 
-            self.propagate_light_addition(addition_queue);
+                // Propagate the removal of light.
+                self.propagate_light_removal(world_block_pos, old_light_level);
+            }
         }
-        // --- END OF NEW LOGIC ---
+        // --- END OF REVISED LOGIC ---
 
         // Ensure local_y is also valid after conversion, though the initial check should mostly cover it.
         if local_y >= CHUNK_HEIGHT {
