@@ -1,5 +1,6 @@
 use crate::block::{Block, BlockType};
 use rand::Rng; // Assuming block.rs is in the same directory
+use std::collections::VecDeque;
 
 pub const CHUNK_WIDTH: usize = 16;
 pub const CHUNK_HEIGHT: usize = 32;
@@ -196,6 +197,9 @@ impl Chunk {
     }
 
     pub fn calculate_sky_light(&mut self) {
+        let mut light_queue: VecDeque<(usize, usize, usize)> = VecDeque::new(); // <x, y, z>
+
+        // --- STEP 1: Sunlight Column Pass
         for x in 0..CHUNK_WIDTH {
             for z in 0..CHUNK_DEPTH {
                 let mut light_level = 15;
@@ -217,6 +221,56 @@ impl Chunk {
                 }
             }
         }
+
+        // --- STEP 2: Seed the propagation queue ---
+        // Find all blocks that are lit and add them to the queue to start the flood fill.
+        for x in 0..CHUNK_WIDTH {
+            for y in 0..CHUNK_HEIGHT {
+                for z in 0..CHUNK_DEPTH {
+                    if self.blocks[x][y][z].sky_light > 0 {
+                        light_queue.push_back((x, y, z));
+                    }
+                }
+            }
+        }
+
+        // --- STEP 3: The Flood Fill (Propagation) ---
+        while let Some((x, y, z)) = light_queue.pop_front() {
+            let current_light_level = self.blocks[x][y][z].sky_light;
+
+            // The light level for neighbors will be one less than the current block's.
+            let neighbor_light_level = current_light_level - 1;
+
+            if neighbor_light_level == 0 {
+                continue; // No light to spread
+            }
+
+            // Check all 6 neighbors
+            let neighbors = [
+                (x.wrapping_sub(1), y, z),
+                (x + 1, y, z),
+                (x, y.wrapping_sub(1), z),
+                (x, y + 1, z),
+                (x, y, z.wrapping_sub(1)),
+                (x, y, z + 1),
+            ];
+
+            for (nx, ny, nz) in neighbors {
+                // Check if the neighbor is within the chunk's bounds
+                if nx < CHUNK_WIDTH && ny < CHUNK_HEIGHT && nz < CHUNK_DEPTH {
+                    let neighbor_block = &mut self.blocks[nx][ny][nz];
+
+                    // If the neighbor is transparent and can be made brighter, update it and add it to the queue.
+                    if neighbor_block.is_transparent()
+                        && neighbor_block.sky_light < neighbor_light_level
+                    {
+                        neighbor_block.sky_light = neighbor_light_level;
+                        light_queue.push_back((nx, ny, nz));
+                    }
+                }
+            }
+        }
+
         //
     }
 }
