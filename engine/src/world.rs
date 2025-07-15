@@ -18,6 +18,7 @@ impl World {
         self.chunks.entry((chunk_x, chunk_z)).or_insert_with(|| {
             let mut new_chunk = Chunk::new(chunk_x, chunk_z);
             new_chunk.generate_terrain(); // Or some other generation logic
+            new_chunk.calculate_sky_light();
             new_chunk
         })
     }
