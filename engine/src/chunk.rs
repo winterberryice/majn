@@ -273,4 +273,10 @@ impl Chunk {
 
         //
     }
+
+    pub fn set_block_light(&mut self, x: usize, y: usize, z: usize, sky_light: u8) {
+        if x < CHUNK_WIDTH && y < CHUNK_HEIGHT && z < CHUNK_DEPTH {
+            self.blocks[x][y][z].sky_light = sky_light;
+        }
+    }
 }

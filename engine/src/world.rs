@@ -1,6 +1,6 @@
-use crate::block::Block;
+use crate::block::{Block, BlockType};
 use crate::chunk::{CHUNK_DEPTH, CHUNK_HEIGHT, CHUNK_WIDTH, Chunk};
-use std::collections::HashMap; // Removed BlockType as it's unused
+use std::collections::{HashMap, VecDeque}; // Removed BlockType as it's unused
 
 pub struct World {
     chunks: HashMap<(i32, i32), Chunk>,
@@ -68,6 +68,48 @@ impl World {
         }
     }
 
+    /// Propagates the removal of light.
+    fn propagate_light_removal(&mut self, start_pos: glam::IVec3, initial_light_level: u8) {
+        let mut removal_queue: VecDeque<(glam::IVec3, u8)> = VecDeque::new();
+        removal_queue.push_back((start_pos, initial_light_level));
+
+        while let Some((pos, light_level)) = removal_queue.pop_front() {
+            // Check all 6 neighbors
+            let neighbors = [
+                pos + glam::IVec3::X,
+                pos - glam::IVec3::X,
+                pos + glam::IVec3::Y,
+                pos - glam::IVec3::Y,
+                pos + glam::IVec3::Z,
+                pos - glam::IVec3::Z,
+            ];
+
+            for neighbor_pos in neighbors {
+                let ((chunk_x, chunk_z), (lx, ly, lz)) = World::world_to_chunk_coords(
+                    neighbor_pos.x as f32,
+                    neighbor_pos.y as f32,
+                    neighbor_pos.z as f32,
+                );
+
+                if let Some(chunk) = self.chunks.get_mut(&(chunk_x, chunk_z)) {
+                    if let Some(neighbor_block) = chunk.get_block(lx, ly, lz).cloned() {
+                        if neighbor_block.sky_light != 0 {
+                            if neighbor_block.sky_light < light_level {
+                                // This block was lit by a path that is now darker.
+                                // Set its light to 0 and add it to the queue to propagate darkness.
+                                chunk.set_block_light(lx, ly, lz, 0);
+                                removal_queue.push_back((neighbor_pos, neighbor_block.sky_light));
+                            } else {
+                                // This block has a stronger light source from another path.
+                                // We need to re-propagate its light. (We'll handle this in the next step)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     // Note: A `set_block_at_world` method would be similar but would need mutable access
     // and potentially create the chunk if it doesn't exist.
     // pub fn set_block_at_world(&mut self, world_x: f32, world_y: f32, world_z: f32, block_type: BlockType) -> Result<(), &'static str> { // Old signature
@@ -87,6 +129,22 @@ impl World {
             world_block_pos.y as f32,
             world_block_pos.z as f32,
         );
+
+        // --- ADD THIS LIGHTING LOGIC ---
+        // Get the old light level BEFORE we change the block
+        let old_light_level = self
+            .get_chunk(chunk_x, chunk_z)
+            .and_then(|c| c.get_block(local_x, local_y, local_z))
+            .map_or(0, |b| b.sky_light);
+
+        // If we are removing a block (placing Air) that had light, we need to update lighting.
+        if block_type == BlockType::Air && old_light_level > 0 {
+            // First, remove the old light
+            self.propagate_light_removal(world_block_pos, old_light_level);
+
+            // In the next step, we will re-propagate new light here.
+        }
+        // --- END OF NEW LOGIC ---
 
         // Ensure local_y is also valid after conversion, though the initial check should mostly cover it.
         if local_y >= CHUNK_HEIGHT {
