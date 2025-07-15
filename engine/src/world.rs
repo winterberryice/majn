@@ -250,3 +250,71 @@ impl Default for World {
         Self::new()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::block::BlockType;
+    use glam::IVec3;
+
+    #[test]
+    fn test_sky_light_update_on_dig() {
+        // 1. SETUP: Create a world and generate a chunk.
+        let mut world = World::new();
+        // This generates a chunk at (0,0) with standard terrain and runs the initial
+        // sky light calculation. The surface level will be at Y=16.
+        world.get_or_create_chunk(0, 0);
+
+        // Define the coordinates for our test blocks.
+        let grass_block_pos = IVec3::new(5, 16, 5);
+        let block_underneath_pos = IVec3::new(5, 15, 5);
+
+        // 2. ASSERT INITIAL STATE: Verify the world is as we expect before the change.
+        // Check the grass block on the surface.
+        let grass_block = world
+            .get_block_at_world(
+                grass_block_pos.x as f32,
+                grass_block_pos.y as f32,
+                grass_block_pos.z as f32,
+            )
+            .expect("Grass block should exist.");
+        assert_eq!(grass_block.block_type, BlockType::Grass);
+        assert_eq!(
+            grass_block.sky_light, 15,
+            "Surface block should have full sky light."
+        );
+
+        // Check the block directly underneath it.
+        let block_underneath = world
+            .get_block_at_world(
+                block_underneath_pos.x as f32,
+                block_underneath_pos.y as f32,
+                block_underneath_pos.z as f32,
+            )
+            .expect("Block underneath should exist.");
+        assert_eq!(
+            block_underneath.sky_light, 0,
+            "Block underneath should initially be dark."
+        );
+
+        // 3. ACTION: Dig the grass block, replacing it with Air.
+        world
+            .set_block(grass_block_pos, BlockType::Air)
+            .expect("Setting block should succeed.");
+
+        // 4. ASSERT FINAL STATE: Check the light level of the newly exposed block.
+        let newly_exposed_block = world
+            .get_block_at_world(
+                block_underneath_pos.x as f32,
+                block_underneath_pos.y as f32,
+                block_underneath_pos.z as f32,
+            )
+            .expect("Newly exposed block should exist.");
+
+        // This is the crucial test. It will fail until our logic is correct.
+        assert_eq!(
+            newly_exposed_block.sky_light, 15,
+            "Newly exposed block should now have full sky light."
+        );
+    }
+}
