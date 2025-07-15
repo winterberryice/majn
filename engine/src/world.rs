@@ -110,6 +110,55 @@ impl World {
         }
     }
 
+    /// Propagates the addition of new light.
+    fn propagate_light_addition(&mut self, mut queue: VecDeque<glam::IVec3>) {
+        while let Some(pos) = queue.pop_front() {
+            let ((chunk_x, chunk_z), (lx, ly, lz)) =
+                World::world_to_chunk_coords(pos.x as f32, pos.y as f32, pos.z as f32);
+
+            let current_light_level = self
+                .chunks
+                .get(&(chunk_x, chunk_z))
+                .and_then(|c| c.get_block(lx, ly, lz))
+                .map_or(0, |b| b.sky_light);
+
+            let neighbor_light_level = current_light_level.saturating_sub(1);
+
+            if neighbor_light_level == 0 {
+                continue;
+            }
+
+            // Check all 6 neighbors
+            let neighbors = [
+                pos + glam::IVec3::X,
+                pos - glam::IVec3::X,
+                pos + glam::IVec3::Y,
+                pos - glam::IVec3::Y,
+                pos + glam::IVec3::Z,
+                pos - glam::IVec3::Z,
+            ];
+
+            for neighbor_pos in neighbors {
+                let ((n_chunk_x, n_chunk_z), (nx, ny, nz)) = World::world_to_chunk_coords(
+                    neighbor_pos.x as f32,
+                    neighbor_pos.y as f32,
+                    neighbor_pos.z as f32,
+                );
+
+                if let Some(chunk) = self.chunks.get_mut(&(n_chunk_x, n_chunk_z)) {
+                    if let Some(neighbor_block) = chunk.get_block(nx, ny, nz) {
+                        if neighbor_block.is_transparent()
+                            && neighbor_block.sky_light < neighbor_light_level
+                        {
+                            chunk.set_block_light(nx, ny, nz, neighbor_light_level);
+                            queue.push_back(neighbor_pos);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     // Note: A `set_block_at_world` method would be similar but would need mutable access
     // and potentially create the chunk if it doesn't exist.
     // pub fn set_block_at_world(&mut self, world_x: f32, world_y: f32, world_z: f32, block_type: BlockType) -> Result<(), &'static str> { // Old signature
@@ -142,7 +191,32 @@ impl World {
             // First, remove the old light
             self.propagate_light_removal(world_block_pos, old_light_level);
 
-            // In the next step, we will re-propagate new light here.
+            // Now, create a new queue for adding light back in, starting with the neighbors
+            let mut addition_queue: VecDeque<glam::IVec3> = VecDeque::new();
+            let neighbors = [
+                world_block_pos + glam::IVec3::X,
+                world_block_pos - glam::IVec3::X,
+                world_block_pos + glam::IVec3::Y,
+                world_block_pos - glam::IVec3::Y,
+                world_block_pos + glam::IVec3::Z,
+                world_block_pos - glam::IVec3::Z,
+            ];
+            for neighbor_pos in neighbors {
+                // We just add all neighbors that might be light sources to the queue
+                addition_queue.push_back(neighbor_pos);
+            }
+            // A special case: if we opened a hole to the sky, the new Air block is now a source
+            if let Some(chunk) = self.chunks.get_mut(&(chunk_x, chunk_z)) {
+                if chunk
+                    .get_block(local_x, local_y + 1, local_z)
+                    .map_or(false, |b| b.sky_light == 15)
+                {
+                    chunk.set_block_light(local_x, local_y, local_z, 15);
+                    addition_queue.push_back(world_block_pos);
+                }
+            }
+
+            self.propagate_light_addition(addition_queue);
         }
         // --- END OF NEW LOGIC ---
 
