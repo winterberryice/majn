@@ -187,22 +187,30 @@ impl World {
 
         // Set the block first. This also gets a mutable reference to the chunk.
         let chunk = self.get_or_create_chunk(chunk_x, chunk_z);
-        chunk.set_block(local_x, local_y, local_z, block_type).unwrap();
+        chunk
+            .set_block(local_x, local_y, local_z, block_type)
+            .unwrap();
 
         if block_type == BlockType::Air {
             // The block that was just removed (now Air) might have been blocking the sky.
             // Let's check the block directly below it.
             if world_block_pos.y > 0 {
                 let below_pos = world_block_pos - glam::IVec3::Y;
-                let ((_b_chunk_x, _b_chunk_z), (b_lx, b_ly, b_lz)) =
-                    World::world_to_chunk_coords(below_pos.x as f32, below_pos.y as f32, below_pos.z as f32);
+                let ((_b_chunk_x, _b_chunk_z), (b_lx, b_ly, b_lz)) = World::world_to_chunk_coords(
+                    below_pos.x as f32,
+                    below_pos.y as f32,
+                    below_pos.z as f32,
+                );
 
                 // Now, we need to check if the path to the sky from `world_block_pos` is clear.
                 // For the test case, this means checking if the block at `world_block_pos` is now Air
                 // and has sky access. A simple check is to see if the block above it has full sky light.
                 let above_pos = world_block_pos + glam::IVec3::Y;
-                let ((a_chunk_x, a_chunk_z), (a_lx, a_ly, a_lz)) =
-                    World::world_to_chunk_coords(above_pos.x as f32, above_pos.y as f32, above_pos.z as f32);
+                let ((a_chunk_x, a_chunk_z), (a_lx, a_ly, a_lz)) = World::world_to_chunk_coords(
+                    above_pos.x as f32,
+                    above_pos.y as f32,
+                    above_pos.z as f32,
+                );
 
                 let mut needs_light_update = false;
                 if let Some(above_chunk) = self.get_chunk(a_chunk_x, a_chunk_z) {
@@ -211,8 +219,8 @@ impl World {
                             needs_light_update = true;
                         }
                     } else {
-                         // If there's no block above (e.g., at world limit), it's sky.
-                         needs_light_update = true;
+                        // If there's no block above (e.g., at world limit), it's sky.
+                        needs_light_update = true;
                     }
                 } else {
                     // If the chunk above doesn't exist, it's sky.
@@ -220,10 +228,9 @@ impl World {
                 }
 
                 // A special case for the very top of the chunk
-                if world_block_pos.y == CHUNK_HEIGHT as i32 -1 {
+                if world_block_pos.y == CHUNK_HEIGHT as i32 - 1 {
                     needs_light_update = true;
                 }
-
 
                 if needs_light_update {
                     // The chunk that `get_or_create_chunk` returned is the one at (chunk_x, chunk_z)
@@ -348,6 +355,54 @@ mod tests {
         assert_eq!(
             newly_exposed_block.sky_light, 15,
             "Newly exposed block should now have full sky light."
+        );
+    }
+
+    #[test]
+    fn test_sky_light_spreads_horizontally_into_tunnel() {
+        // 1. SETUP: Create a world and generate a chunk.
+        let mut world = World::new();
+        world.get_or_create_chunk(0, 0);
+
+        // Define the coordinates for the tunnel we will dig.
+        let surface_block_pos = IVec3::new(8, 16, 8); // The grass block on top.
+        let under_surface_pos = IVec3::new(8, 15, 8); // The block directly below.
+        let tunnel_end_pos = IVec3::new(8, 15, 9); // One block forward, this is where light should be 14.
+
+        // 2. ASSERT INITIAL STATE: Verify the tunnel end is dark.
+        let tunnel_block_initial = world
+            .get_block_at_world(
+                tunnel_end_pos.x as f32,
+                tunnel_end_pos.y as f32,
+                tunnel_end_pos.z as f32,
+            )
+            .expect("Block should exist.");
+        assert_eq!(
+            tunnel_block_initial.sky_light, 0,
+            "Tunnel block should initially be dark."
+        );
+
+        // 3. ACTION: Dig the two blocks to create the tunnel entrance.
+        world
+            .set_block(surface_block_pos, BlockType::Air)
+            .expect("Digging surface block should succeed.");
+        world
+            .set_block(under_surface_pos, BlockType::Air)
+            .expect("Digging block underneath should succeed.");
+
+        // 4. ASSERT FINAL STATE: Check the light level at the end of the one-block tunnel.
+        let tunnel_block_final = world
+            .get_block_at_world(
+                tunnel_end_pos.x as f32,
+                tunnel_end_pos.y as f32,
+                tunnel_end_pos.z as f32,
+            )
+            .expect("Final tunnel block should exist.");
+
+        // This assertion will fail until we correctly implement light propagation.
+        assert_eq!(
+            tunnel_block_final.sky_light, 14,
+            "Light should spread one block into the tunnel, decreasing to 14."
         );
     }
 }
