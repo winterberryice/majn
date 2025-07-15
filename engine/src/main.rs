@@ -206,6 +206,7 @@ impl ApplicationHandler for App {
 
     fn exiting(&mut self, _event_loop: &ActiveEventLoop) {
         println!("ApplicationHandler: Event loop is exiting. Cleaning up.");
+        self.state = None;
     }
 }
 
