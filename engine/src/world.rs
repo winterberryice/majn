@@ -216,34 +216,41 @@ impl World {
         // Place the new block first
         let new_block = Block::new(block_type);
         let is_transparent = new_block.is_transparent();
-        self.get_or_create_chunk(chunk_x, chunk_z)
+
+        let chunk = self.get_or_create_chunk(chunk_x, chunk_z);
+        chunk
             .set_block(local_x, local_y, local_z, block_type)
             .unwrap();
+        chunk.calculate_sky_light();
 
-        if is_transparent && !was_transparent {
-            // A solid block was removed. We need to introduce light.
-            // We'll create one queue and add all initial light sources to it.
-            let mut light_addition_queue = VecDeque::new();
+        // self.get_or_create_chunk(chunk_x, chunk_z)
+        //     .set_block(local_x, local_y, local_z, block_type)
+        //     .unwrap();
 
-            // The new air block itself is a potential path for light.
-            light_addition_queue.push_back(world_block_pos);
+        // if is_transparent && !was_transparent {
+        //     // A solid block was removed. We need to introduce light.
+        //     // We'll create one queue and add all initial light sources to it.
+        //     let mut light_addition_queue = VecDeque::new();
 
-            // The block above the one we broke is now a source of downward light.
-            let pos_above = world_block_pos + glam::IVec3::Y;
-            if pos_above.y < CHUNK_HEIGHT as i32 {
-                light_addition_queue.push_back(pos_above);
-            }
+        //     // The new air block itself is a potential path for light.
+        //     light_addition_queue.push_back(world_block_pos);
 
-            // Propagate light from all sources at once.
-            self.propagate_light_addition(light_addition_queue);
-        } else if !is_transparent && was_transparent {
-            // A solid block was placed. We need to remove light.
-            if old_light_level > 0 {
-                self.get_or_create_chunk(chunk_x, chunk_z)
-                    .set_block_light(local_x, local_y, local_z, 0);
-                self.propagate_light_removal(world_block_pos, old_light_level);
-            }
-        }
+        //     // The block above the one we broke is now a source of downward light.
+        //     let pos_above = world_block_pos + glam::IVec3::Y;
+        //     if pos_above.y < CHUNK_HEIGHT as i32 {
+        //         light_addition_queue.push_back(pos_above);
+        //     }
+
+        //     // Propagate light from all sources at once.
+        //     self.propagate_light_addition(light_addition_queue);
+        // } else if !is_transparent && was_transparent {
+        //     // A solid block was placed. We need to remove light.
+        //     if old_light_level > 0 {
+        //         self.get_or_create_chunk(chunk_x, chunk_z)
+        //             .set_block_light(local_x, local_y, local_z, 0);
+        //         self.propagate_light_removal(world_block_pos, old_light_level);
+        //     }
+        // }
 
         Ok((chunk_x, chunk_z))
     }
