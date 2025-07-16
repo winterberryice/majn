@@ -202,50 +202,35 @@ impl Chunk {
         // --- STEP 1: Sunlight Column Pass
         for x in 0..CHUNK_WIDTH {
             for z in 0..CHUNK_DEPTH {
-                let mut light_level = 15;
+                let mut light_can_pass = true;
 
                 for y in (0..CHUNK_HEIGHT).rev() {
                     let block = &mut self.blocks[x][y][z];
 
-                    if light_level == 0 {
-                        block.sky_light = 0;
-                        continue;
-                    }
-
-                    if block.is_transparent() {
-                        block.sky_light = light_level;
+                    if light_can_pass {
+                        block.sky_light = 15;
+                        if block.is_transparent() {
+                            light_queue.push_back((x, y, z));
+                        } else {
+                            light_can_pass = false;
+                        }
                     } else {
-                        block.sky_light = light_level;
-                        light_level = 0;
+                        block.sky_light = 0;
                     }
                 }
             }
         }
 
-        // --- STEP 2: Seed the propagation queue ---
-        // Find all blocks that are lit and add them to the queue to start the flood fill.
-        for x in 0..CHUNK_WIDTH {
-            for y in 0..CHUNK_HEIGHT {
-                for z in 0..CHUNK_DEPTH {
-                    if self.blocks[x][y][z].sky_light > 0 {
-                        light_queue.push_back((x, y, z));
-                    }
-                }
-            }
-        }
-
-        // --- STEP 3: The Flood Fill (Propagation) ---
+        // phase 2
         while let Some((x, y, z)) = light_queue.pop_front() {
-            let current_light_level = self.blocks[x][y][z].sky_light;
+            let current_block = self.blocks[x][y][z];
 
-            // The light level for neighbors will be one less than the current block's.
-            let neighbor_light_level = current_light_level - 1;
+            let neighbor_light_level = current_block.sky_light - 1;
 
-            if neighbor_light_level == 0 {
+            if neighbor_light_level <= 0 {
                 continue; // No light to spread
             }
 
-            // Check all 6 neighbors
             let neighbors = [
                 (x.wrapping_sub(1), y, z),
                 (x + 1, y, z),
@@ -255,22 +240,26 @@ impl Chunk {
                 (x, y, z + 1),
             ];
 
-            for (nx, ny, nz) in neighbors {
-                // Check if the neighbor is within the chunk's bounds
-                if nx < CHUNK_WIDTH && ny < CHUNK_HEIGHT && nz < CHUNK_DEPTH {
-                    let neighbor_block = &mut self.blocks[nx][ny][nz];
+            // TODO handle neighbor from other chunks
+            for (neighbor_x, neighbor_y, neighbor_z) in neighbors {
+                let block_in_chunk_bounds = neighbor_x < CHUNK_WIDTH
+                    && neighbor_y < CHUNK_HEIGHT
+                    && neighbor_z < CHUNK_DEPTH;
 
-                    // If the neighbor is transparent and can be made brighter, update it and add it to the queue.
-                    if neighbor_block.is_transparent()
-                        && neighbor_block.sky_light < neighbor_light_level
-                    {
-                        neighbor_block.sky_light = neighbor_light_level;
-                        light_queue.push_back((nx, ny, nz));
-                    }
+                if !block_in_chunk_bounds {
+                    continue;
+                }
+                let mut neighbor_block = self.blocks[neighbor_x][neighbor_y][neighbor_z];
+
+                if block_in_chunk_bounds
+                    && neighbor_block.is_transparent()
+                    && neighbor_block.sky_light < neighbor_light_level
+                {
+                    neighbor_block.sky_light = neighbor_light_level;
+                    light_queue.push_back((neighbor_x, neighbor_y, neighbor_z));
                 }
             }
         }
-
         //
     }
 
