@@ -370,4 +370,58 @@ mod tests {
             "Light should spread one block into the tunnel, decreasing to 14."
         );
     }
+
+    #[test]
+    fn test_light_in_horizontal_tunnel_from_shaft() {
+        // Simulates the pattern:
+        // aaaa (y=17, sky)
+        // gagg (y=16, surface)
+        // dahd (y=15, player head level)
+        // dmfd (y=14, player foot level)
+        // dddd (y=13, floor)
+
+        // 1. SETUP: Create a world and a custom chunk with a predictable surface at y=16.
+        // 1. SETUP: Create a world and generate a chunk.
+        let mut world = World::new();
+        world.get_or_create_chunk(0, 0);
+
+        // 2. ACTION: Dig out the specific pattern based on the corrected levels.
+        // Place the 'f' block at a known coordinate, e.g., (5, 14, 6).
+        // This means the vertical shaft is at z=5.
+        let f_pos = IVec3::new(5, 14, 6); // Player foot level
+        let m_pos = IVec3::new(5, 14, 5); // The air block in the shaft at the same level as 'f'.
+        let h_pos = IVec3::new(5, 15, 6); // Player head level.
+
+        // Dig the vertical shaft at z=5. This will trigger light propagation.
+        world
+            .set_block(IVec3::new(5, 16, 5), BlockType::Air)
+            .unwrap(); // Top grass block
+        world
+            .set_block(IVec3::new(5, 15, 5), BlockType::Air)
+            .unwrap(); // Air at head level in shaft
+        world.set_block(m_pos, BlockType::Air).unwrap(); // Air at foot level in shaft ('m')
+
+        // Dig the horizontal tunnel for the player
+        world.set_block(h_pos, BlockType::Air).unwrap(); // 'h'
+        world.set_block(f_pos, BlockType::Air).unwrap(); // 'f'
+
+        // 3. ASSERT: Check the light levels.
+        let block_at_m = world
+            .get_block_at_world(m_pos.x as f32, m_pos.y as f32, m_pos.z as f32)
+            .expect("Block 'm' should exist.");
+        assert_eq!(
+            block_at_m.sky_light, 15,
+            "Block 'm' in the open shaft should have full sky light."
+        );
+
+        let block_at_f = world
+            .get_block_at_world(f_pos.x as f32, f_pos.y as f32, f_pos.z as f32)
+            .expect("Block 'f' should exist.");
+        assert_eq!(
+            block_at_f.sky_light, 14,
+            "Block 'f' one block into the tunnel should have light level 14."
+        );
+    }
+
+    //
 }
