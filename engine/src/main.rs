@@ -1090,6 +1090,7 @@ impl State {
         let selected_block_data = if let Some((pos, _face)) = self.selected_block {
             self.world
                 .get_block_at_world(pos.x as f32, pos.y as f32, pos.z as f32)
+                .map(|block| (pos, block))
         } else {
             None
         };
@@ -1121,8 +1122,15 @@ impl State {
             0,
             bytemuck::cast_slice(&[self.camera_uniform]),
         );
+
+        let player_feet_block = self.world.get_block_at_world(
+            self.player.position.x,
+            self.player.position.y,
+            self.player.position.z,
+        );
+
         self.debug_overlay
-            .update(self.player.position, selected_block_data);
+            .update(self.player.position, selected_block_data, player_feet_block);
         self.input_state.clear_frame_state();
     }
 

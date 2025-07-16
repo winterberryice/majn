@@ -68,7 +68,12 @@ impl DebugOverlay {
     //     self.visible
     // }
 
-    pub fn update(&mut self, player_position: Vec3, selected_block: Option<&Block>) {
+    pub fn update(
+        &mut self,
+        player_position: Vec3,
+        selected_block: Option<(glam::IVec3, &Block)>,
+        player_feet_block: Option<&Block>,
+    ) {
         if !self.visible {
             // Reset FPS calculation when not visible to avoid large delta_time on re-enabling
             self.last_frame_time = Instant::now();
@@ -92,15 +97,22 @@ impl DebugOverlay {
         }
 
         let mut text_content = format!(
-            "FPS: {}\nPosition: {:.2}, {:.2}, {:.2}",
+            "FPS: {}\nx: {:.2}, y: {:.2}, z: {:.2}",
             self.fps, player_position.x, player_position.y, player_position.z
         );
 
-        if let Some(block) = selected_block {
+        if let Some(block) = player_feet_block {
+            text_content.push_str(&format!(
+                "\nPlayer Light: {} sky, {} block",
+                block.sky_light, block.block_light
+            ));
+        }
+
+        if let Some((pos, block)) = selected_block {
             text_content.push_str("\n---\n");
             text_content.push_str(&format!(
-                "block_type: {:?}\nsky_light: {}\nblock_light: {}",
-                block.block_type, block.sky_light, block.block_light
+                "Looking at: {:?} at x: {}, y: {}, z: {}",
+                block.block_type, pos.x, pos.y, pos.z
             ));
         }
 
