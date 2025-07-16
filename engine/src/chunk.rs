@@ -225,7 +225,11 @@ impl Chunk {
         while let Some((x, y, z)) = light_queue.pop_front() {
             let current_block = self.blocks[x][y][z];
 
-            let neighbor_light_level = current_block.sky_light - 1;
+            let neighbor_light_level = if current_block.sky_light > 0 {
+                current_block.sky_light - 1
+            } else {
+                0
+            };
 
             if neighbor_light_level <= 0 {
                 continue; // No light to spread
