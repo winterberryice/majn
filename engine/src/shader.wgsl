@@ -11,6 +11,7 @@ struct VertexInput {
     @location(1) color: vec3<f32>,    // Kept for potential future use (tinting, etc.)
     @location(2) uv: vec2<f32>,       // Texture coordinates
     @location(3) tree_id: u32,      // Tree ID
+    @location(4) sky_light: f32,
 };
 
 struct VertexOutput {
@@ -18,6 +19,7 @@ struct VertexOutput {
     @location(0) original_color: vec3<f32>, // Pass original color through
     @location(1) tex_coords: vec2<f32>,   // Pass UVs to fragment shader
     @location(2) tree_id: u32,           // Pass Tree ID to fragment shader
+    @location(3) sky_light: f32,
 };
 
 @vertex
@@ -27,6 +29,7 @@ fn vs_main(model: VertexInput) -> VertexOutput {
     out.original_color = model.color; // Pass through the original vertex color
     out.tex_coords = model.uv;        // Pass through UV coordinates
     out.tree_id = model.tree_id;      // Pass through Tree ID
+    out.sky_light = model.sky_light;
     return out;
 }
 
@@ -41,6 +44,7 @@ struct FragmentInput {
     @location(0) original_color: vec3<f32>,
     @location(1) tex_coords: vec2<f32>,
     @location(2) tree_id: u32,
+    @location(3) sky_light: f32,
 }
 
 // Simple hash function to generate a color from a u32
@@ -62,6 +66,9 @@ fn fs_main(in: FragmentInput) -> @location(0) vec4<f32> {
     if (sampled_color.a < 0.1) {
         discard;
     }
+    let light_intensity = in.sky_light / 15.0;
+    var final_color = sampled_color.rgb * light_intensity;
+
 
     // Sentinel color for Grass Top, set in main.rs: [0.1, 0.9, 0.1]
     let grass_top_sentinel = vec3<f32>(0.1, 0.9, 0.1);
@@ -78,13 +85,13 @@ fn fs_main(in: FragmentInput) -> @location(0) vec4<f32> {
     if (is_grass_top) {
         let intensity = sampled_color.r;
         let tinted_color = vec3<f32>(intensity * 0.4, intensity * 0.9, intensity * 0.35);
-        return vec4<f32>(tinted_color, 1.0); // Return full alpha
+        final_color = tinted_color * light_intensity;
     } else if (is_potential_oak_leaves) {
         let intensity = sampled_color.r;
         let oak_tinted_color = vec3<f32>(intensity * 0.25, intensity * 0.55, intensity * 0.15);
-        return vec4<f32>(oak_tinted_color, 1.0); // Return full alpha
+        final_color = oak_tinted_color * light_intensity;
     }
-    else {
-        return vec4<f32>(sampled_color.rgb, 1.0); // Return full alpha
-    }
+
+    return vec4<f32>(final_color.rgb, 1.0); // Return full alpha
+
 }

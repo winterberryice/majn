@@ -217,8 +217,7 @@ pub struct Vertex {
     pub color: [f32; 3],
     pub uv: [f32; 2],
     pub tree_id: u32,
-    pub sky_light: u32,
-    pub block_light: u32,
+    pub sky_light: f32,
 }
 
 impl Vertex {
@@ -247,6 +246,13 @@ impl Vertex {
                         as wgpu::BufferAddress,
                     shader_location: 3,
                     format: wgpu::VertexFormat::Uint32,
+                },
+                wgpu::VertexAttribute {
+                    offset: (std::mem::size_of::<[f32; 3]>() * 2
+                        + std::mem::size_of::<[f32; 2]>()
+                        + std::mem::size_of::<u32>()) as wgpu::BufferAddress,
+                    shader_location: 4,
+                    format: wgpu::VertexFormat::Float32,
                 },
             ],
         }
@@ -761,8 +767,7 @@ impl State {
                                             color: current_vertex_color,
                                             uv: selected_face_uvs[i],
                                             tree_id: 0,
-                                            sky_light: block.sky_light as u32,
-                                            block_light: block.block_light as u32,
+                                            sky_light: block.sky_light as f32,
                                         });
                                     }
                                     for local_idx in local_indices {
@@ -894,8 +899,7 @@ impl State {
                         color: current_vertex_color,
                         uv: selected_face_uvs[i],
                         tree_id: current_tree_id,
-                        sky_light: block.sky_light as u32,
-                        block_light: block.block_light as u32,
+                        sky_light: block.sky_light as f32,
                     });
                 }
                 for local_idx in local_indices {
