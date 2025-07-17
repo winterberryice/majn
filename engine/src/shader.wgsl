@@ -11,7 +11,7 @@ struct VertexInput {
     @location(1) color: vec3<f32>,    // Kept for potential future use (tinting, etc.)
     @location(2) uv: vec2<f32>,       // Texture coordinates
     @location(3) tree_id: u32,      // Tree ID
-    @location(4) sky_light: f32,
+    @location(4) sky_light: u32,
 };
 
 struct VertexOutput {
@@ -19,7 +19,7 @@ struct VertexOutput {
     @location(0) original_color: vec3<f32>, // Pass original color through
     @location(1) tex_coords: vec2<f32>,   // Pass UVs to fragment shader
     @location(2) tree_id: u32,           // Pass Tree ID to fragment shader
-    @location(3) sky_light: f32,
+    @location(3) @interpolate(flat) sky_light: u32,
 };
 
 @vertex
@@ -44,7 +44,7 @@ struct FragmentInput {
     @location(0) original_color: vec3<f32>,
     @location(1) tex_coords: vec2<f32>,
     @location(2) tree_id: u32,
-    @location(3) sky_light: f32,
+    @location(3) @interpolate(flat) sky_light: u32,
 }
 
 // Simple hash function to generate a color from a u32
@@ -66,7 +66,7 @@ fn fs_main(in: FragmentInput) -> @location(0) vec4<f32> {
     if (sampled_color.a < 0.1) {
         discard;
     }
-    let light_intensity = in.sky_light / 15.0;
+    let light_intensity = f32(in.sky_light) / 15.0;
     var final_color = sampled_color.rgb * light_intensity;
 
 
