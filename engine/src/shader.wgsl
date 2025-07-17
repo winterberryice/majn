@@ -47,16 +47,20 @@ struct FragmentInput {
     @location(3) @interpolate(flat) sky_light: u32,
 }
 
-// Simple hash function to generate a color from a u32
-// Source: https://www.shadertoy.com/view/XlGcRh (simplified)
-fn hash_to_color(id: u32) -> vec3<f32> {
-    var id_float = f32(id);
-    let r = fract(sin(id_float * 12.9898) * 43758.5453);
-    let g = fract(sin(id_float * 78.233) * 43758.5453);
-    let b = fract(sin(id_float * 33.731) * 43758.5453);
-    return vec3<f32>(r, g, b);
-}
+// Calculates a point on a 1D cubic Bezier curve.
+// t: The input progress (0.0 to 1.0)
+// p0, p3: The start and end values of the curve
+// p1, p2: The control point "handles" that shape the curve
+fn cubic_bezier(p0: f32, p1: f32, p2: f32, p3: f32, t: f32) -> f32 {
+    let t_inv = 1.0 - t;
+    let t_inv_sq = t_inv * t_inv;
+    let t_sq = t * t;
 
+    return (t_inv_sq * t_inv * p0) +
+           (3.0 * t_inv_sq * t * p1) +
+           (3.0 * t_inv * t_sq * p2) +
+           (t_sq * t * p3);
+}
 
 @fragment
 fn fs_main(in: FragmentInput) -> @location(0) vec4<f32> {
@@ -66,9 +70,17 @@ fn fs_main(in: FragmentInput) -> @location(0) vec4<f32> {
     if (sampled_color.a < 0.1) {
         discard;
     }
-    let light_intensity = f32(in.sky_light) / 15.0;
-    var final_color = sampled_color.rgb * light_intensity;
 
+    let normalized_light = f32(in.sky_light) / 15.0;
+
+    // 1. Calculate the curve's output (from 0.0 to 1.0) using control points
+    //    that create a sharp "ease-in" effect.
+    let bezier_y = cubic_bezier(0.0, 0.0, 0.1, 1.0, normalized_light);
+
+    // 2. Remap the curve's output to your desired brightness range [0.05, 1.0].
+    let light_intensity = 0.05 + bezier_y * 0.95;
+
+    var final_color = sampled_color.rgb * light_intensity;
 
     // Sentinel color for Grass Top, set in main.rs: [0.1, 0.9, 0.1]
     let grass_top_sentinel = vec3<f32>(0.1, 0.9, 0.1);
@@ -93,5 +105,4 @@ fn fs_main(in: FragmentInput) -> @location(0) vec4<f32> {
     }
 
     return vec4<f32>(final_color.rgb, 1.0); // Return full alpha
-
 }
