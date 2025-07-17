@@ -10,7 +10,6 @@ const CUBE_VERTICES_DATA: &[Vertex] = &[
         uv: [0.0, 0.0],
         tree_id: 0,
         sky_light: 0,
-        block_light: 0,
     }, // 0 (orig V0)
     Vertex {
         position: [-0.5, 0.5, -0.5],
@@ -18,7 +17,6 @@ const CUBE_VERTICES_DATA: &[Vertex] = &[
         uv: [0.0, 0.0],
         tree_id: 0,
         sky_light: 0,
-        block_light: 0,
     }, // 1 (orig V3)
     Vertex {
         position: [0.5, 0.5, -0.5],
@@ -26,7 +24,6 @@ const CUBE_VERTICES_DATA: &[Vertex] = &[
         uv: [0.0, 0.0],
         tree_id: 0,
         sky_light: 0,
-        block_light: 0,
     }, // 2 (orig V2)
     Vertex {
         position: [0.5, -0.5, -0.5],
@@ -34,7 +31,6 @@ const CUBE_VERTICES_DATA: &[Vertex] = &[
         uv: [0.0, 0.0],
         tree_id: 0,
         sky_light: 0,
-        block_light: 0,
     }, // 3 (orig V1)
     // Back face (Z = 0.5) - CCW from back (viewing towards -Z, normal 0,0,1)
     // Order: BL, BR, TR, TL (relative to its own view, e.g. V4,V5,V6,V7 is already this)
@@ -44,7 +40,6 @@ const CUBE_VERTICES_DATA: &[Vertex] = &[
         uv: [0.0, 0.0],
         tree_id: 0,
         sky_light: 0,
-        block_light: 0,
     }, // 4 (orig V4)
     Vertex {
         position: [0.5, -0.5, 0.5],
@@ -52,7 +47,6 @@ const CUBE_VERTICES_DATA: &[Vertex] = &[
         uv: [0.0, 0.0],
         tree_id: 0,
         sky_light: 0,
-        block_light: 0,
     }, // 5 (orig V5)
     Vertex {
         position: [0.5, 0.5, 0.5],
@@ -60,7 +54,6 @@ const CUBE_VERTICES_DATA: &[Vertex] = &[
         uv: [0.0, 0.0],
         tree_id: 0,
         sky_light: 0,
-        block_light: 0,
     }, // 6 (orig V6)
     Vertex {
         position: [-0.5, 0.5, 0.5],
@@ -68,7 +61,6 @@ const CUBE_VERTICES_DATA: &[Vertex] = &[
         uv: [0.0, 0.0],
         tree_id: 0,
         sky_light: 0,
-        block_light: 0,
     }, // 7 (orig V7) - This order is correct
     // Right face (X = 0.5) - REORDERED FOR CCW from right (viewing towards -X, normal 1,0,0)
     // Order: BFR, TFR, TBR, BBR (Bottom-Front, Top-Front, Top-Back, Bottom-Back)
@@ -78,7 +70,6 @@ const CUBE_VERTICES_DATA: &[Vertex] = &[
         uv: [0.0, 0.0],
         tree_id: 0,
         sky_light: 0,
-        block_light: 0,
     }, // 8 (orig V8)
     Vertex {
         position: [0.5, 0.5, -0.5],
@@ -86,7 +77,6 @@ const CUBE_VERTICES_DATA: &[Vertex] = &[
         uv: [0.0, 0.0],
         tree_id: 0,
         sky_light: 0,
-        block_light: 0,
     }, // 9 (orig V11)
     Vertex {
         position: [0.5, 0.5, 0.5],
@@ -94,7 +84,6 @@ const CUBE_VERTICES_DATA: &[Vertex] = &[
         uv: [0.0, 0.0],
         tree_id: 0,
         sky_light: 0,
-        block_light: 0,
     }, // 10 (orig V10)
     Vertex {
         position: [0.5, -0.5, 0.5],
@@ -102,7 +91,6 @@ const CUBE_VERTICES_DATA: &[Vertex] = &[
         uv: [0.0, 0.0],
         tree_id: 0,
         sky_light: 0,
-        block_light: 0,
     }, // 11 (orig V9)
     // Left face (X = -0.5) - REORDERED FOR CCW from left (viewing towards +X, normal -1,0,0)
     // Order: BBL, TBL, TFL, BFL (Bottom-Back, Top-Back, Top-Front, Bottom-Front)
@@ -112,7 +100,6 @@ const CUBE_VERTICES_DATA: &[Vertex] = &[
         uv: [0.0, 0.0],
         tree_id: 0,
         sky_light: 0,
-        block_light: 0,
     }, // 12 (orig V12)
     Vertex {
         position: [-0.5, 0.5, 0.5],
@@ -120,7 +107,6 @@ const CUBE_VERTICES_DATA: &[Vertex] = &[
         uv: [0.0, 0.0],
         tree_id: 0,
         sky_light: 0,
-        block_light: 0,
     }, // 13 (orig V15)
     Vertex {
         position: [-0.5, 0.5, -0.5],
@@ -128,7 +114,6 @@ const CUBE_VERTICES_DATA: &[Vertex] = &[
         uv: [0.0, 0.0],
         tree_id: 0,
         sky_light: 0,
-        block_light: 0,
     }, // 14 (orig V14)
     Vertex {
         position: [-0.5, -0.5, -0.5],
@@ -136,7 +121,6 @@ const CUBE_VERTICES_DATA: &[Vertex] = &[
         uv: [0.0, 0.0],
         tree_id: 0,
         sky_light: 0,
-        block_light: 0,
     }, // 15 (orig V13)
     // Top face (Y = 0.5) - REORDERED FOR CCW from above (viewing towards -Y, normal 0,1,0)
     // Order: Near-Left, Near-Right, Far-Right, Far-Left (relative to view from +Y)
@@ -146,7 +130,6 @@ const CUBE_VERTICES_DATA: &[Vertex] = &[
         uv: [0.0, 0.0],
         tree_id: 0,
         sky_light: 0,
-        block_light: 0,
     }, // 16 (Original V19)
     Vertex {
         position: [0.5, 0.5, 0.5],
@@ -154,7 +137,6 @@ const CUBE_VERTICES_DATA: &[Vertex] = &[
         uv: [0.0, 0.0],
         tree_id: 0,
         sky_light: 0,
-        block_light: 0,
     }, // 17 (Original V18)
     Vertex {
         position: [0.5, 0.5, -0.5],
@@ -162,7 +144,6 @@ const CUBE_VERTICES_DATA: &[Vertex] = &[
         uv: [0.0, 0.0],
         tree_id: 0,
         sky_light: 0,
-        block_light: 0,
     }, // 18 (Original V17)
     Vertex {
         position: [-0.5, 0.5, -0.5],
@@ -170,7 +151,6 @@ const CUBE_VERTICES_DATA: &[Vertex] = &[
         uv: [0.0, 0.0],
         tree_id: 0,
         sky_light: 0,
-        block_light: 0,
     }, // 19 (Original V16)
     // Bottom face (Y = -0.5) - REORDERED FOR CCW from below (viewing towards +Y, normal 0,-1,0)
     // Order: Near-Left, Far-Left, Far-Right, Near-Right (relative to view from -Y)
@@ -180,7 +160,6 @@ const CUBE_VERTICES_DATA: &[Vertex] = &[
         uv: [0.0, 0.0],
         tree_id: 0,
         sky_light: 0,
-        block_light: 0,
     }, // 20 (Original V20)
     Vertex {
         position: [-0.5, -0.5, -0.5],
@@ -188,7 +167,6 @@ const CUBE_VERTICES_DATA: &[Vertex] = &[
         uv: [0.0, 0.0],
         tree_id: 0,
         sky_light: 0,
-        block_light: 0,
     }, // 21 (Original V23)
     Vertex {
         position: [0.5, -0.5, -0.5],
@@ -196,7 +174,6 @@ const CUBE_VERTICES_DATA: &[Vertex] = &[
         uv: [0.0, 0.0],
         tree_id: 0,
         sky_light: 0,
-        block_light: 0,
     }, // 22 (Original V22)
     Vertex {
         position: [0.5, -0.5, 0.5],
@@ -204,7 +181,6 @@ const CUBE_VERTICES_DATA: &[Vertex] = &[
         uv: [0.0, 0.0],
         tree_id: 0,
         sky_light: 0,
-        block_light: 0,
     }, // 23 (Original V21)
 ];
 

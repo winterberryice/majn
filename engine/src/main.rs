@@ -218,7 +218,6 @@ pub struct Vertex {
     pub uv: [f32; 2],
     pub tree_id: u32,
     pub sky_light: u32,
-    pub block_light: u32,
 }
 
 impl Vertex {
@@ -246,6 +245,13 @@ impl Vertex {
                     offset: (std::mem::size_of::<[f32; 3]>() * 2 + std::mem::size_of::<[f32; 2]>())
                         as wgpu::BufferAddress,
                     shader_location: 3,
+                    format: wgpu::VertexFormat::Uint32,
+                },
+                wgpu::VertexAttribute {
+                    offset: (std::mem::size_of::<[f32; 3]>() * 2
+                        + std::mem::size_of::<[f32; 2]>()
+                        + std::mem::size_of::<u32>()) as wgpu::BufferAddress,
+                    shader_location: 4,
                     format: wgpu::VertexFormat::Uint32,
                 },
             ],
@@ -684,18 +690,21 @@ impl State {
                             let neighbor_world_bz =
                                 chunk_world_origin_z as i32 + lz as i32 + offset.2;
 
-                            let mut is_face_visible = true;
+                            let mut face_sky_light = 0;
+                            let mut is_face_visible = false;
                             if neighbor_world_by >= 0 && neighbor_world_by < CHUNK_HEIGHT as i32 {
                                 if let Some(neighbor_block) = self.world.get_block_at_world(
                                     neighbor_world_bx as f32,
                                     neighbor_world_by as f32,
                                     neighbor_world_bz as f32,
                                 ) {
-                                    if neighbor_block.is_solid() && !neighbor_block.is_transparent()
-                                    {
-                                        is_face_visible = false;
+                                    if neighbor_block.is_transparent() {
+                                        is_face_visible = true;
+                                        face_sky_light = neighbor_block.sky_light;
                                     }
                                 }
+                            } else {
+                                is_face_visible = true;
                             }
 
                             if is_face_visible {
@@ -761,8 +770,7 @@ impl State {
                                             color: current_vertex_color,
                                             uv: selected_face_uvs[i],
                                             tree_id: 0,
-                                            sky_light: block.sky_light as u32,
-                                            block_light: block.block_light as u32,
+                                            sky_light: face_sky_light as u32,
                                         });
                                     }
                                     for local_idx in local_indices {
@@ -805,7 +813,8 @@ impl State {
                 (CubeFace::Bottom, (0, -1, 0)),
             ];
             for (face_type, _offset) in face_definitions.iter() {
-                let mut is_face_visible_for_transparent = true;
+                let mut face_sky_light = 0;
+                let mut is_face_visible_for_transparent = false;
                 let neighbor_check_offset = match face_type {
                     CubeFace::Front => (0, 0, -1),
                     CubeFace::Back => (0, 0, 1),
@@ -831,12 +840,15 @@ impl State {
                         neighbor_world_by_transparent as f32,
                         neighbor_world_bz_transparent as f32,
                     ) {
-                        if !neighbor_block_transparent.is_transparent()
-                            || neighbor_block_transparent.block_type == block.block_type
+                        if neighbor_block_transparent.is_transparent()
+                            && neighbor_block_transparent.block_type != block.block_type
                         {
-                            is_face_visible_for_transparent = false;
+                            is_face_visible_for_transparent = true;
+                            face_sky_light = neighbor_block_transparent.sky_light;
                         }
                     }
+                } else {
+                    is_face_visible_for_transparent = true;
                 }
 
                 if !is_face_visible_for_transparent {
@@ -894,8 +906,7 @@ impl State {
                         color: current_vertex_color,
                         uv: selected_face_uvs[i],
                         tree_id: current_tree_id,
-                        sky_light: block.sky_light as u32,
-                        block_light: block.block_light as u32,
+                        sky_light: face_sky_light as u32,
                     });
                 }
                 for local_idx in local_indices {
