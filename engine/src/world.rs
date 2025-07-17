@@ -1,6 +1,6 @@
 use crate::block::Block;
 use crate::chunk::{CHUNK_DEPTH, CHUNK_HEIGHT, CHUNK_WIDTH, Chunk};
-use std::collections::{HashMap, VecDeque}; // Removed BlockType as it's unused
+use std::collections::HashMap; // Removed BlockType as it's unused
 
 pub struct World {
     chunks: HashMap<(i32, i32), Chunk>,
@@ -69,117 +69,117 @@ impl World {
     }
 
     /// Propagates the removal of light.
-    fn propagate_light_removal(&mut self, start_pos: glam::IVec3, initial_light_level: u8) {
-        let mut removal_queue: VecDeque<(glam::IVec3, u8)> = VecDeque::new();
-        removal_queue.push_back((start_pos, initial_light_level));
+    // fn propagate_light_removal(&mut self, start_pos: glam::IVec3, initial_light_level: u8) {
+    //     let mut removal_queue: VecDeque<(glam::IVec3, u8)> = VecDeque::new();
+    //     removal_queue.push_back((start_pos, initial_light_level));
 
-        let mut re_light_queue: VecDeque<glam::IVec3> = VecDeque::new();
+    //     let mut re_light_queue: VecDeque<glam::IVec3> = VecDeque::new();
 
-        while let Some((pos, light_level)) = removal_queue.pop_front() {
-            let neighbors = [
-                pos + glam::IVec3::X,
-                pos - glam::IVec3::X,
-                pos + glam::IVec3::Y,
-                pos - glam::IVec3::Y,
-                pos + glam::IVec3::Z,
-                pos - glam::IVec3::Z,
-            ];
+    //     while let Some((pos, light_level)) = removal_queue.pop_front() {
+    //         let neighbors = [
+    //             pos + glam::IVec3::X,
+    //             pos - glam::IVec3::X,
+    //             pos + glam::IVec3::Y,
+    //             pos - glam::IVec3::Y,
+    //             pos + glam::IVec3::Z,
+    //             pos - glam::IVec3::Z,
+    //         ];
 
-            for neighbor_pos in neighbors {
-                let ((chunk_x, chunk_z), (lx, ly, lz)) = World::world_to_chunk_coords(
-                    neighbor_pos.x as f32,
-                    neighbor_pos.y as f32,
-                    neighbor_pos.z as f32,
-                );
+    //         for neighbor_pos in neighbors {
+    //             let ((chunk_x, chunk_z), (lx, ly, lz)) = World::world_to_chunk_coords(
+    //                 neighbor_pos.x as f32,
+    //                 neighbor_pos.y as f32,
+    //                 neighbor_pos.z as f32,
+    //             );
 
-                let neighbor_light = if let Some(chunk) = self.chunks.get(&(chunk_x, chunk_z)) {
-                    chunk.get_block(lx, ly, lz).map(|b| b.sky_light)
-                } else {
-                    None
-                };
+    //             let neighbor_light = if let Some(chunk) = self.chunks.get(&(chunk_x, chunk_z)) {
+    //                 chunk.get_block(lx, ly, lz).map(|b| b.sky_light)
+    //             } else {
+    //                 None
+    //             };
 
-                if let Some(n_light) = neighbor_light {
-                    if n_light != 0 {
-                        if n_light < light_level {
-                            if let Some(chunk) = self.chunks.get_mut(&(chunk_x, chunk_z)) {
-                                chunk.set_block_light(lx, ly, lz, 0);
-                            }
-                            removal_queue.push_back((neighbor_pos, n_light));
-                        } else {
-                            re_light_queue.push_back(neighbor_pos);
-                        }
-                    }
-                }
-            }
-        }
+    //             if let Some(n_light) = neighbor_light {
+    //                 if n_light != 0 {
+    //                     if n_light < light_level {
+    //                         if let Some(chunk) = self.chunks.get_mut(&(chunk_x, chunk_z)) {
+    //                             chunk.set_block_light(lx, ly, lz, 0);
+    //                         }
+    //                         removal_queue.push_back((neighbor_pos, n_light));
+    //                     } else {
+    //                         re_light_queue.push_back(neighbor_pos);
+    //                     }
+    //                 }
+    //             }
+    //         }
+    //     }
 
-        self.propagate_light_addition(re_light_queue);
-    }
+    //     self.propagate_light_addition(re_light_queue);
+    // }
 
-    fn propagate_light_addition(&mut self, mut queue: VecDeque<glam::IVec3>) {
-        while let Some(pos) = queue.pop_front() {
-            let ((chunk_x, chunk_z), (lx, ly, lz)) =
-                World::world_to_chunk_coords(pos.x as f32, pos.y as f32, pos.z as f32);
+    // fn propagate_light_addition(&mut self, mut queue: VecDeque<glam::IVec3>) {
+    //     while let Some(pos) = queue.pop_front() {
+    //         let ((chunk_x, chunk_z), (lx, ly, lz)) =
+    //             World::world_to_chunk_coords(pos.x as f32, pos.y as f32, pos.z as f32);
 
-            let current_light_level = self
-                .chunks
-                .get(&(chunk_x, chunk_z))
-                .and_then(|c| c.get_block(lx, ly, lz))
-                .map_or(0, |b| b.sky_light);
+    //         let current_light_level = self
+    //             .chunks
+    //             .get(&(chunk_x, chunk_z))
+    //             .and_then(|c| c.get_block(lx, ly, lz))
+    //             .map_or(0, |b| b.sky_light);
 
-            let neighbors = [
-                (pos + glam::IVec3::X, false),
-                (pos - glam::IVec3::X, false),
-                (pos + glam::IVec3::Y, false),
-                (pos - glam::IVec3::Y, true), // is_vertical_down
-                (pos + glam::IVec3::Z, false),
-                (pos - glam::IVec3::Z, false),
-            ];
+    //         let neighbors = [
+    //             (pos + glam::IVec3::X, false),
+    //             (pos - glam::IVec3::X, false),
+    //             (pos + glam::IVec3::Y, false),
+    //             (pos - glam::IVec3::Y, true), // is_vertical_down
+    //             (pos + glam::IVec3::Z, false),
+    //             (pos - glam::IVec3::Z, false),
+    //         ];
 
-            for (neighbor_pos, is_vertical_down) in neighbors {
-                if neighbor_pos.y < 0 || neighbor_pos.y >= CHUNK_HEIGHT as i32 {
-                    continue;
-                }
+    //         for (neighbor_pos, is_vertical_down) in neighbors {
+    //             if neighbor_pos.y < 0 || neighbor_pos.y >= CHUNK_HEIGHT as i32 {
+    //                 continue;
+    //             }
 
-                // **THE CRITICAL CHANGE IS HERE**
-                // Calculate the potential light level for the neighbor.
-                let neighbor_light_level = if is_vertical_down && current_light_level == 15 {
-                    15 // Sky light does NOT decay when going straight down.
-                } else {
-                    current_light_level.saturating_sub(1) // Light decays in all other cases.
-                };
+    //             // **THE CRITICAL CHANGE IS HERE**
+    //             // Calculate the potential light level for the neighbor.
+    //             let neighbor_light_level = if is_vertical_down && current_light_level == 15 {
+    //                 15 // Sky light does NOT decay when going straight down.
+    //             } else {
+    //                 current_light_level.saturating_sub(1) // Light decays in all other cases.
+    //             };
 
-                // Read the neighbor's current properties before trying to change them.
-                let ((n_chunk_x, n_chunk_z), (nx, ny, nz)) = World::world_to_chunk_coords(
-                    neighbor_pos.x as f32,
-                    neighbor_pos.y as f32,
-                    neighbor_pos.z as f32,
-                );
+    //             // Read the neighbor's current properties before trying to change them.
+    //             let ((n_chunk_x, n_chunk_z), (nx, ny, nz)) = World::world_to_chunk_coords(
+    //                 neighbor_pos.x as f32,
+    //                 neighbor_pos.y as f32,
+    //                 neighbor_pos.z as f32,
+    //             );
 
-                let neighbor_properties =
-                    if let Some(chunk) = self.chunks.get(&(n_chunk_x, n_chunk_z)) {
-                        chunk
-                            .get_block(nx, ny, nz)
-                            .map(|b| (b.sky_light, b.is_transparent()))
-                    } else {
-                        None
-                    };
+    //             let neighbor_properties =
+    //                 if let Some(chunk) = self.chunks.get(&(n_chunk_x, n_chunk_z)) {
+    //                     chunk
+    //                         .get_block(nx, ny, nz)
+    //                         .map(|b| (b.sky_light, b.is_transparent()))
+    //                 } else {
+    //                     None
+    //                 };
 
-                // If the potential new light is brighter, update the neighbor.
-                if let Some((neighbor_sky_light, is_neighbor_transparent)) = neighbor_properties {
-                    if neighbor_light_level > neighbor_sky_light {
-                        if let Some(chunk) = self.chunks.get_mut(&(n_chunk_x, n_chunk_z)) {
-                            chunk.set_block_light(nx, ny, nz, neighbor_light_level);
-                            // Only continue the process from transparent blocks.
-                            if is_neighbor_transparent {
-                                queue.push_back(neighbor_pos);
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
+    //             // If the potential new light is brighter, update the neighbor.
+    //             if let Some((neighbor_sky_light, is_neighbor_transparent)) = neighbor_properties {
+    //                 if neighbor_light_level > neighbor_sky_light {
+    //                     if let Some(chunk) = self.chunks.get_mut(&(n_chunk_x, n_chunk_z)) {
+    //                         chunk.set_block_light(nx, ny, nz, neighbor_light_level);
+    //                         // Only continue the process from transparent blocks.
+    //                         if is_neighbor_transparent {
+    //                             queue.push_back(neighbor_pos);
+    //                         }
+    //                     }
+    //                 }
+    //             }
+    //         }
+    //     }
+    // }
 
     pub fn set_block(
         &mut self,
@@ -210,12 +210,12 @@ impl World {
             }
         }
 
-        let old_light_level = old_block.as_ref().map_or(0, |b| b.sky_light);
-        let was_transparent = old_block.as_ref().map_or(true, |b| b.is_transparent());
+        // let old_light_level = old_block.as_ref().map_or(0, |b| b.sky_light);
+        // let was_transparent = old_block.as_ref().map_or(true, |b| b.is_transparent());
 
         // Place the new block first
-        let new_block = Block::new(block_type);
-        let is_transparent = new_block.is_transparent();
+        // let new_block = Block::new(block_type);
+        // let is_transparent = new_block.is_transparent();
 
         let chunk = self.get_or_create_chunk(chunk_x, chunk_z);
         chunk
@@ -361,6 +361,9 @@ mod tests {
         world
             .set_block(under_surface_pos, BlockType::Air)
             .expect("Digging block underneath should succeed.");
+        world
+            .set_block(tunnel_end_pos, BlockType::Air)
+            .expect("Digging block should succeed.");
 
         // 4. ASSERT FINAL STATE: Check the light level at the end of the one-block tunnel.
         let tunnel_block_final = world

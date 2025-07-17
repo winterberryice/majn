@@ -197,44 +197,53 @@ impl Chunk {
     }
 
     pub fn calculate_sky_light(&mut self) {
-        let mut light_queue: VecDeque<(usize, usize, usize)> = VecDeque::new(); // <x, y, z>
+        // --- Phase 0: Reset ---
+        // Start by setting all sky light levels to 0. This ensures we have a clean slate
+        // and that blocks under overhangs aren't prematurely marked as permanently dark.
+        for x in 0..CHUNK_WIDTH {
+            for y in 0..CHUNK_HEIGHT {
+                for z in 0..CHUNK_DEPTH {
+                    self.blocks[x][y][z].sky_light = 0;
+                }
+            }
+        }
 
-        // --- STEP 1: Sunlight Column Pass
+        let mut light_queue: VecDeque<(usize, usize, usize)> = VecDeque::new();
+
+        // --- Phase 1: Vertical Sky Light Pass & Optimized Queue Seeding ---
+        // Find all blocks with direct sky access, set their light to 15,
+        // and add the transparent ones to the queue to act as light sources.
         for x in 0..CHUNK_WIDTH {
             for z in 0..CHUNK_DEPTH {
-                let mut light_can_pass = true;
-
                 for y in (0..CHUNK_HEIGHT).rev() {
                     let block = &mut self.blocks[x][y][z];
 
-                    if light_can_pass {
-                        block.sky_light = 15;
-                        if block.is_transparent() {
-                            light_queue.push_back((x, y, z));
-                        } else {
-                            light_can_pass = false;
-                        }
+                    // A block with sky access always has a light value of 15.
+                    block.sky_light = 15;
+
+                    // Only transparent blocks can propagate this light to neighbors.
+                    if block.is_transparent() {
+                        light_queue.push_back((x, y, z));
                     } else {
-                        block.sky_light = 0;
+                        // If we hit a solid block, it receives light but stops it from
+                        // continuing down this column.
+                        break; // Move to the next column.
                     }
                 }
             }
         }
 
-        // phase 2
+        // --- Phase 2: Propagation Flood Fill ---
+        // Spread light from the source blocks in the queue into adjacent dark areas.
         while let Some((x, y, z)) = light_queue.pop_front() {
-            let current_block = self.blocks[x][y][z];
-
-            let neighbor_light_level = if current_block.sky_light > 0 {
-                current_block.sky_light - 1
-            } else {
-                0
-            };
+            let current_light_level = self.blocks[x][y][z].sky_light;
+            let neighbor_light_level = current_light_level.saturating_sub(1);
 
             if neighbor_light_level <= 0 {
-                continue; // No light to spread
+                continue; // This light has faded to nothing.
             }
 
+            // Check all 6 neighbors
             let neighbors = [
                 (x.wrapping_sub(1), y, z),
                 (x + 1, y, z),
@@ -244,27 +253,24 @@ impl Chunk {
                 (x, y, z + 1),
             ];
 
-            // TODO handle neighbor from other chunks
-            for (neighbor_x, neighbor_y, neighbor_z) in neighbors {
-                let block_in_chunk_bounds = neighbor_x < CHUNK_WIDTH
-                    && neighbor_y < CHUNK_HEIGHT
-                    && neighbor_z < CHUNK_DEPTH;
+            // TODO handle blocks from neighboring chunks
 
-                if !block_in_chunk_bounds {
-                    continue;
-                }
-                let mut neighbor_block = self.blocks[neighbor_x][neighbor_y][neighbor_z];
+            for (nx, ny, nz) in neighbors {
+                // Check if the neighbor is within the chunk's bounds
+                if nx < CHUNK_WIDTH && ny < CHUNK_HEIGHT && nz < CHUNK_DEPTH {
+                    let neighbor_block = &mut self.blocks[nx][ny][nz];
 
-                if block_in_chunk_bounds
-                    && neighbor_block.is_transparent()
-                    && neighbor_block.sky_light < neighbor_light_level
-                {
-                    neighbor_block.sky_light = neighbor_light_level;
-                    light_queue.push_back((neighbor_x, neighbor_y, neighbor_z));
+                    // If the neighbor is transparent and we can make it brighter, update it.
+                    if neighbor_block.is_transparent()
+                        && neighbor_block.sky_light < neighbor_light_level
+                    {
+                        neighbor_block.sky_light = neighbor_light_level;
+                        light_queue.push_back((nx, ny, nz));
+                    }
                 }
+                // Note: Cross-chunk propagation would be handled here by querying the `World`.
             }
         }
-        //
     }
 
     pub fn set_block_light(&mut self, x: usize, y: usize, z: usize, sky_light: u8) {
