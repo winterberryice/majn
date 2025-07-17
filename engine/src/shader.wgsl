@@ -66,7 +66,7 @@ fn fs_main(in: FragmentInput) -> @location(0) vec4<f32> {
     if (sampled_color.a < 0.1) {
         discard;
     }
-    let light_intensity = f32(in.sky_light) / 15.0;
+    let light_intensity = (f32(in.sky_light) / 15.0) * 0.8 + 0.2;
     var final_color = sampled_color.rgb * light_intensity;
 
 
