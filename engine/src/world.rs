@@ -91,17 +91,103 @@ impl World {
             .map_or(true, |b| b.is_transparent())
     }
 
-    fn propagate_light_removal(&mut self, start_pos: glam::IVec3) {
-        let light_level_removed = self.get_light_level(start_pos);
+    fn propagate_light_removal(&mut self, new_air_block_pos: glam::IVec3) {
+        let mut max_light_from_neighbors: u8 = 0;
+
+        for offset in [
+            glam::IVec3::X,
+            glam::IVec3::NEG_X,
+            glam::IVec3::Y,
+            glam::IVec3::NEG_Y,
+            glam::IVec3::Z,
+            glam::IVec3::NEG_Z,
+        ] {
+            let neighbor_pos = new_air_block_pos + offset;
+            let neighbor_light = self.get_light_level(neighbor_pos);
+
+            if neighbor_light == 0 {
+                continue;
+            }
+
+            let potential_light: u8;
+
+            if offset == glam::IVec3::Y && neighbor_light == 15 {
+                potential_light = 15;
+            } else {
+                potential_light = neighbor_light - 1;
+            }
+
+            if potential_light > max_light_from_neighbors {
+                max_light_from_neighbors = potential_light;
+            }
+        }
+
+        //
+
+        self.set_light_level(new_air_block_pos, max_light_from_neighbors);
+
+        //
+
+        let mut light_propagation_queue = VecDeque::new();
+
+        if max_light_from_neighbors > 0 {
+            light_propagation_queue.push_back(new_air_block_pos);
+        }
+
+        //
+
+        while let Some(pos) = light_propagation_queue.pop_front() {
+            let current_light = self.get_light_level(pos);
+            let neighbor_light = current_light - 1;
+
+            if neighbor_light <= 0 {
+                continue;
+            }
+
+            for offset in [
+                glam::IVec3::X,
+                glam::IVec3::NEG_X,
+                glam::IVec3::Y,
+                glam::IVec3::NEG_Y,
+                glam::IVec3::Z,
+                glam::IVec3::NEG_Z,
+            ] {
+                let neighbor_pos = pos + offset;
+
+                let mut potential_light = neighbor_light;
+
+                if offset == glam::IVec3::NEG_Y && current_light == 15 {
+                    potential_light = 15;
+                }
+
+                let neighbor_current_light = self.get_light_level(neighbor_pos);
+                let is_neighbor_transparent = self.is_block_transparent(neighbor_pos);
+
+                if is_neighbor_transparent && potential_light > neighbor_current_light {
+                    self.set_light_level(neighbor_pos, potential_light);
+                    light_propagation_queue.push_back(neighbor_pos);
+                }
+            }
+        }
+
+        //
+    }
+
+    fn propagate_light_addition(&mut self, new_solid_block_pos: glam::IVec3) {
+        //
+
+        let light_level_removed = self.get_light_level(new_solid_block_pos);
         if light_level_removed == 0 {
             return;
         }
+        self.set_light_level(new_solid_block_pos, 0);
 
-        self.set_light_level(start_pos, 0);
+        let mut removal_queue: VecDeque<(glam::IVec3, u8)> = VecDeque::new();
+        let mut relight_queue: VecDeque<glam::IVec3> = VecDeque::new();
 
-        let mut removal_queue = VecDeque::new();
-        let mut relight_queue = VecDeque::new();
-        removal_queue.push_back((start_pos, light_level_removed));
+        removal_queue.push_back((new_solid_block_pos, light_level_removed));
+
+        //
 
         while let Some((pos, light_level)) = removal_queue.pop_front() {
             for offset in [
@@ -128,13 +214,11 @@ impl World {
             }
         }
 
-        self.propagate_light_addition(relight_queue);
-    }
+        while let Some(pos) = relight_queue.pop_front() {
+            let current_light = self.get_light_level(pos);
+            let neighbor_light = current_light - 1;
 
-    fn propagate_light_addition(&mut self, mut queue: VecDeque<glam::IVec3>) {
-        while let Some(pos) = queue.pop_front() {
-            let current_light_level = self.get_light_level(pos);
-            if current_light_level <= 1 {
+            if neighbor_light <= 0 {
                 continue;
             }
 
@@ -147,23 +231,23 @@ impl World {
                 glam::IVec3::NEG_Z,
             ] {
                 let neighbor_pos = pos + offset;
+                let mut potential_light = neighbor_light;
 
-                let potential_light = if offset == glam::IVec3::NEG_Y && current_light_level == 15 {
-                    15
-                } else {
-                    current_light_level - 1
-                };
+                if offset == glam::IVec3::NEG_Y && current_light == 15 {
+                    potential_light = 15;
+                }
 
                 let neighbor_current_light = self.get_light_level(neighbor_pos);
+                let is_neighbor_transparent = self.is_block_transparent(neighbor_pos);
 
-                if self.is_block_transparent(neighbor_pos)
-                    && potential_light > neighbor_current_light
-                {
+                if is_neighbor_transparent && potential_light > neighbor_current_light {
                     self.set_light_level(neighbor_pos, potential_light);
-                    queue.push_back(neighbor_pos);
+                    relight_queue.push_back(neighbor_pos);
                 }
             }
         }
+
+        //
     }
 
     pub fn set_block(
@@ -175,21 +259,24 @@ impl World {
             return Err("Y coordinate out of world bounds");
         }
 
-        let old_block_was_transparent = self.is_block_transparent(world_block_pos);
-        let new_block_is_transparent = Block::new(block_type).is_transparent();
-
         let ((chunk_x, chunk_z), (local_x, local_y, local_z)) = World::world_to_chunk_coords(
             world_block_pos.x as f32,
             world_block_pos.y as f32,
             world_block_pos.z as f32,
         );
 
-        if self
-            .get_chunk(chunk_x, chunk_z)
-            .and_then(|c| c.get_block(local_x, local_y, local_z))
-            .map_or(false, |b| b.block_type == BlockType::Bedrock)
-        {
-            return Err("Cannot replace Bedrock");
+        let old_block = self
+            .get_block_at_world(
+                world_block_pos.x as f32,
+                world_block_pos.y as f32,
+                world_block_pos.z as f32,
+            )
+            .cloned();
+
+        if let Some(ref b) = old_block {
+            if b.block_type == crate::block::BlockType::Bedrock {
+                return Err("Cannot replace Bedrock");
+            }
         }
 
         let chunk = self.get_or_create_chunk(chunk_x, chunk_z);
@@ -197,41 +284,13 @@ impl World {
             .set_block(local_x, local_y, local_z, block_type)
             .unwrap();
 
+        let old_block_was_transparent = old_block.as_ref().map_or(true, |b| b.is_transparent());
+        let new_block_is_transparent = Block::new(block_type).is_transparent();
+
         if !old_block_was_transparent && new_block_is_transparent {
-            // ----- Light Addition (Block Removed) -----
-            let mut max_light_from_neighbors = 0;
-            let mut addition_queue = VecDeque::new();
-
-            for offset in [
-                glam::IVec3::X,
-                glam::IVec3::NEG_X,
-                glam::IVec3::Y,
-                glam::IVec3::NEG_Y,
-                glam::IVec3::Z,
-                glam::IVec3::NEG_Z,
-            ] {
-                let neighbor_pos = world_block_pos + offset;
-                let neighbor_light = self.get_light_level(neighbor_pos);
-
-                let potential_light = if offset == glam::IVec3::Y && neighbor_light == 15 {
-                    15
-                } else {
-                    neighbor_light.saturating_sub(1)
-                };
-
-                if potential_light > max_light_from_neighbors {
-                    max_light_from_neighbors = potential_light;
-                }
-            }
-
-            if max_light_from_neighbors > 0 {
-                self.set_light_level(world_block_pos, max_light_from_neighbors);
-                addition_queue.push_back(world_block_pos);
-                self.propagate_light_addition(addition_queue);
-            }
-        } else if old_block_was_transparent && !new_block_is_transparent {
-            // ----- Light Removal (Block Placed) -----
             self.propagate_light_removal(world_block_pos);
+        } else if old_block_was_transparent && !new_block_is_transparent {
+            self.propagate_light_addition(world_block_pos);
         }
 
         Ok((chunk_x, chunk_z))
