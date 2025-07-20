@@ -446,5 +446,54 @@ mod tests {
         );
     }
 
+    #[test]
+    fn test_placing_one_block_roof_casts_shadow() {
+        // Simulates placing a single block roof over the player's head.
+        // The player column should then be lit from the adjacent open-air column.
+        //
+        // Vertical slice of the relevant columns (X=5 and X=6):
+        // Before:      After:
+        // aa (y=19)    ad (d = new dirt block)
+        // aa (y=18)    ah (h = head)
+        // aa (y=17)    af (f = feet)
+        // gg (y=16)    gg (g = grass)
+        //
+        // Both 'h' and 'f' should be re-lit from the side by column 'a', resulting in light level 14.
+        let mut world = World::new();
+        world.get_or_create_chunk(0, 0);
+
+        // Define the column that will be shadowed and the adjacent column that will provide the light.
+        let roof_pos = IVec3::new(6, 19, 5);
+        let head_pos = IVec3::new(6, 18, 5);
+        let feet_pos = IVec3::new(6, 17, 5);
+
+        // 2. ASSERT INITIAL STATE: Ensure the player's column is fully lit from the sky.
+        assert_eq!(
+            world.get_light_level(head_pos),
+            15,
+            "Head position should initially be fully lit"
+        );
+        assert_eq!(
+            world.get_light_level(feet_pos),
+            15,
+            "Feet position should initially be fully lit"
+        );
+
+        // 3. ACTION: Place a single solid block above the player's head.
+        world.set_block(roof_pos, BlockType::Dirt).unwrap();
+
+        // 4. ASSERT FINAL STATE: Check the new, reduced light levels.
+        assert_eq!(
+            world.get_light_level(head_pos),
+            14,
+            "Head position should be lit from the side (14)"
+        );
+        assert_eq!(
+            world.get_light_level(feet_pos),
+            14,
+            "Feet position should also be lit from the side (14)"
+        );
+    }
+
     //
 }
