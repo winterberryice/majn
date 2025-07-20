@@ -363,6 +363,21 @@ mod tests {
         world
             .set_block(under_surface_pos, BlockType::Air)
             .expect("Digging block underneath should succeed.");
+
+        //
+        let under_surface_air = world
+            .get_block_at_world(
+                under_surface_pos.x as f32,
+                under_surface_pos.y as f32,
+                under_surface_pos.z as f32,
+            )
+            .expect("Block should exist.");
+        assert_eq!(
+            under_surface_air.sky_light, 15,
+            "Tunnel block should initially be dark."
+        );
+        //
+
         world
             .set_block(tunnel_end_pos, BlockType::Air)
             .expect("Digging block should succeed.");
