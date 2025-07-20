@@ -13,22 +13,19 @@ impl World {
         }
     }
 
-    // Gets a reference to a chunk if it exists, otherwise generates/loads it.
     pub fn get_or_create_chunk(&mut self, chunk_x: i32, chunk_z: i32) -> &mut Chunk {
         self.chunks.entry((chunk_x, chunk_z)).or_insert_with(|| {
             let mut new_chunk = Chunk::new(chunk_x, chunk_z);
-            new_chunk.generate_terrain(); // Or some other generation logic
+            new_chunk.generate_terrain();
             new_chunk.calculate_sky_light();
             new_chunk
         })
     }
 
-    // Gets an immutable reference to a chunk if it exists.
     pub fn get_chunk(&self, chunk_x: i32, chunk_z: i32) -> Option<&Chunk> {
         self.chunks.get(&(chunk_x, chunk_z))
     }
 
-    // Converts world block coordinates to chunk coordinates and local block coordinates.
     pub fn world_to_chunk_coords(
         world_x: f32,
         world_y: f32,
@@ -36,27 +33,18 @@ impl World {
     ) -> ((i32, i32), (usize, usize, usize)) {
         let chunk_x = (world_x / CHUNK_WIDTH as f32).floor() as i32;
         let chunk_z = (world_z / CHUNK_DEPTH as f32).floor() as i32;
-
         let local_x = ((world_x % CHUNK_WIDTH as f32) + CHUNK_WIDTH as f32) % CHUNK_WIDTH as f32;
-        let _local_y = world_y; // Assuming y is absolute for now, or chunks are full height slices. Prefixed as unused.
         let local_z = ((world_z % CHUNK_DEPTH as f32) + CHUNK_DEPTH as f32) % CHUNK_DEPTH as f32;
-
-        // Clamping y to be within chunk height. This might need adjustment based on how
-        // world_y interacts with chunk vertical slices if that becomes a feature.
         let clamped_y = world_y.max(0.0).min(CHUNK_HEIGHT as f32 - 1.0);
-
         (
             (chunk_x, chunk_z),
             (local_x as usize, clamped_y as usize, local_z as usize),
         )
     }
 
-    // Gets a block at absolute world coordinates.
-    // TODO this type should be not float?
     pub fn get_block_at_world(&self, world_x: f32, world_y: f32, world_z: f32) -> Option<&Block> {
         let ((chunk_x, chunk_z), (local_x, local_y, local_z)) =
             World::world_to_chunk_coords(world_x, world_y, world_z);
-
         if local_y >= CHUNK_HEIGHT {
             return None;
         }
@@ -85,7 +73,7 @@ impl World {
 
     fn is_block_transparent(&self, pos: glam::IVec3) -> bool {
         if pos.y < 0 || pos.y >= CHUNK_HEIGHT as i32 {
-            return true; // Outside world is transparent
+            return true;
         }
         self.get_block_at_world(pos.x as f32, pos.y as f32, pos.z as f32)
             .map_or(true, |b| b.is_transparent())
@@ -95,6 +83,7 @@ impl World {
         let mut max_light_from_neighbors: u8 = 0;
         let mut light_propagation_queue = VecDeque::new();
 
+        // Iterate through all neighbors to find the brightest light source.
         for offset in [
             glam::IVec3::X,
             glam::IVec3::NEG_X,
@@ -104,13 +93,17 @@ impl World {
             glam::IVec3::NEG_Z,
         ] {
             let neighbor_pos = new_air_block_pos + offset;
-            let neighbor_light = self.get_light_level(neighbor_pos);
 
+            // Light can only pass from a neighbor if the neighbor is transparent.
+            if !self.is_block_transparent(neighbor_pos) {
+                continue;
+            }
+
+            let neighbor_light = self.get_light_level(neighbor_pos);
             if neighbor_light == 0 {
                 continue;
             }
 
-            // Check if light is coming from directly above with full strength
             let potential_light = if offset == glam::IVec3::Y && neighbor_light == 15 {
                 15
             } else {
@@ -167,17 +160,15 @@ impl World {
                 }
             }
         }
-
         self.run_light_propagation_queue(relight_queue);
     }
 
-    // Helper function to run the propagation loop, used by both addition and removal logic
     fn run_light_propagation_queue(&mut self, mut queue: VecDeque<glam::IVec3>) {
         while let Some(pos) = queue.pop_front() {
             let current_light = self.get_light_level(pos);
-            let neighbor_light = current_light - 1;
+            let neighbor_light = current_light.saturating_sub(1);
 
-            if neighbor_light <= 0 {
+            if neighbor_light == 0 && current_light <= 1 {
                 continue;
             }
 
@@ -218,16 +209,26 @@ impl World {
             return Err("Y coordinate out of world bounds");
         }
 
+        let old_block_was_transparent = self.is_block_transparent(world_block_pos);
+        let new_block_is_transparent = Block::new(block_type).is_transparent();
+
+        if old_block_was_transparent == new_block_is_transparent {
+            let ((chunk_x, chunk_z), (local_x, local_y, local_z)) = World::world_to_chunk_coords(
+                world_block_pos.x as f32,
+                world_block_pos.y as f32,
+                world_block_pos.z as f32,
+            );
+            self.get_or_create_chunk(chunk_x, chunk_z)
+                .set_block(local_x, local_y, local_z, block_type)
+                .unwrap();
+            return Ok((chunk_x, chunk_z));
+        }
+
         let ((chunk_x, chunk_z), (local_x, local_y, local_z)) = World::world_to_chunk_coords(
             world_block_pos.x as f32,
             world_block_pos.y as f32,
             world_block_pos.z as f32,
         );
-
-        let old_block_was_transparent = self.is_block_transparent(world_block_pos);
-        if old_block_was_transparent && self.get_light_level(world_block_pos) == 0 {
-            // Optimization: if we are placing a block in a dark spot, no light update needed
-        }
 
         let chunk = self.get_or_create_chunk(chunk_x, chunk_z);
         if chunk
@@ -241,13 +242,9 @@ impl World {
             .set_block(local_x, local_y, local_z, block_type)
             .unwrap();
 
-        let new_block_is_transparent = Block::new(block_type).is_transparent();
-
         if !old_block_was_transparent && new_block_is_transparent {
-            // Solid -> Air: Add light
             self.propagate_light_addition(world_block_pos);
-        } else if old_block_was_transparent && !new_block_is_transparent {
-            // Air -> Solid: Remove light
+        } else {
             self.propagate_light_removal(world_block_pos);
         }
 
@@ -255,7 +252,6 @@ impl World {
     }
 }
 
-// Default implementation for World
 impl Default for World {
     fn default() -> Self {
         Self::new()
