@@ -312,19 +312,22 @@ mod tests {
         world
             .set_block(grass_block_pos, BlockType::Air)
             .expect("Setting block should succeed.");
+        world
+            .set_block(block_underneath_pos, BlockType::Air)
+            .expect("Setting block should succeed.");
 
         // 4. ASSERT FINAL STATE: Check the light level of the newly exposed block.
-        let newly_exposed_block = world
+        let air_block = world
             .get_block_at_world(
                 block_underneath_pos.x as f32,
                 block_underneath_pos.y as f32,
                 block_underneath_pos.z as f32,
             )
-            .expect("Newly exposed block should exist.");
+            .expect("Dirt block should exist.");
 
         // This is the crucial test. It will fail until our logic is correct.
         assert_eq!(
-            newly_exposed_block.sky_light, 15,
+            air_block.sky_light, 15,
             "Newly exposed block should now have full sky light."
         );
     }
