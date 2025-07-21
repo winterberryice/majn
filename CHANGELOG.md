@@ -8,7 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased] - YYYY-MM-DD (date of update)
 
 ### Added
-- **Rendering:** Static chunks of blocks (e.g., dirt, grass) with basic face culling (CPU-side mesh generation and GPU-side).
+- **Rendering:**
+    - Static chunks of blocks (e.g., dirt, grass) with basic face culling (CPU-side mesh generation and GPU-side).
+    - Basic lighting system with a single directional light source (sun) and ambient light.
 - **Player Controller:**
     - Grounded "walking" player controller (replaces previous fly-cam).
     - Keyboard input for movement (forward, backward, left, right, jump).

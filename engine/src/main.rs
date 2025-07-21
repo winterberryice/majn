@@ -1,6 +1,3 @@
-// Content of main.rs from last read_files, with is_face_visible logic updated
-// AND with the erroneous "[end of engine/src/main.rs]" lines removed.
-
 mod block;
 mod camera;
 mod chunk;
@@ -209,6 +206,7 @@ impl ApplicationHandler for App {
 
     fn exiting(&mut self, _event_loop: &ActiveEventLoop) {
         println!("ApplicationHandler: Event loop is exiting. Cleaning up.");
+        self.state = None;
     }
 }
 
@@ -219,6 +217,7 @@ pub struct Vertex {
     pub color: [f32; 3],
     pub uv: [f32; 2],
     pub tree_id: u32,
+    pub sky_light: u32,
 }
 
 impl Vertex {
@@ -246,6 +245,13 @@ impl Vertex {
                     offset: (std::mem::size_of::<[f32; 3]>() * 2 + std::mem::size_of::<[f32; 2]>())
                         as wgpu::BufferAddress,
                     shader_location: 3,
+                    format: wgpu::VertexFormat::Uint32,
+                },
+                wgpu::VertexAttribute {
+                    offset: (std::mem::size_of::<[f32; 3]>() * 2
+                        + std::mem::size_of::<[f32; 2]>()
+                        + std::mem::size_of::<u32>()) as wgpu::BufferAddress,
+                    shader_location: 4,
                     format: wgpu::VertexFormat::Uint32,
                 },
             ],
@@ -684,18 +690,21 @@ impl State {
                             let neighbor_world_bz =
                                 chunk_world_origin_z as i32 + lz as i32 + offset.2;
 
-                            let mut is_face_visible = true;
+                            let mut face_sky_light = 0;
+                            let mut is_face_visible = false;
                             if neighbor_world_by >= 0 && neighbor_world_by < CHUNK_HEIGHT as i32 {
                                 if let Some(neighbor_block) = self.world.get_block_at_world(
                                     neighbor_world_bx as f32,
                                     neighbor_world_by as f32,
                                     neighbor_world_bz as f32,
                                 ) {
-                                    if neighbor_block.is_solid() && !neighbor_block.is_transparent()
-                                    {
-                                        is_face_visible = false;
+                                    if neighbor_block.is_transparent() {
+                                        is_face_visible = true;
+                                        face_sky_light = neighbor_block.sky_light;
                                     }
                                 }
+                            } else {
+                                is_face_visible = true;
                             }
 
                             if is_face_visible {
@@ -761,6 +770,7 @@ impl State {
                                             color: current_vertex_color,
                                             uv: selected_face_uvs[i],
                                             tree_id: 0,
+                                            sky_light: face_sky_light as u32,
                                         });
                                     }
                                     for local_idx in local_indices {
@@ -784,15 +794,6 @@ impl State {
             }
         }
 
-        // let player_camera_pos = self.player.position + glam::Vec3::new(0.0, PLAYER_EYE_HEIGHT, 0.0);
-        // transparent_block_render_list.sort_by(|a, b| {
-        //     let dist_a = player_camera_pos.distance_squared(a.world_center);
-        //     let dist_b = player_camera_pos.distance_squared(b.world_center);
-        //     dist_b
-        //         .partial_cmp(&dist_a)
-        //         .unwrap_or(std::cmp::Ordering::Equal)
-        // });
-
         for t_block_data in transparent_block_render_list {
             let block = &t_block_data.block;
             let _lx = t_block_data.lx;
@@ -812,7 +813,8 @@ impl State {
                 (CubeFace::Bottom, (0, -1, 0)),
             ];
             for (face_type, _offset) in face_definitions.iter() {
-                let mut is_face_visible_for_transparent = true;
+                let mut face_sky_light = 0;
+                let mut is_face_visible_for_transparent = false;
                 let neighbor_check_offset = match face_type {
                     CubeFace::Front => (0, 0, -1),
                     CubeFace::Back => (0, 0, 1),
@@ -838,12 +840,15 @@ impl State {
                         neighbor_world_by_transparent as f32,
                         neighbor_world_bz_transparent as f32,
                     ) {
-                        if !neighbor_block_transparent.is_transparent()
-                            || neighbor_block_transparent.block_type == block.block_type
+                        if neighbor_block_transparent.is_transparent()
+                            && neighbor_block_transparent.block_type != block.block_type
                         {
-                            is_face_visible_for_transparent = false;
+                            is_face_visible_for_transparent = true;
+                            face_sky_light = neighbor_block_transparent.sky_light;
                         }
                     }
+                } else {
+                    is_face_visible_for_transparent = true;
                 }
 
                 if !is_face_visible_for_transparent {
@@ -901,6 +906,7 @@ impl State {
                         color: current_vertex_color,
                         uv: selected_face_uvs[i],
                         tree_id: current_tree_id,
+                        sky_light: face_sky_light as u32,
                     });
                 }
                 for local_idx in local_indices {
@@ -1091,11 +1097,21 @@ impl State {
         const RAYCAST_MAX_DISTANCE: f32 = 5.0;
         self.selected_block =
             crate::raycast::cast_ray(&self.player, &self.world, RAYCAST_MAX_DISTANCE);
+
+        let selected_block_data = if let Some((pos, _face)) = self.selected_block {
+            self.world
+                .get_block_at_world(pos.x as f32, pos.y as f32, pos.z as f32)
+                .map(|block| (pos, block))
+        } else {
+            None
+        };
+
         if let Some((block_pos, _)) = self.selected_block {
             self.wireframe_renderer.update_selection(Some(block_pos));
         } else {
             self.wireframe_renderer.update_selection(None);
         }
+
         let camera_eye = self.player.position + glam::Vec3::new(0.0, PLAYER_EYE_HEIGHT, 0.0);
         let camera_front = glam::Vec3::new(
             self.player.yaw.cos() * self.player.pitch.cos(),
@@ -1117,7 +1133,15 @@ impl State {
             0,
             bytemuck::cast_slice(&[self.camera_uniform]),
         );
-        self.debug_overlay.update(self.player.position);
+
+        let player_feet_block = self.world.get_block_at_world(
+            self.player.position.x,
+            self.player.position.y,
+            self.player.position.z,
+        );
+
+        self.debug_overlay
+            .update(self.player.position, selected_block_data, player_feet_block);
         self.input_state.clear_frame_state();
     }
 
@@ -1256,21 +1280,6 @@ impl State {
                     .partial_cmp(&dist_a)
                     .unwrap_or(std::cmp::Ordering::Equal)
             });
-            // for chunk_coord in &sorted_transparent_chunks {
-            //     if let Some(chunk_data) = self.chunk_render_data.get(chunk_coord) {
-            //         if let Some(ref transparent_buffers) = chunk_data.transparent_buffers {
-            //             if transparent_buffers.num_indices > 0 {
-            //                 render_pass
-            //                     .set_vertex_buffer(0, transparent_buffers.vertex_buffer.slice(..));
-            //                 render_pass.set_index_buffer(
-            //                     transparent_buffers.index_buffer.slice(..),
-            //                     wgpu::IndexFormat::Uint16,
-            //                 );
-            //                 render_pass.draw_indexed(0..transparent_buffers.num_indices, 0, 0..1);
-            //             }
-            //         }
-            //     }
-            // }
             let mut sorted_transparent_chunks = self.active_chunk_coords.clone();
             let player_pos = self.player.position;
             sorted_transparent_chunks.sort_by(|a, b| {
@@ -1365,4 +1374,3 @@ pub async fn run() {
 fn main() {
     pollster::block_on(run());
 }
-// ... (rest of main.rs, if any) ...
