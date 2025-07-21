@@ -224,7 +224,7 @@ impl Chunk {
                         block.sky_light = 15;
                         light_queue.push_back((x, y, z));
                     } else {
-                        // If we hit a solid block, it receives light but stops it from
+                        // If we hit a solid block, it do not receives light but stops it from
                         // continuing down this column.
                         break; // Move to the next column.
                     }
