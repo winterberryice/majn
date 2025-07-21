@@ -124,8 +124,11 @@ impl World {
         self.run_light_propagation_queue(light_propagation_queue);
     }
 
-    fn propagate_light_removal(&mut self, new_solid_block_pos: glam::IVec3) {
-        let light_level_removed = self.get_light_level(new_solid_block_pos);
+    fn propagate_light_removal(
+        &mut self,
+        new_solid_block_pos: glam::IVec3,
+        light_level_removed: u8,
+    ) {
         if light_level_removed == 0 {
             return;
         }
@@ -156,11 +159,40 @@ impl World {
                     self.set_light_level(neighbor_pos, 0);
                     removal_queue.push_back((neighbor_pos, neighbor_light));
                 } else {
-                    relight_queue.push_back(neighbor_pos);
+                    if self.should_be_relit(neighbor_pos) {
+                        relight_queue.push_back(neighbor_pos);
+                    } else {
+                        self.set_light_level(neighbor_pos, 0);
+                        removal_queue.push_back((neighbor_pos, neighbor_light));
+                    }
                 }
             }
         }
         self.run_light_propagation_queue(relight_queue);
+    }
+
+    fn should_be_relit(&self, pos: glam::IVec3) -> bool {
+        for offset in [
+            glam::IVec3::X,
+            glam::IVec3::NEG_X,
+            glam::IVec3::Y,
+            glam::IVec3::NEG_Y,
+            glam::IVec3::Z,
+            glam::IVec3::NEG_Z,
+        ] {
+            let neighbor = pos + offset;
+            let neighbor_light = self.get_light_level(neighbor);
+
+            // Sky light goes straight down with no decay
+            if offset == glam::IVec3::Y && neighbor_light == 15 {
+                return true;
+            }
+
+            if neighbor_light > self.get_light_level(pos) {
+                return true;
+            }
+        }
+        false
     }
 
     fn run_light_propagation_queue(&mut self, mut queue: VecDeque<glam::IVec3>) {
@@ -230,6 +262,8 @@ impl World {
             world_block_pos.z as f32,
         );
 
+        let light_level_removed = self.get_light_level(world_block_pos);
+
         let chunk = self.get_or_create_chunk(chunk_x, chunk_z);
         if chunk
             .get_block(local_x, local_y, local_z)
@@ -245,7 +279,7 @@ impl World {
         if !old_block_was_transparent && new_block_is_transparent {
             self.propagate_light_addition(world_block_pos);
         } else {
-            self.propagate_light_removal(world_block_pos);
+            self.propagate_light_removal(world_block_pos, light_level_removed);
         }
 
         Ok((chunk_x, chunk_z))
