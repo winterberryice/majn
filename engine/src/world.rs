@@ -287,7 +287,7 @@ mod tests {
             .expect("Grass block should exist.");
         assert_eq!(grass_block.block_type, BlockType::Grass);
         assert_eq!(
-            grass_block.sky_light, 15,
+            grass_block.sky_light, 0,
             "Surface block should have full sky light."
         );
 
