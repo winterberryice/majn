@@ -15,6 +15,7 @@ This version represents the current, functional state of the engine. The goal of
 * - [x] **Rendering & Visuals:**
     * Static chunk rendering with basic face culling.
     * Texture mapping support via a texture atlas.
+    * Basic lighting system (ambient light + one directional light for the sun).
 * - [x] **Interaction:**
     * Raycasting for block selection.
     * Block placement and removal.
@@ -70,7 +71,6 @@ fix fps drop on camera movement caused by commit (e19f4d4e0aad359b9c5607298b6b79
     * Add swimming/water physics.
 * **Advanced Rendering:**
     * Frustum Culling (don't process chunks that are outside the camera's view).
-    * Basic lighting system (ambient light + one directional light for the sun).
     * Support for transparent blocks (e.g., water, glass).
 * **Entities:**
     * Basic Entity Component System (ECS) for mobs and other dynamic objects.
