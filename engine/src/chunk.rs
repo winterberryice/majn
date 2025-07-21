@@ -218,11 +218,10 @@ impl Chunk {
                 for y in (0..CHUNK_HEIGHT).rev() {
                     let block = &mut self.blocks[x][y][z];
 
-                    // A block with sky access always has a light value of 15.
-                    block.sky_light = 15;
-
                     // Only transparent blocks can propagate this light to neighbors.
                     if block.is_transparent() {
+                        // A block with sky access always has a light value of 15.
+                        block.sky_light = 15;
                         light_queue.push_back((x, y, z));
                     } else {
                         // If we hit a solid block, it receives light but stops it from
