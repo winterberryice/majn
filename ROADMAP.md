@@ -25,6 +25,8 @@ This version represents the current, functional state of the engine. The goal of
 * - [x] **Architecture & Build:**
     * Modular code structure (`player`, `world`, `renderer`, etc.).
     * Automated builds for Windows, Linux, and macOS (Universal) via GitHub Actions.
+* - [x] **Player Physics:**
+    * Refine player movement values (acceleration, friction, jump height) for better game feel.
 
 ---
 
@@ -32,8 +34,6 @@ This version represents the current, functional state of the engine. The goal of
 
 The primary goal of this version is to refine the existing gameplay loop and improve the overall feel and visual consistency of the core experience.
 
-* - [ ] **Player Physics:**
-    * Refine player movement values (acceleration, friction, jump height) for better game feel.
 * - [ ] **Visual Polish:**
     * Implement biome tints (e.g., for grass, foliage) in the shader to add color variety to the world.
     * Add simple visual/audio feedback for block placement and removal.
