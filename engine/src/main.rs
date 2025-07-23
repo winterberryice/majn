@@ -159,7 +159,7 @@ impl ApplicationHandler for App {
         if self.window.is_none() {
             let window_attributes = Window::default_attributes()
                 .with_title("Hello WGPU with ApplicationHandler!")
-                .with_inner_size(PhysicalSize::new(854, 480));
+                .with_inner_size(PhysicalSize::new(1280, 720));
             let window_arc = Arc::new(event_loop.create_window(window_attributes).unwrap());
             self.window = Some(Arc::clone(&window_arc));
             let initial_size = window_arc.inner_size();
@@ -252,7 +252,8 @@ impl Vertex {
                 wgpu::VertexAttribute {
                     offset: (std::mem::size_of::<[f32; 3]>() * 2
                         + std::mem::size_of::<[f32; 2]>()
-                        + std::mem::size_of::<u32>()) as wgpu::BufferAddress,
+                        + std::mem::size_of::<u32>())
+                        as wgpu::BufferAddress,
                     shader_location: 4,
                     format: wgpu::VertexFormat::Uint32,
                 },
