@@ -16,6 +16,7 @@ use std::sync::Arc;
 use wgpu::Trace;
 use winit::{
     application::ApplicationHandler,
+    dpi::PhysicalSize,
     event::*,
     event_loop::{ActiveEventLoop, ControlFlow, EventLoop},
     keyboard::{KeyCode, PhysicalKey},
@@ -156,8 +157,9 @@ impl ApplicationHandler for App {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         event_loop.set_control_flow(ControlFlow::Poll);
         if self.window.is_none() {
-            let window_attributes =
-                Window::default_attributes().with_title("Hello WGPU with ApplicationHandler!");
+            let window_attributes = Window::default_attributes()
+                .with_title("Hello WGPU with ApplicationHandler!")
+                .with_inner_size(PhysicalSize::new(854, 480));
             let window_arc = Arc::new(event_loop.create_window(window_attributes).unwrap());
             self.window = Some(Arc::clone(&window_arc));
             let initial_size = window_arc.inner_size();
