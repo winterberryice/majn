@@ -1,0 +1,220 @@
+// engine/src/ui/inventory.rs
+
+#[repr(C)]
+#[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct InventoryVertex {
+    position: [f32; 2],
+}
+
+impl InventoryVertex {
+    pub fn desc() -> wgpu::VertexBufferLayout<'static> {
+        wgpu::VertexBufferLayout {
+            array_stride: std::mem::size_of::<InventoryVertex>() as wgpu::BufferAddress,
+            step_mode: wgpu::VertexStepMode::Vertex,
+            attributes: &[
+                wgpu::VertexAttribute {
+                    offset: 0,
+                    shader_location: 0, // Corresponds to `layout(location = 0)` in shader
+                    format: wgpu::VertexFormat::Float32x2,
+                },
+            ],
+        }
+    }
+}
+
+pub struct Inventory {
+    pub vertex_buffer: wgpu::Buffer,
+    pub num_vertices: u32,
+    pub render_pipeline: wgpu::RenderPipeline,
+    projection_matrix: glam::Mat4,
+    pub projection_buffer: wgpu::Buffer,
+    projection_bind_group_layout: wgpu::BindGroupLayout,
+    pub projection_bind_group: wgpu::BindGroup,
+}
+
+impl Inventory {
+    pub fn new(device: &wgpu::Device, config: &wgpu::SurfaceConfiguration) -> Self {
+        use wgpu::util::DeviceExt;
+
+        const SLOT_SIZE: f32 = 50.0;
+        const SLOT_MARGIN: f32 = 5.0;
+        const TOTAL_SLOT_SIZE: f32 = SLOT_SIZE + SLOT_MARGIN;
+
+        const GRID_COLS: i32 = 9;
+        const GRID_ROWS: i32 = 3;
+
+        const ACTIVE_GRID_COLS: i32 = 9;
+        const ACTIVE_GRID_ROWS: i32 = 1;
+
+
+        let mut vertices: Vec<InventoryVertex> = Vec::new();
+
+        // Main inventory grid (3x9)
+        let grid_width = GRID_COLS as f32 * TOTAL_SLOT_SIZE - SLOT_MARGIN;
+        let grid_height = GRID_ROWS as f32 * TOTAL_SLOT_SIZE - SLOT_MARGIN;
+        let start_x = -grid_width / 2.0;
+        let start_y = -grid_height / 2.0;
+
+        for row in 0..GRID_ROWS {
+            for col in 0..GRID_COLS {
+                let x = start_x + col as f32 * TOTAL_SLOT_SIZE;
+                let y = start_y + row as f32 * TOTAL_SLOT_SIZE;
+
+                // Create a quad for each slot
+                vertices.push(InventoryVertex { position: [x, y] });
+                vertices.push(InventoryVertex { position: [x + SLOT_SIZE, y] });
+                vertices.push(InventoryVertex { position: [x, y + SLOT_SIZE] });
+
+                vertices.push(InventoryVertex { position: [x + SLOT_SIZE, y] });
+                vertices.push(InventoryVertex { position: [x + SLOT_SIZE, y + SLOT_SIZE] });
+                vertices.push(InventoryVertex { position: [x, y + SLOT_SIZE] });
+            }
+        }
+
+        // Active items grid (1x9)
+        let active_grid_width = ACTIVE_GRID_COLS as f32 * TOTAL_SLOT_SIZE - SLOT_MARGIN;
+        let active_start_x = -active_grid_width / 2.0;
+        let active_start_y = start_y - TOTAL_SLOT_SIZE - 20.0; // Position below the main grid
+
+        for row in 0..ACTIVE_GRID_ROWS {
+            for col in 0..ACTIVE_GRID_COLS {
+                let x = active_start_x + col as f32 * TOTAL_SLOT_SIZE;
+                let y = active_start_y + row as f32 * TOTAL_SLOT_SIZE;
+
+                // Create a quad for each slot
+                vertices.push(InventoryVertex { position: [x, y] });
+                vertices.push(InventoryVertex { position: [x + SLOT_SIZE, y] });
+                vertices.push(InventoryVertex { position: [x, y + SLOT_SIZE] });
+
+                vertices.push(InventoryVertex { position: [x + SLOT_SIZE, y] });
+                vertices.push(InventoryVertex { position: [x + SLOT_SIZE, y + SLOT_SIZE] });
+                vertices.push(InventoryVertex { position: [x, y + SLOT_SIZE] });
+            }
+        }
+
+        let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Inventory Vertex Buffer"),
+            contents: bytemuck::cast_slice(&vertices),
+            usage: wgpu::BufferUsages::VERTEX,
+        });
+        let num_vertices = vertices.len() as u32;
+
+        let projection_matrix = glam::Mat4::orthographic_rh(
+            -(config.width as f32) / 2.0,
+            config.width as f32 / 2.0,
+            config.height as f32 / 2.0,
+            -(config.height as f32) / 2.0,
+            -1.0,
+            1.0,
+        );
+
+        let projection_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Inventory Projection Buffer"),
+            contents: bytemuck::cast_slice(projection_matrix.as_ref()),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        });
+
+        let projection_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            entries: &[wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::VERTEX,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            }],
+            label: Some("inventory_projection_bind_group_layout"),
+        });
+
+        let projection_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            layout: &projection_bind_group_layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: projection_buffer.as_entire_binding(),
+            }],
+            label: Some("inventory_projection_bind_group"),
+        });
+
+        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("UI Shader"),
+            source: wgpu::ShaderSource::Wgsl(include_str!("../ui_shader.wgsl").into()),
+        });
+
+        let render_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("Inventory Render Pipeline Layout"),
+            bind_group_layouts: &[&projection_bind_group_layout],
+            push_constant_ranges: &[],
+        });
+
+        let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("Inventory Render Pipeline"),
+            layout: Some(&render_pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &shader,
+                entry_point: Some("vs_main"),
+                buffers: &[InventoryVertex::desc()],
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &shader,
+                entry_point: Some("fs_main"),
+                targets: &[Some(wgpu::ColorTargetState {
+                    format: config.format,
+                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
+            }),
+            primitive: wgpu::PrimitiveState {
+                topology: wgpu::PrimitiveTopology::TriangleList,
+                strip_index_format: None,
+                front_face: wgpu::FrontFace::Ccw,
+                cull_mode: None,
+                polygon_mode: wgpu::PolygonMode::Fill,
+                unclipped_depth: false,
+                conservative: false,
+            },
+            depth_stencil: None,
+            multisample: wgpu::MultisampleState::default(),
+            multiview: None,
+            cache: None,
+        });
+
+        Self {
+            vertex_buffer,
+            num_vertices,
+            render_pipeline,
+            projection_matrix,
+            projection_buffer,
+            projection_bind_group_layout,
+            projection_bind_group,
+        }
+    }
+
+    pub fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>, queue: &wgpu::Queue) {
+        if new_size.width > 0 && new_size.height > 0 {
+            self.projection_matrix = glam::Mat4::orthographic_rh(
+                -(new_size.width as f32) / 2.0,
+                new_size.width as f32 / 2.0,
+                new_size.height as f32 / 2.0,
+                -(new_size.height as f32) / 2.0,
+                -1.0,
+                1.0,
+            );
+            queue.write_buffer(
+                &self.projection_buffer,
+                0,
+                bytemuck::cast_slice(self.projection_matrix.as_ref()),
+            );
+        }
+    }
+
+    pub fn draw<'pass>(&'pass self, render_pass: &mut wgpu::RenderPass<'pass>) {
+        render_pass.set_pipeline(&self.render_pipeline);
+        render_pass.set_bind_group(0, &self.projection_bind_group, &[]);
+        render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
+        render_pass.draw(0..self.num_vertices, 0..1);
+    }
+}
