@@ -4,6 +4,7 @@
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct InventoryVertex {
     position: [f32; 2],
+    color: [f32; 4],
 }
 
 impl InventoryVertex {
@@ -14,8 +15,13 @@ impl InventoryVertex {
             attributes: &[
                 wgpu::VertexAttribute {
                     offset: 0,
-                    shader_location: 0, // Corresponds to `layout(location = 0)` in shader
+                    shader_location: 0,
                     format: wgpu::VertexFormat::Float32x2,
+                },
+                wgpu::VertexAttribute {
+                    offset: std::mem::size_of::<[f32; 2]>() as wgpu::BufferAddress,
+                    shader_location: 1,
+                    format: wgpu::VertexFormat::Float32x4,
                 },
             ],
         }
@@ -50,18 +56,19 @@ impl Inventory {
         let mut vertices: Vec<InventoryVertex> = Vec::new();
 
         // Background
-        let bg_width = (GRID_COLS as f32 * TOTAL_SLOT_SIZE) + SLOT_MARGIN;
-        let bg_height = ((GRID_ROWS + ACTIVE_GRID_ROWS) as f32 * TOTAL_SLOT_SIZE) + SLOT_MARGIN * 4.0;
+        let bg_width = (GRID_COLS as f32 * TOTAL_SLOT_SIZE) + SLOT_MARGIN * 2.0;
+        let bg_height = ((GRID_ROWS + ACTIVE_GRID_ROWS) as f32 * TOTAL_SLOT_SIZE) + SLOT_MARGIN * 5.0;
         let bg_start_x = -bg_width / 2.0;
-        let bg_start_y = -bg_height / 2.0;
+        let bg_start_y = -bg_height / 2.0 + 25.0;
+        let bg_color = [0.1, 0.1, 0.1, 0.8];
 
-        vertices.push(InventoryVertex { position: [bg_start_x, bg_start_y] });
-        vertices.push(InventoryVertex { position: [bg_start_x + bg_width, bg_start_y] });
-        vertices.push(InventoryVertex { position: [bg_start_x, bg_start_y + bg_height] });
+        vertices.push(InventoryVertex { position: [bg_start_x, bg_start_y], color: bg_color });
+        vertices.push(InventoryVertex { position: [bg_start_x + bg_width, bg_start_y], color: bg_color });
+        vertices.push(InventoryVertex { position: [bg_start_x, bg_start_y + bg_height], color: bg_color });
 
-        vertices.push(InventoryVertex { position: [bg_start_x + bg_width, bg_start_y] });
-        vertices.push(InventoryVertex { position: [bg_start_x + bg_width, bg_start_y + bg_height] });
-        vertices.push(InventoryVertex { position: [bg_start_x, bg_start_y + bg_height] });
+        vertices.push(InventoryVertex { position: [bg_start_x + bg_width, bg_start_y], color: bg_color });
+        vertices.push(InventoryVertex { position: [bg_start_x + bg_width, bg_start_y + bg_height], color: bg_color });
+        vertices.push(InventoryVertex { position: [bg_start_x, bg_start_y + bg_height], color: bg_color });
 
 
         // Main inventory grid (3x9)
@@ -69,6 +76,7 @@ impl Inventory {
         let grid_height = GRID_ROWS as f32 * TOTAL_SLOT_SIZE - SLOT_MARGIN;
         let start_x = -grid_width / 2.0;
         let start_y = -grid_height / 2.0;
+        let slot_color = [0.3, 0.3, 0.3, 0.8];
 
         for row in 0..GRID_ROWS {
             for col in 0..GRID_COLS {
@@ -76,13 +84,13 @@ impl Inventory {
                 let y = start_y + row as f32 * TOTAL_SLOT_SIZE;
 
                 // Create a quad for each slot
-                vertices.push(InventoryVertex { position: [x, y] });
-                vertices.push(InventoryVertex { position: [x + SLOT_SIZE, y] });
-                vertices.push(InventoryVertex { position: [x, y + SLOT_SIZE] });
+                vertices.push(InventoryVertex { position: [x, y], color: slot_color });
+                vertices.push(InventoryVertex { position: [x + SLOT_SIZE, y], color: slot_color });
+                vertices.push(InventoryVertex { position: [x, y + SLOT_SIZE], color: slot_color });
 
-                vertices.push(InventoryVertex { position: [x + SLOT_SIZE, y] });
-                vertices.push(InventoryVertex { position: [x + SLOT_SIZE, y + SLOT_SIZE] });
-                vertices.push(InventoryVertex { position: [x, y + SLOT_SIZE] });
+                vertices.push(InventoryVertex { position: [x + SLOT_SIZE, y], color: slot_color });
+                vertices.push(InventoryVertex { position: [x + SLOT_SIZE, y + SLOT_SIZE], color: slot_color });
+                vertices.push(InventoryVertex { position: [x, y + SLOT_SIZE], color: slot_color });
             }
         }
 
@@ -90,6 +98,7 @@ impl Inventory {
         let active_grid_width = ACTIVE_GRID_COLS as f32 * TOTAL_SLOT_SIZE - SLOT_MARGIN;
         let active_start_x = -active_grid_width / 2.0;
         let active_start_y = start_y + grid_height + TOTAL_SLOT_SIZE + 20.0; // Position above the main grid
+        let active_slot_color = [0.4, 0.4, 0.4, 0.8];
 
         for row in 0..ACTIVE_GRID_ROWS {
             for col in 0..ACTIVE_GRID_COLS {
@@ -97,13 +106,13 @@ impl Inventory {
                 let y = active_start_y + row as f32 * TOTAL_SLOT_SIZE;
 
                 // Create a quad for each slot
-                vertices.push(InventoryVertex { position: [x, y] });
-                vertices.push(InventoryVertex { position: [x + SLOT_SIZE, y] });
-                vertices.push(InventoryVertex { position: [x, y + SLOT_SIZE] });
+                vertices.push(InventoryVertex { position: [x, y], color: active_slot_color });
+                vertices.push(InventoryVertex { position: [x + SLOT_SIZE, y], color: active_slot_color });
+                vertices.push(InventoryVertex { position: [x, y + SLOT_SIZE], color: active_slot_color });
 
-                vertices.push(InventoryVertex { position: [x + SLOT_SIZE, y] });
-                vertices.push(InventoryVertex { position: [x + SLOT_SIZE, y + SLOT_SIZE] });
-                vertices.push(InventoryVertex { position: [x, y + SLOT_SIZE] });
+                vertices.push(InventoryVertex { position: [x + SLOT_SIZE, y], color: active_slot_color });
+                vertices.push(InventoryVertex { position: [x + SLOT_SIZE, y + SLOT_SIZE], color: active_slot_color });
+                vertices.push(InventoryVertex { position: [x, y + SLOT_SIZE], color: active_slot_color });
             }
         }
 
