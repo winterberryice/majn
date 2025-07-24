@@ -32,9 +32,7 @@ pub struct Inventory {
     pub vertex_buffer: wgpu::Buffer,
     pub num_vertices: u32,
     pub render_pipeline: wgpu::RenderPipeline,
-    projection_matrix: glam::Mat4,
     pub projection_buffer: wgpu::Buffer,
-    projection_bind_group_layout: wgpu::BindGroupLayout,
     pub projection_bind_group: wgpu::BindGroup,
 }
 
@@ -210,28 +208,8 @@ impl Inventory {
             vertex_buffer,
             num_vertices,
             render_pipeline,
-            projection_matrix,
             projection_buffer,
-            projection_bind_group_layout,
             projection_bind_group,
-        }
-    }
-
-    pub fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>, queue: &wgpu::Queue) {
-        if new_size.width > 0 && new_size.height > 0 {
-            self.projection_matrix = glam::Mat4::orthographic_rh(
-                -(new_size.width as f32) / 2.0,
-                new_size.width as f32 / 2.0,
-                new_size.height as f32 / 2.0,
-                -(new_size.height as f32) / 2.0,
-                -1.0,
-                1.0,
-            );
-            queue.write_buffer(
-                &self.projection_buffer,
-                0,
-                bytemuck::cast_slice(self.projection_matrix.as_ref()),
-            );
         }
     }
 

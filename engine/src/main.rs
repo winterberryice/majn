@@ -1355,9 +1355,10 @@ impl State {
                 timestamp_writes: None,
                 occlusion_query_set: None,
             });
-            self.crosshair.draw(&mut ui_render_pass);
             if self.inventory_open {
                 self.inventory.draw(&mut ui_render_pass);
+            } else {
+                self.crosshair.draw(&mut ui_render_pass);
             }
         }
         {
