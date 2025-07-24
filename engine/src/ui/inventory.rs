@@ -32,7 +32,6 @@ pub struct Inventory {
     pub vertex_buffer: wgpu::Buffer,
     pub num_vertices: u32,
     pub render_pipeline: wgpu::RenderPipeline,
-    pub projection_buffer: wgpu::Buffer,
     pub projection_bind_group: wgpu::BindGroup,
 }
 
@@ -95,7 +94,7 @@ impl Inventory {
         // Active items grid (1x9)
         let active_grid_width = ACTIVE_GRID_COLS as f32 * TOTAL_SLOT_SIZE - SLOT_MARGIN;
         let active_start_x = -active_grid_width / 2.0;
-        let active_start_y = start_y + grid_height + TOTAL_SLOT_SIZE + 20.0; // Position above the main grid
+        let active_start_y = start_y + grid_height + TOTAL_SLOT_SIZE; // Position above the main grid
         let active_slot_color = [0.4, 0.4, 0.4, 0.8];
 
         for row in 0..ACTIVE_GRID_ROWS {
@@ -208,7 +207,6 @@ impl Inventory {
             vertex_buffer,
             num_vertices,
             render_pipeline,
-            projection_buffer,
             projection_bind_group,
         }
     }
