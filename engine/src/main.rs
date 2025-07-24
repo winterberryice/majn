@@ -98,7 +98,11 @@ impl App {
                 }
                 if mouse_element_state == ElementState::Pressed {
                     if !self.mouse_grabbed {
-                        self.set_mouse_grab(true);
+                        if let Some(state) = self.state.as_ref() {
+                            if !state.inventory_open {
+                                self.set_mouse_grab(true);
+                            }
+                        }
                     }
                 }
             }

@@ -49,6 +49,21 @@ impl Inventory {
 
         let mut vertices: Vec<InventoryVertex> = Vec::new();
 
+        // Background
+        let bg_width = (GRID_COLS as f32 * TOTAL_SLOT_SIZE) + SLOT_MARGIN;
+        let bg_height = ((GRID_ROWS + ACTIVE_GRID_ROWS) as f32 * TOTAL_SLOT_SIZE) + SLOT_MARGIN * 4.0;
+        let bg_start_x = -bg_width / 2.0;
+        let bg_start_y = -bg_height / 2.0;
+
+        vertices.push(InventoryVertex { position: [bg_start_x, bg_start_y] });
+        vertices.push(InventoryVertex { position: [bg_start_x + bg_width, bg_start_y] });
+        vertices.push(InventoryVertex { position: [bg_start_x, bg_start_y + bg_height] });
+
+        vertices.push(InventoryVertex { position: [bg_start_x + bg_width, bg_start_y] });
+        vertices.push(InventoryVertex { position: [bg_start_x + bg_width, bg_start_y + bg_height] });
+        vertices.push(InventoryVertex { position: [bg_start_x, bg_start_y + bg_height] });
+
+
         // Main inventory grid (3x9)
         let grid_width = GRID_COLS as f32 * TOTAL_SLOT_SIZE - SLOT_MARGIN;
         let grid_height = GRID_ROWS as f32 * TOTAL_SLOT_SIZE - SLOT_MARGIN;
@@ -74,7 +89,7 @@ impl Inventory {
         // Active items grid (1x9)
         let active_grid_width = ACTIVE_GRID_COLS as f32 * TOTAL_SLOT_SIZE - SLOT_MARGIN;
         let active_start_x = -active_grid_width / 2.0;
-        let active_start_y = start_y - TOTAL_SLOT_SIZE - 20.0; // Position below the main grid
+        let active_start_y = start_y + grid_height + TOTAL_SLOT_SIZE + 20.0; // Position above the main grid
 
         for row in 0..ACTIVE_GRID_ROWS {
             for col in 0..ACTIVE_GRID_COLS {
