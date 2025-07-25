@@ -50,19 +50,37 @@ impl Inventory {
 
         // Background
         let bg_width = (GRID_COLS as f32 * TOTAL_SLOT_SIZE) + SLOT_MARGIN * 2.0;
-        let bg_height = (GRID_ROWS as f32 * TOTAL_SLOT_SIZE) + SLOT_MARGIN * 2.0;
+        let bg_height =
+            (GRID_ROWS as f32 * TOTAL_SLOT_SIZE) + SLOT_MARGIN * 2.0 + SLOT_MARGIN * 2.0;
         let bg_start_x = -bg_width / 2.0;
-        let bg_start_y = -bg_height / 2.0;
+        let bg_start_y = -bg_height / 2.0 + SLOT_MARGIN;
         let bg_color = [0.1, 0.1, 0.1, 0.8];
 
-        vertices.push(InventoryVertex { position: [bg_start_x, bg_start_y], color: bg_color });
-        vertices.push(InventoryVertex { position: [bg_start_x + bg_width, bg_start_y], color: bg_color });
-        vertices.push(InventoryVertex { position: [bg_start_x, bg_start_y + bg_height], color: bg_color });
+        vertices.push(InventoryVertex {
+            position: [bg_start_x, bg_start_y],
+            color: bg_color,
+        });
+        vertices.push(InventoryVertex {
+            position: [bg_start_x + bg_width, bg_start_y],
+            color: bg_color,
+        });
+        vertices.push(InventoryVertex {
+            position: [bg_start_x, bg_start_y + bg_height],
+            color: bg_color,
+        });
 
-        vertices.push(InventoryVertex { position: [bg_start_x + bg_width, bg_start_y], color: bg_color });
-        vertices.push(InventoryVertex { position: [bg_start_x + bg_width, bg_start_y + bg_height], color: bg_color });
-        vertices.push(InventoryVertex { position: [bg_start_x, bg_start_y + bg_height], color: bg_color });
-
+        vertices.push(InventoryVertex {
+            position: [bg_start_x + bg_width, bg_start_y],
+            color: bg_color,
+        });
+        vertices.push(InventoryVertex {
+            position: [bg_start_x + bg_width, bg_start_y + bg_height],
+            color: bg_color,
+        });
+        vertices.push(InventoryVertex {
+            position: [bg_start_x, bg_start_y + bg_height],
+            color: bg_color,
+        });
 
         // Main inventory grid (4x9)
         let grid_width = GRID_COLS as f32 * TOTAL_SLOT_SIZE - SLOT_MARGIN;
@@ -74,16 +92,37 @@ impl Inventory {
         for row in 0..GRID_ROWS {
             for col in 0..GRID_COLS {
                 let x = start_x + col as f32 * TOTAL_SLOT_SIZE;
-                let y = start_y + row as f32 * TOTAL_SLOT_SIZE;
+                let mut y = start_y + row as f32 * TOTAL_SLOT_SIZE;
+                if row > 2 {
+                    y += SLOT_MARGIN * 2.0;
+                }
 
                 // Create a quad for each slot
-                vertices.push(InventoryVertex { position: [x, y], color: slot_color });
-                vertices.push(InventoryVertex { position: [x + SLOT_SIZE, y], color: slot_color });
-                vertices.push(InventoryVertex { position: [x, y + SLOT_SIZE], color: slot_color });
+                vertices.push(InventoryVertex {
+                    position: [x, y],
+                    color: slot_color,
+                });
+                vertices.push(InventoryVertex {
+                    position: [x + SLOT_SIZE, y],
+                    color: slot_color,
+                });
+                vertices.push(InventoryVertex {
+                    position: [x, y + SLOT_SIZE],
+                    color: slot_color,
+                });
 
-                vertices.push(InventoryVertex { position: [x + SLOT_SIZE, y], color: slot_color });
-                vertices.push(InventoryVertex { position: [x + SLOT_SIZE, y + SLOT_SIZE], color: slot_color });
-                vertices.push(InventoryVertex { position: [x, y + SLOT_SIZE], color: slot_color });
+                vertices.push(InventoryVertex {
+                    position: [x + SLOT_SIZE, y],
+                    color: slot_color,
+                });
+                vertices.push(InventoryVertex {
+                    position: [x + SLOT_SIZE, y + SLOT_SIZE],
+                    color: slot_color,
+                });
+                vertices.push(InventoryVertex {
+                    position: [x, y + SLOT_SIZE],
+                    color: slot_color,
+                });
             }
         }
 
@@ -109,19 +148,20 @@ impl Inventory {
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
 
-        let projection_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            entries: &[wgpu::BindGroupLayoutEntry {
-                binding: 0,
-                visibility: wgpu::ShaderStages::VERTEX,
-                ty: wgpu::BindingType::Buffer {
-                    ty: wgpu::BufferBindingType::Uniform,
-                    has_dynamic_offset: false,
-                    min_binding_size: None,
-                },
-                count: None,
-            }],
-            label: Some("inventory_projection_bind_group_layout"),
-        });
+        let projection_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                entries: &[wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::VERTEX,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                }],
+                label: Some("inventory_projection_bind_group_layout"),
+            });
 
         let projection_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             layout: &projection_bind_group_layout,
@@ -137,11 +177,12 @@ impl Inventory {
             source: wgpu::ShaderSource::Wgsl(include_str!("../ui_shader.wgsl").into()),
         });
 
-        let render_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("Inventory Render Pipeline Layout"),
-            bind_group_layouts: &[&projection_bind_group_layout],
-            push_constant_ranges: &[],
-        });
+        let render_pipeline_layout =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("Inventory Render Pipeline Layout"),
+                bind_group_layouts: &[&projection_bind_group_layout],
+                push_constant_ranges: &[],
+            });
 
         let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("Inventory Render Pipeline"),
