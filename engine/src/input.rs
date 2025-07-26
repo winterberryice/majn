@@ -18,7 +18,11 @@ impl InputState {
         &mut self,
         button: winit::event::MouseButton,
         state: winit::event::ElementState,
+        inventory_open: bool,
     ) {
+        if inventory_open {
+            return;
+        }
         let is_pressed = state == winit::event::ElementState::Pressed;
         match button {
             winit::event::MouseButton::Left => {
