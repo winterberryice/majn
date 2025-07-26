@@ -94,7 +94,8 @@ impl App {
                 ..
             } => {
                 if let Some(s) = self.state.as_mut() {
-                    s.input_state.on_mouse_input(button, mouse_element_state);
+                    s.input_state
+                        .on_mouse_input(button, mouse_element_state, s.inventory_open);
                 }
                 if mouse_element_state == ElementState::Pressed {
                     if !self.mouse_grabbed {
@@ -1036,10 +1037,16 @@ impl State {
     }
 
     pub fn process_mouse_motion(&mut self, delta_x: f64, delta_y: f64) {
-        self.player.process_mouse_movement(delta_x, delta_y);
+        if !self.inventory_open {
+            self.player.process_mouse_movement(delta_x, delta_y);
+        }
     }
 
     fn input(&mut self, event: &WindowEvent) -> bool {
+        if self.inventory_open {
+            return false;
+        }
+
         match event {
             WindowEvent::KeyboardInput {
                 event:
@@ -1088,7 +1095,9 @@ impl State {
     }
 
     fn update(&mut self) {
-        self.handle_block_interactions();
+        if !self.inventory_open {
+            self.handle_block_interactions();
+        }
         let dt_secs = 1.0 / 60.0;
         let player_pos = self.player.position;
         let current_chunk_x = (player_pos.x / CHUNK_WIDTH as f32).floor() as i32;
@@ -1117,19 +1126,22 @@ impl State {
             self.build_or_rebuild_chunk_mesh(*cx, *cz);
         }
 
-        self.player
-            .update_physics_and_collision(dt_secs, &self.world);
-        const RAYCAST_MAX_DISTANCE: f32 = 5.0;
-        self.selected_block =
-            crate::raycast::cast_ray(&self.player, &self.world, RAYCAST_MAX_DISTANCE);
+        let mut selected_block_data = None;
+        if !self.inventory_open {
+            self.player
+                .update_physics_and_collision(dt_secs, &self.world);
+            const RAYCAST_MAX_DISTANCE: f32 = 5.0;
+            self.selected_block =
+                crate::raycast::cast_ray(&self.player, &self.world, RAYCAST_MAX_DISTANCE);
 
-        let selected_block_data = if let Some((pos, _face)) = self.selected_block {
-            self.world
-                .get_block_at_world(pos.x as f32, pos.y as f32, pos.z as f32)
-                .map(|block| (pos, block))
-        } else {
-            None
-        };
+            selected_block_data = if let Some((pos, _face)) = self.selected_block {
+                self.world
+                    .get_block_at_world(pos.x as f32, pos.y as f32, pos.z as f32)
+                    .map(|block| (pos, block))
+            } else {
+                None
+            };
+        }
 
         if let Some((block_pos, _)) = self.selected_block {
             self.wireframe_renderer.update_selection(Some(block_pos));
