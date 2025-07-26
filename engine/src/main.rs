@@ -64,17 +64,30 @@ impl App {
             WindowEvent::KeyboardInput {
                 event: ref key_event,
                 ..
-            } if key_event.physical_key == PhysicalKey::Code(KeyCode::Escape)
-                && key_event.state == ElementState::Pressed =>
-            {
-                if self.mouse_grabbed {
-                    self.set_mouse_grab(false);
-                    event_consumed_by_grab_logic = true;
-                } else {
-                    active_loop.exit();
-                    return;
+            } if key_event.state == ElementState::Pressed => match key_event.physical_key {
+                PhysicalKey::Code(KeyCode::Escape) => {
+                    if self.mouse_grabbed {
+                        self.set_mouse_grab(false);
+                        if let Some(state) = self.state.as_mut() {
+                            state.inventory_open = false;
+                        }
+                        event_consumed_by_grab_logic = true;
+                    } else {
+                        active_loop.exit();
+                        return;
+                    }
                 }
-            }
+                PhysicalKey::Code(KeyCode::KeyE) => {
+                    let mut inventory_open = false;
+                    if let Some(state) = self.state.as_mut() {
+                        state.inventory_open = !state.inventory_open;
+                        inventory_open = state.inventory_open;
+                        event_consumed_by_grab_logic = true;
+                    }
+                    self.set_mouse_grab(!inventory_open);
+                }
+                _ => {}
+            },
             WindowEvent::MouseInput {
                 button,
                 state: mouse_element_state,
@@ -85,7 +98,11 @@ impl App {
                 }
                 if mouse_element_state == ElementState::Pressed {
                     if !self.mouse_grabbed {
-                        self.set_mouse_grab(true);
+                        if let Some(state) = self.state.as_ref() {
+                            if !state.inventory_open {
+                                self.set_mouse_grab(true);
+                            }
+                        }
                     }
                 }
             }
@@ -307,6 +324,8 @@ struct State {
     depth_texture_view: wgpu::TextureView,
     debug_overlay: DebugOverlay,
     crosshair: ui::crosshair::Crosshair,
+    inventory: ui::inventory::Inventory,
+    inventory_open: bool,
     wireframe_renderer: WireframeRenderer,
     selected_block: Option<(IVec3, BlockFace)>,
     diffuse_bind_group: wgpu::BindGroup,
@@ -596,6 +615,7 @@ impl State {
 
         let debug_overlay = DebugOverlay::new(&device, &config);
         let crosshair = ui::crosshair::Crosshair::new(&device, &config);
+        let inventory = ui::inventory::Inventory::new(&device, &config);
         let wireframe_renderer =
             WireframeRenderer::new(&device, &config, &camera_bind_group_layout);
 
@@ -620,6 +640,8 @@ impl State {
             wireframe_renderer,
             selected_block: None,
             crosshair,
+            inventory,
+            inventory_open: false,
             diffuse_bind_group,
             input_state: input::InputState::new(),
         }
@@ -1319,22 +1341,25 @@ impl State {
             }
         }
         {
-            let mut crosshair_render_pass =
-                encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                    label: Some("Crosshair Render Pass"),
-                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                        view: &view,
-                        resolve_target: None,
-                        ops: wgpu::Operations {
-                            load: wgpu::LoadOp::Load,
-                            store: wgpu::StoreOp::Store,
-                        },
-                    })],
-                    depth_stencil_attachment: None,
-                    timestamp_writes: None,
-                    occlusion_query_set: None,
-                });
-            self.crosshair.draw(&mut crosshair_render_pass);
+            let mut ui_render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("UI Render Pass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Load,
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+            });
+            if self.inventory_open {
+                self.inventory.draw(&mut ui_render_pass);
+            } else {
+                self.crosshair.draw(&mut ui_render_pass);
+            }
         }
         {
             let mut debug_text_render_pass =

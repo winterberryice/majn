@@ -112,8 +112,8 @@ impl Crosshair {
         });
 
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("UI Shader"),
-            source: wgpu::ShaderSource::Wgsl(include_str!("../ui_shader.wgsl").into()),
+            label: Some("Crosshair Shader"),
+            source: wgpu::ShaderSource::Wgsl(include_str!("../crosshair_shader.wgsl").into()),
         });
 
         let render_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
