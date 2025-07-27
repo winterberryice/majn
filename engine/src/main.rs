@@ -326,6 +326,7 @@ struct State {
     debug_overlay: DebugOverlay,
     crosshair: ui::crosshair::Crosshair,
     inventory: ui::inventory::Inventory,
+    hotbar: ui::hotbar::Hotbar,
     inventory_open: bool,
     wireframe_renderer: WireframeRenderer,
     selected_block: Option<(IVec3, BlockFace)>,
@@ -617,6 +618,7 @@ impl State {
         let debug_overlay = DebugOverlay::new(&device, &config);
         let crosshair = ui::crosshair::Crosshair::new(&device, &config);
         let inventory = ui::inventory::Inventory::new(&device, &config);
+        let hotbar = ui::hotbar::Hotbar::new(&device, &config);
         let wireframe_renderer =
             WireframeRenderer::new(&device, &config, &camera_bind_group_layout);
 
@@ -642,6 +644,7 @@ impl State {
             selected_block: None,
             crosshair,
             inventory,
+            hotbar,
             inventory_open: false,
             diffuse_bind_group,
             input_state: input::InputState::new(),
@@ -1372,6 +1375,7 @@ impl State {
             } else {
                 self.crosshair.draw(&mut ui_render_pass);
             }
+            self.hotbar.draw(&mut ui_render_pass);
         }
         {
             let mut debug_text_render_pass =
