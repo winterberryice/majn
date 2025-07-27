@@ -51,7 +51,7 @@ impl Hotbar {
         let hotbar_height = TOTAL_SLOT_SIZE + SLOT_MARGIN * 2.0;
         let hotbar_start_x = -hotbar_width / 2.0;
         let hotbar_start_y =
-            (config.height as f32 / 2.0) - hotbar_height - (SLOT_MARGIN * 2.0);
+            -(config.height as f32 / 2.0) + (SLOT_MARGIN * 2.0);
         let bg_color = [0.1, 0.1, 0.1, 0.8];
 
         vertices.push(HotbarVertex {
@@ -85,9 +85,7 @@ impl Hotbar {
         // Hotbar slots (1x9)
         let grid_width = GRID_COLS as f32 * TOTAL_SLOT_SIZE - SLOT_MARGIN;
         let start_x = -grid_width / 2.0;
-        let start_y = (config.height as f32 / 2.0)
-            - SLOT_SIZE
-            - (SLOT_MARGIN * 4.0);
+        let start_y = -(config.height as f32 / 2.0) + (SLOT_MARGIN * 3.0);
         let slot_color = [0.3, 0.3, 0.3, 0.8];
 
         for col in 0..GRID_COLS {
