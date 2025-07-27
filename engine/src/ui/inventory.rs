@@ -82,17 +82,20 @@ impl Inventory {
             color: bg_color,
         });
 
-        // Main inventory grid (3x9)
+        // Main inventory grid (4x9)
         let grid_width = GRID_COLS as f32 * TOTAL_SLOT_SIZE - SLOT_MARGIN;
-        let grid_height = (GRID_ROWS as f32 - 1.0) * TOTAL_SLOT_SIZE - SLOT_MARGIN;
+        let grid_height = GRID_ROWS as f32 * TOTAL_SLOT_SIZE - SLOT_MARGIN;
         let start_x = -grid_width / 2.0;
         let start_y = -grid_height / 2.0;
         let slot_color = [0.3, 0.3, 0.3, 0.8];
 
-        for row in 0..(GRID_ROWS - 1) {
+        for row in 0..GRID_ROWS {
             for col in 0..GRID_COLS {
                 let x = start_x + col as f32 * TOTAL_SLOT_SIZE;
-                let y = start_y + row as f32 * TOTAL_SLOT_SIZE;
+                let mut y = start_y + row as f32 * TOTAL_SLOT_SIZE;
+                if row > 2 {
+                    y += SLOT_MARGIN * 2.0;
+                }
 
                 // Create a quad for each slot
                 vertices.push(InventoryVertex {
