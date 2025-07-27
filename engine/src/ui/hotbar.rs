@@ -1,16 +1,16 @@
-// engine/src/ui/inventory.rs
+// engine/src/ui/hotbar.rs
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
-pub struct InventoryVertex {
+pub struct HotbarVertex {
     position: [f32; 2],
     color: [f32; 4],
 }
 
-impl InventoryVertex {
+impl HotbarVertex {
     pub fn desc() -> wgpu::VertexBufferLayout<'static> {
         wgpu::VertexBufferLayout {
-            array_stride: std::mem::size_of::<InventoryVertex>() as wgpu::BufferAddress,
+            array_stride: std::mem::size_of::<HotbarVertex>() as wgpu::BufferAddress,
             step_mode: wgpu::VertexStepMode::Vertex,
             attributes: &[
                 wgpu::VertexAttribute {
@@ -28,103 +28,102 @@ impl InventoryVertex {
     }
 }
 
-pub struct Inventory {
+pub struct Hotbar {
     pub vertex_buffer: wgpu::Buffer,
     pub num_vertices: u32,
     pub render_pipeline: wgpu::RenderPipeline,
     pub projection_bind_group: wgpu::BindGroup,
 }
 
-impl Inventory {
+impl Hotbar {
     pub fn new(device: &wgpu::Device, config: &wgpu::SurfaceConfiguration) -> Self {
         use wgpu::util::DeviceExt;
 
         const SLOT_SIZE: f32 = 50.0;
         const SLOT_MARGIN: f32 = 5.0;
         const TOTAL_SLOT_SIZE: f32 = SLOT_SIZE + SLOT_MARGIN;
-
         const GRID_COLS: i32 = 9;
-        const GRID_ROWS: i32 = 4;
 
-        let mut vertices: Vec<InventoryVertex> = Vec::new();
+        let mut vertices: Vec<HotbarVertex> = Vec::new();
 
-        // Background
-        let bg_width = (GRID_COLS as f32 * TOTAL_SLOT_SIZE) + SLOT_MARGIN * 2.0;
-        let bg_height =
-            (GRID_ROWS as f32 * TOTAL_SLOT_SIZE) + SLOT_MARGIN * 2.0 + SLOT_MARGIN * 2.0;
-        let bg_start_x = -bg_width / 2.0;
-        let bg_start_y = -bg_height / 2.0 + SLOT_MARGIN;
+        // Hotbar background
+        let hotbar_width = (GRID_COLS as f32 * TOTAL_SLOT_SIZE) + SLOT_MARGIN * 2.0;
+        let hotbar_height = TOTAL_SLOT_SIZE + SLOT_MARGIN * 2.0;
+        let hotbar_start_x = -hotbar_width / 2.0;
+        let hotbar_start_y =
+            (config.height as f32 / 2.0) - hotbar_height - (SLOT_MARGIN * 2.0);
         let bg_color = [0.1, 0.1, 0.1, 0.8];
 
-        vertices.push(InventoryVertex {
-            position: [bg_start_x, bg_start_y],
+        vertices.push(HotbarVertex {
+            position: [hotbar_start_x, hotbar_start_y],
             color: bg_color,
         });
-        vertices.push(InventoryVertex {
-            position: [bg_start_x + bg_width, bg_start_y],
+        vertices.push(HotbarVertex {
+            position: [hotbar_start_x + hotbar_width, hotbar_start_y],
             color: bg_color,
         });
-        vertices.push(InventoryVertex {
-            position: [bg_start_x, bg_start_y + bg_height],
+        vertices.push(HotbarVertex {
+            position: [hotbar_start_x, hotbar_start_y + hotbar_height],
+            color: bg_color,
+        });
+        vertices.push(HotbarVertex {
+            position: [hotbar_start_x + hotbar_width, hotbar_start_y],
+            color: bg_color,
+        });
+        vertices.push(HotbarVertex {
+            position: [
+                hotbar_start_x + hotbar_width,
+                hotbar_start_y + hotbar_height,
+            ],
+            color: bg_color,
+        });
+        vertices.push(HotbarVertex {
+            position: [hotbar_start_x, hotbar_start_y + hotbar_height],
             color: bg_color,
         });
 
-        vertices.push(InventoryVertex {
-            position: [bg_start_x + bg_width, bg_start_y],
-            color: bg_color,
-        });
-        vertices.push(InventoryVertex {
-            position: [bg_start_x + bg_width, bg_start_y + bg_height],
-            color: bg_color,
-        });
-        vertices.push(InventoryVertex {
-            position: [bg_start_x, bg_start_y + bg_height],
-            color: bg_color,
-        });
-
-        // Main inventory grid (3x9)
+        // Hotbar slots (1x9)
         let grid_width = GRID_COLS as f32 * TOTAL_SLOT_SIZE - SLOT_MARGIN;
-        let grid_height = (GRID_ROWS as f32 - 1.0) * TOTAL_SLOT_SIZE - SLOT_MARGIN;
         let start_x = -grid_width / 2.0;
-        let start_y = -grid_height / 2.0;
+        let start_y = (config.height as f32 / 2.0)
+            - SLOT_SIZE
+            - (SLOT_MARGIN * 4.0);
         let slot_color = [0.3, 0.3, 0.3, 0.8];
 
-        for row in 0..(GRID_ROWS - 1) {
-            for col in 0..GRID_COLS {
-                let x = start_x + col as f32 * TOTAL_SLOT_SIZE;
-                let y = start_y + row as f32 * TOTAL_SLOT_SIZE;
+        for col in 0..GRID_COLS {
+            let x = start_x + col as f32 * TOTAL_SLOT_SIZE;
+            let y = start_y;
 
-                // Create a quad for each slot
-                vertices.push(InventoryVertex {
-                    position: [x, y],
-                    color: slot_color,
-                });
-                vertices.push(InventoryVertex {
-                    position: [x + SLOT_SIZE, y],
-                    color: slot_color,
-                });
-                vertices.push(InventoryVertex {
-                    position: [x, y + SLOT_SIZE],
-                    color: slot_color,
-                });
+            // Create a quad for each slot
+            vertices.push(HotbarVertex {
+                position: [x, y],
+                color: slot_color,
+            });
+            vertices.push(HotbarVertex {
+                position: [x + SLOT_SIZE, y],
+                color: slot_color,
+            });
+            vertices.push(HotbarVertex {
+                position: [x, y + SLOT_SIZE],
+                color: slot_color,
+            });
 
-                vertices.push(InventoryVertex {
-                    position: [x + SLOT_SIZE, y],
-                    color: slot_color,
-                });
-                vertices.push(InventoryVertex {
-                    position: [x + SLOT_SIZE, y + SLOT_SIZE],
-                    color: slot_color,
-                });
-                vertices.push(InventoryVertex {
-                    position: [x, y + SLOT_SIZE],
-                    color: slot_color,
-                });
-            }
+            vertices.push(HotbarVertex {
+                position: [x + SLOT_SIZE, y],
+                color: slot_color,
+            });
+            vertices.push(HotbarVertex {
+                position: [x + SLOT_SIZE, y + SLOT_SIZE],
+                color: slot_color,
+            });
+            vertices.push(HotbarVertex {
+                position: [x, y + SLOT_SIZE],
+                color: slot_color,
+            });
         }
 
         let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Inventory Vertex Buffer"),
+            label: Some("Hotbar Vertex Buffer"),
             contents: bytemuck::cast_slice(&vertices),
             usage: wgpu::BufferUsages::VERTEX,
         });
@@ -133,14 +132,14 @@ impl Inventory {
         let projection_matrix = glam::Mat4::orthographic_rh(
             -(config.width as f32) / 2.0,
             config.width as f32 / 2.0,
-            config.height as f32 / 2.0,
             -(config.height as f32) / 2.0,
+            config.height as f32 / 2.0,
             -1.0,
             1.0,
         );
 
         let projection_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Inventory Projection Buffer"),
+            label: Some("Hotbar Projection Buffer"),
             contents: bytemuck::cast_slice(projection_matrix.as_ref()),
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
@@ -157,7 +156,7 @@ impl Inventory {
                     },
                     count: None,
                 }],
-                label: Some("inventory_projection_bind_group_layout"),
+                label: Some("hotbar_projection_bind_group_layout"),
             });
 
         let projection_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -166,7 +165,7 @@ impl Inventory {
                 binding: 0,
                 resource: projection_buffer.as_entire_binding(),
             }],
-            label: Some("inventory_projection_bind_group"),
+            label: Some("hotbar_projection_bind_group"),
         });
 
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
@@ -176,18 +175,18 @@ impl Inventory {
 
         let render_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                label: Some("Inventory Render Pipeline Layout"),
+                label: Some("Hotbar Render Pipeline Layout"),
                 bind_group_layouts: &[&projection_bind_group_layout],
                 push_constant_ranges: &[],
             });
 
         let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("Inventory Render Pipeline"),
+            label: Some("Hotbar Render Pipeline"),
             layout: Some(&render_pipeline_layout),
             vertex: wgpu::VertexState {
                 module: &shader,
                 entry_point: Some("vs_main"),
-                buffers: &[InventoryVertex::desc()],
+                buffers: &[HotbarVertex::desc()],
                 compilation_options: wgpu::PipelineCompilationOptions::default(),
             },
             fragment: Some(wgpu::FragmentState {
