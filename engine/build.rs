@@ -1,11 +1,9 @@
 use image::{GenericImage, RgbaImage};
-use std::env;
 use std::fs;
 use std::path::Path;
 
 fn main() {
-    let out_dir = env::var("OUT_DIR").unwrap();
-    let dest_path = Path::new(&out_dir).join("terrain_atlas.png");
+    let dest_path = Path::new("assets/textures/block/atlas.png");
 
     let texture_atlas_json_path = Path::new("assets/textures/block/atlas.json");
     let json_content = fs::read_to_string(texture_atlas_json_path)
@@ -30,7 +28,7 @@ fn main() {
                 );
             }
 
-            let texture_path = Path::new("assets/textures").join(file_name);
+            let texture_path = Path::new("assets/textures/block").join(file_name);
             let img = image::open(&texture_path).unwrap_or_else(|e| {
                 panic!(
                     "Failed to open image {}: {}",

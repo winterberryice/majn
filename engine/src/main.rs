@@ -389,13 +389,10 @@ impl State {
             source: wgpu::ShaderSource::Wgsl(include_str!("shader.wgsl").into()),
         });
 
-        const TERRAIN_ATLAS_BYTES: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/terrain_atlas.png"));
-
-        let diffuse_texture = match crate::texture::Texture::load_from_memory(
+        let diffuse_texture = match crate::texture::Texture::load(
             &device,
             &queue,
-            TERRAIN_ATLAS_BYTES,
-            "terrain_atlas.png",
+            "assets/textures/block/atlas.png",
         ) {
             Ok(tex) => tex,
             Err(e) => {
