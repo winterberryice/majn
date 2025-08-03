@@ -1,0 +1,11 @@
+[
+  [
+    "block/grass_block_top.png",
+    "block/grass_block_side.png",
+    "block/dirt.png",
+    "block/bedrock.png",
+    "block/oak_log.png",
+    "block/oak_log_top.png",
+    "block/oak_leaves.png"
+  ]
+]
