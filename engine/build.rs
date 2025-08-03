@@ -7,9 +7,9 @@ fn main() {
     let out_dir = env::var("OUT_DIR").unwrap();
     let dest_path = Path::new(&out_dir).join("terrain_atlas.png");
 
-    let texture_atlas_json_path = Path::new("assets/textures/texture_atlas.json");
+    let texture_atlas_json_path = Path::new("assets/textures/block/atlas.json");
     let json_content = fs::read_to_string(texture_atlas_json_path)
-        .expect("Failed to read texture_atlas.json");
+        .expect("Failed to read atlas.json");
     let texture_matrix: Vec<Vec<String>> =
         serde_json::from_str(&json_content).expect("Failed to parse texture_atlas.json");
 
@@ -48,6 +48,6 @@ fn main() {
     atlas.save(&dest_path).expect("Failed to save atlas");
 
     println!("cargo:rerun-if-changed=build.rs");
-    println!("cargo:rerun-if-changed=assets/textures/texture_atlas.json");
+    println!("cargo:rerun-if-changed=assets/textures/block/atlas.json");
     println!("cargo:rerun-if-changed=assets/textures/block/");
 }
