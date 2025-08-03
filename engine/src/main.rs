@@ -389,18 +389,18 @@ impl State {
             source: wgpu::ShaderSource::Wgsl(include_str!("shader.wgsl").into()),
         });
 
-        const TERRAIN_ATLAS_BYTES: &[u8] = include_bytes!("../assets/resources/terrain.png");
+        const TERRAIN_ATLAS_BYTES: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/terrain_atlas.png"));
 
         let diffuse_texture = match crate::texture::Texture::load_from_memory(
             &device,
             &queue,
             TERRAIN_ATLAS_BYTES,
-            "terrain_atlas_from_memory",
+            "terrain_atlas.png",
         ) {
             Ok(tex) => tex,
             Err(e) => {
                 eprintln!(
-                    "Failed to load embedded terrain.png from memory: {}. Using placeholder.",
+                    "Failed to load generated terrain_atlas.png from memory: {}. Using placeholder.",
                     e
                 );
                 crate::texture::Texture::create_placeholder(

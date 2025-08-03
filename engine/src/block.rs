@@ -61,26 +61,26 @@ impl Block {
     // Returns atlas indices (column, row) for each face: [Front, Back, Right, Left, Top, Bottom]
     pub fn get_texture_atlas_indices(&self) -> [[f32; 2]; 6] {
         match self.block_type {
-            BlockType::Dirt => [[2.0, 0.0]; 6], // Dirt texture at (2,0) in terrain.png
+            BlockType::Dirt => [[2.0, 0.0]; 6], // dirt.png
             BlockType::Grass => [
-                [3.0, 0.0], // Front (Grass Side)
-                [3.0, 0.0], // Back (Grass Side)
-                [3.0, 0.0], // Right (Grass Side)
-                [3.0, 0.0], // Left (Grass Side)
-                [0.0, 0.0], // Top (Grass Top)
-                [2.0, 0.0], // Bottom (Dirt)
+                [1.0, 0.0], // Front (grass_block_side.png)
+                [1.0, 0.0], // Back (grass_block_side.png)
+                [1.0, 0.0], // Right (grass_block_side.png)
+                [1.0, 0.0], // Left (grass_block_side.png)
+                [0.0, 0.0], // Top (grass_block_top.png)
+                [2.0, 0.0], // Bottom (dirt.png)
             ],
-            BlockType::Bedrock => [[1.0, 1.0]; 6], // Bedrock at (1,1)
+            BlockType::Bedrock => [[0.0, 1.0]; 6], // bedrock.png
             BlockType::Air => [[15.0, 15.0]; 6],   // Default/error texture (far corner of atlas)
             BlockType::OakLog => [
-                [4.0, 1.0],
-                [4.0, 1.0],
-                [4.0, 1.0],
-                [4.0, 1.0],
-                [5.0, 1.0],
-                [5.0, 1.0],
+                [1.0, 1.0], // Side (oak_log.png)
+                [1.0, 1.0], // Side (oak_log.png)
+                [1.0, 1.0], // Side (oak_log.png)
+                [1.0, 1.0], // Side (oak_log.png)
+                [2.0, 1.0], // Top (oak_log_top.png)
+                [2.0, 1.0], // Bottom (oak_log_top.png)
             ],
-            BlockType::OakLeaves => [[4.0, 3.0]; 6],
+            BlockType::OakLeaves => [[0.0, 2.0]; 6], // oak_leaves.png
         }
     }
 }
