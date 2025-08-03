@@ -70,17 +70,17 @@ impl Block {
                 [0.0, 0.0], // Top (grass_block_top.png)
                 [2.0, 0.0], // Bottom (dirt.png)
             ],
-            BlockType::Bedrock => [[0.0, 1.0]; 6], // bedrock.png
+            BlockType::Bedrock => [[3.0, 0.0]; 6], // bedrock.png
             BlockType::Air => [[15.0, 15.0]; 6],   // Default/error texture (far corner of atlas)
             BlockType::OakLog => [
-                [1.0, 1.0], // Side (oak_log.png)
-                [1.0, 1.0], // Side (oak_log.png)
-                [1.0, 1.0], // Side (oak_log.png)
-                [1.0, 1.0], // Side (oak_log.png)
-                [2.0, 1.0], // Top (oak_log_top.png)
-                [2.0, 1.0], // Bottom (oak_log_top.png)
+                [4.0, 0.0], // Side (oak_log.png)
+                [4.0, 0.0], // Side (oak_log.png)
+                [4.0, 0.0], // Side (oak_log.png)
+                [4.0, 0.0], // Side (oak_log.png)
+                [5.0, 0.0], // Top (oak_log_top.png)
+                [5.0, 0.0], // Bottom (oak_log_top.png)
             ],
-            BlockType::OakLeaves => [[0.0, 2.0]; 6], // oak_leaves.png
+            BlockType::OakLeaves => [[6.0, 0.0]; 6], // oak_leaves.png
         }
     }
 }
