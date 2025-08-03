@@ -334,6 +334,9 @@ struct State {
     input_state: input::InputState,
 }
 
+const ATLAS_COLS: f32 = 16.0;
+const ATLAS_ROWS: f32 = 1.0;
+
 impl State {
     async fn new(
         window_surface_target: Arc<Window>,
@@ -389,7 +392,7 @@ impl State {
             source: wgpu::ShaderSource::Wgsl(include_str!("shader.wgsl").into()),
         });
 
-        const TERRAIN_ATLAS_BYTES: &[u8] = include_bytes!("../assets/resources/terrain.png");
+        const TERRAIN_ATLAS_BYTES: &[u8] = include_bytes!("../assets/textures/block/atlas.png");
 
         let diffuse_texture = match crate::texture::Texture::load_from_memory(
             &device,
@@ -400,7 +403,7 @@ impl State {
             Ok(tex) => tex,
             Err(e) => {
                 eprintln!(
-                    "Failed to load embedded terrain.png from memory: {}. Using placeholder.",
+                    "Failed to load embedded atlas.png from memory: {}. Using placeholder.",
                     e
                 );
                 crate::texture::Texture::create_placeholder(
@@ -740,8 +743,6 @@ impl State {
                                 if !is_current_block_transparent {
                                     let vertices_template = face_type.get_vertices_template();
                                     let local_indices = face_type.get_local_indices();
-                                    const ATLAS_COLS: f32 = 16.0;
-                                    const ATLAS_ROWS: f32 = 39.0;
                                     let tex_size_x = 1.0 / ATLAS_COLS;
                                     let tex_size_y = 1.0 / ATLAS_ROWS;
                                     let all_face_atlas_indices = block.get_texture_atlas_indices();
@@ -886,8 +887,6 @@ impl State {
 
                 let vertices_template = face_type.get_vertices_template();
                 let local_indices = face_type.get_local_indices();
-                const ATLAS_COLS: f32 = 16.0;
-                const ATLAS_ROWS: f32 = 39.0;
                 let tex_size_x = 1.0 / ATLAS_COLS;
                 let tex_size_y = 1.0 / ATLAS_ROWS;
                 let all_face_atlas_indices = block.get_texture_atlas_indices();
