@@ -1,5 +1,4 @@
 use image::GenericImageView;
-use std::path::Path;
 
 pub struct Texture {
     pub view: wgpu::TextureView,
@@ -7,19 +6,17 @@ pub struct Texture {
 }
 
 impl Texture {
-    pub fn load<P: AsRef<Path>>(
+    pub fn load_from_memory(
         device: &wgpu::Device,
         queue: &wgpu::Queue,
-        path: P,
+        bytes: &[u8],
+        label: &str,
     ) -> Result<Self, String> {
-        let path_buf = path.as_ref().to_path_buf();
-        let label = path_buf.file_name().unwrap_or_default().to_str();
-
-        // Load the image from disk
-        let img = image::open(&path_buf).map_err(|e| {
+        // Load the image from memory
+        let img = image::load_from_memory(bytes).map_err(|e| {
             format!(
-                "Failed to open image {}: {}",
-                path_buf.display(),
+                "Failed to load image from memory ({}): {}",
+                label,
                 e.to_string()
             )
         })?;
@@ -27,18 +24,18 @@ impl Texture {
         let rgba = img.to_rgba8(); // Convert to RGBA8
 
         let size = wgpu::Extent3d {
-            width: dimensions.0 as u32, // Cast to u32
+            width: dimensions.0 as u32,  // Cast to u32
             height: dimensions.1 as u32, // Cast to u32
             depth_or_array_layers: 1,
         };
 
         let texture = device.create_texture(&wgpu::TextureDescriptor {
-            label,
+            label: Some(label),
             size,
             mip_level_count: 1,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Rgba8UnormSrgb, // Use sRGB for color textures
+            format: wgpu::TextureFormat::Rgba8UnormSrgb,
             usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
             view_formats: &[],
         });
@@ -71,6 +68,7 @@ impl Texture {
         });
 
         Ok(Self {
+            // texture,
             view,
             sampler,
         })
