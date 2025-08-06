@@ -1,4 +1,10 @@
-// engine/src/ui/inventory.rs
+use super::item::{ItemStack, ItemType};
+use super::item_renderer::ItemRenderer;
+use wgpu::util::DeviceExt;
+
+const GRID_COLS: usize = 9;
+const GRID_ROWS: usize = 4;
+const NUM_SLOTS: usize = GRID_COLS * GRID_ROWS;
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
@@ -33,22 +39,19 @@ pub struct Inventory {
     pub num_vertices: u32,
     pub render_pipeline: wgpu::RenderPipeline,
     pub projection_bind_group: wgpu::BindGroup,
+    pub items: [Option<ItemStack>; NUM_SLOTS],
+    pub slot_positions: [[f32; 2]; NUM_SLOTS],
 }
 
 impl Inventory {
     pub fn new(device: &wgpu::Device, config: &wgpu::SurfaceConfiguration) -> Self {
-        use wgpu::util::DeviceExt;
-
         const SLOT_SIZE: f32 = 50.0;
         const SLOT_MARGIN: f32 = 5.0;
         const TOTAL_SLOT_SIZE: f32 = SLOT_SIZE + SLOT_MARGIN;
 
-        const GRID_COLS: i32 = 9;
-        const GRID_ROWS: i32 = 4;
-
         let mut vertices: Vec<InventoryVertex> = Vec::new();
+        let mut slot_positions = [[0.0; 2]; NUM_SLOTS];
 
-        // Background
         let bg_width = (GRID_COLS as f32 * TOTAL_SLOT_SIZE) + SLOT_MARGIN * 2.0;
         let bg_height =
             (GRID_ROWS as f32 * TOTAL_SLOT_SIZE) + SLOT_MARGIN * 2.0 + SLOT_MARGIN * 2.0;
@@ -56,33 +59,33 @@ impl Inventory {
         let bg_start_y = -bg_height / 2.0 + SLOT_MARGIN;
         let bg_color = [0.1, 0.1, 0.1, 0.8];
 
-        vertices.push(InventoryVertex {
-            position: [bg_start_x, bg_start_y],
-            color: bg_color,
-        });
-        vertices.push(InventoryVertex {
-            position: [bg_start_x + bg_width, bg_start_y],
-            color: bg_color,
-        });
-        vertices.push(InventoryVertex {
-            position: [bg_start_x, bg_start_y + bg_height],
-            color: bg_color,
-        });
+        vertices.extend_from_slice(&[
+            InventoryVertex {
+                position: [bg_start_x, bg_start_y],
+                color: bg_color,
+            },
+            InventoryVertex {
+                position: [bg_start_x + bg_width, bg_start_y],
+                color: bg_color,
+            },
+            InventoryVertex {
+                position: [bg_start_x, bg_start_y + bg_height],
+                color: bg_color,
+            },
+            InventoryVertex {
+                position: [bg_start_x + bg_width, bg_start_y],
+                color: bg_color,
+            },
+            InventoryVertex {
+                position: [bg_start_x + bg_width, bg_start_y + bg_height],
+                color: bg_color,
+            },
+            InventoryVertex {
+                position: [bg_start_x, bg_start_y + bg_height],
+                color: bg_color,
+            },
+        ]);
 
-        vertices.push(InventoryVertex {
-            position: [bg_start_x + bg_width, bg_start_y],
-            color: bg_color,
-        });
-        vertices.push(InventoryVertex {
-            position: [bg_start_x + bg_width, bg_start_y + bg_height],
-            color: bg_color,
-        });
-        vertices.push(InventoryVertex {
-            position: [bg_start_x, bg_start_y + bg_height],
-            color: bg_color,
-        });
-
-        // Main inventory grid (4x9)
         let grid_width = GRID_COLS as f32 * TOTAL_SLOT_SIZE - SLOT_MARGIN;
         let grid_height = GRID_ROWS as f32 * TOTAL_SLOT_SIZE - SLOT_MARGIN;
         let start_x = -grid_width / 2.0;
@@ -97,32 +100,35 @@ impl Inventory {
                     y += SLOT_MARGIN * 2.0;
                 }
 
-                // Create a quad for each slot
-                vertices.push(InventoryVertex {
-                    position: [x, y],
-                    color: slot_color,
-                });
-                vertices.push(InventoryVertex {
-                    position: [x + SLOT_SIZE, y],
-                    color: slot_color,
-                });
-                vertices.push(InventoryVertex {
-                    position: [x, y + SLOT_SIZE],
-                    color: slot_color,
-                });
+                let index = row * GRID_COLS + col;
+                slot_positions[index] = [x + SLOT_SIZE / 2.0, y + SLOT_SIZE / 2.0];
 
-                vertices.push(InventoryVertex {
-                    position: [x + SLOT_SIZE, y],
-                    color: slot_color,
-                });
-                vertices.push(InventoryVertex {
-                    position: [x + SLOT_SIZE, y + SLOT_SIZE],
-                    color: slot_color,
-                });
-                vertices.push(InventoryVertex {
-                    position: [x, y + SLOT_SIZE],
-                    color: slot_color,
-                });
+                vertices.extend_from_slice(&[
+                    InventoryVertex {
+                        position: [x, y],
+                        color: slot_color,
+                    },
+                    InventoryVertex {
+                        position: [x + SLOT_SIZE, y],
+                        color: slot_color,
+                    },
+                    InventoryVertex {
+                        position: [x, y + SLOT_SIZE],
+                        color: slot_color,
+                    },
+                    InventoryVertex {
+                        position: [x + SLOT_SIZE, y],
+                        color: slot_color,
+                    },
+                    InventoryVertex {
+                        position: [x + SLOT_SIZE, y + SLOT_SIZE],
+                        color: slot_color,
+                    },
+                    InventoryVertex {
+                        position: [x, y + SLOT_SIZE],
+                        color: slot_color,
+                    },
+                ]);
             }
         }
 
@@ -223,13 +229,43 @@ impl Inventory {
             num_vertices,
             render_pipeline,
             projection_bind_group,
+            items: [None; NUM_SLOTS],
+            slot_positions,
         }
     }
 
-    pub fn draw<'pass>(&'pass self, render_pass: &mut wgpu::RenderPass<'pass>) {
+    pub fn draw<'pass>(
+        &'pass self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        render_pass: &mut wgpu::RenderPass<'pass>,
+        item_renderer: &'pass mut ItemRenderer,
+        item_texture_bind_group: &'pass wgpu::BindGroup,
+    ) {
         render_pass.set_pipeline(&self.render_pipeline);
         render_pass.set_bind_group(0, &self.projection_bind_group, &[]);
         render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
         render_pass.draw(0..self.num_vertices, 0..1);
+
+        const SLOT_SIZE: f32 = 50.0;
+        let mut items_to_render = Vec::new();
+        for (i, item_stack_opt) in self.items.iter().enumerate() {
+            if let Some(item_stack) = item_stack_opt {
+                let position = self.slot_positions[i];
+                let item_size = SLOT_SIZE * 0.7;
+                items_to_render.push((*item_stack, position, item_size, [1.0, 1.0, 1.0, 1.0]));
+            }
+        }
+
+        if !items_to_render.is_empty() {
+            item_renderer.draw(
+                device,
+                queue,
+                render_pass,
+                &self.projection_bind_group,
+                item_texture_bind_group,
+                &items_to_render,
+            );
+        }
     }
 }

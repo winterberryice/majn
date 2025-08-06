@@ -143,6 +143,10 @@ impl App {
                 self.last_mouse_position = Some(position);
                 cursor_moved_while_grabbed = true;
             }
+        } else {
+            if let WindowEvent::CursorMoved { position, .. } = event {
+                state.input_state.on_cursor_moved(position);
+            }
         }
 
         if !event_consumed_by_grab_logic
@@ -289,6 +293,7 @@ use crate::physics::AABB;
 use crate::physics::PLAYER_EYE_HEIGHT;
 use crate::player::Player;
 use crate::raycast::BlockFace;
+use crate::ui::item::{ItemStack, ItemType};
 use crate::ui::item_renderer::ItemRenderer;
 use crate::wireframe_renderer::WireframeRenderer;
 use crate::world::World;
@@ -334,6 +339,7 @@ struct State {
     block_atlas_bind_group: wgpu::BindGroup,
     input_state: input::InputState,
     item_renderer: ItemRenderer,
+    dragged_item: Option<ItemStack>,
 }
 
 const ATLAS_COLS: f32 = 16.0;
@@ -622,7 +628,11 @@ impl State {
 
         let debug_overlay = DebugOverlay::new(&device, &config);
         let crosshair = ui::crosshair::Crosshair::new(&device, &config);
-        let inventory = ui::inventory::Inventory::new(&device, &config);
+        let mut inventory = ui::inventory::Inventory::new(&device, &config);
+        inventory.items[0] = Some(ItemStack::new(ItemType::Block(BlockType::OakLog), 1));
+        inventory.items[1] = Some(ItemStack::new(ItemType::Block(BlockType::OakLeaves), 5));
+        inventory.items[10] = Some(ItemStack::new(ItemType::Block(BlockType::Grass), 10));
+
         let hotbar = ui::hotbar::Hotbar::new(&device, &config);
 
         let ui_projection_bind_group_layout =
@@ -677,6 +687,7 @@ impl State {
             block_atlas_bind_group,
             input_state: input::InputState::new(),
             item_renderer,
+            dragged_item: None,
         }
     }
 
@@ -1123,7 +1134,9 @@ impl State {
     }
 
     fn update(&mut self) {
-        if !self.inventory_open {
+        if self.inventory_open {
+            self.handle_inventory_interaction();
+        } else {
             self.handle_block_interactions();
         }
         let dt_secs = 1.0 / 60.0;
@@ -1208,6 +1221,65 @@ impl State {
         self.debug_overlay
             .update(self.player.position, selected_block_data, player_feet_block);
         self.input_state.clear_frame_state();
+    }
+
+    fn get_clicked_slot(&self, screen_x: f32, screen_y: f32) -> Option<(i32, usize)> {
+        const SLOT_SIZE: f32 = 50.0;
+        let half_slot = SLOT_SIZE / 2.0;
+
+        for (i, slot_pos) in self.inventory.slot_positions.iter().enumerate() {
+            if screen_x >= slot_pos[0] - half_slot
+                && screen_x <= slot_pos[0] + half_slot
+                && screen_y >= slot_pos[1] - half_slot
+                && screen_y <= slot_pos[1] + half_slot
+            {
+                return Some((0, i));
+            }
+        }
+
+        for (i, slot_pos) in self.hotbar.slot_positions.iter().enumerate() {
+            if screen_x >= slot_pos[0] - half_slot
+                && screen_x <= slot_pos[0] + half_slot
+                && screen_y >= slot_pos[1] - half_slot
+                && screen_y <= slot_pos[1] + half_slot
+            {
+                return Some((1, i));
+            }
+        }
+
+        None
+    }
+
+    fn handle_inventory_interaction(&mut self) {
+        if self.input_state.left_mouse_pressed_this_frame {
+            let (cursor_x, cursor_y) = self.input_state.cursor_position;
+            let screen_x = cursor_x - self.size.width as f32 / 2.0;
+            let screen_y = -(cursor_y - self.size.height as f32 / 2.0);
+
+            if let Some((container_type, slot_index)) = self.get_clicked_slot(screen_x, screen_y) {
+                let items = if container_type == 0 {
+                    &mut self.inventory.items
+                } else {
+                    &mut self.hotbar.items
+                };
+
+                let dragged_item = self.dragged_item.take();
+                let slot_item = items[slot_index].take();
+
+                if let Some(dragged) = dragged_item {
+                    if let Some(slot) = slot_item {
+                        items[slot_index] = Some(dragged);
+                        self.dragged_item = Some(slot);
+                    } else {
+                        items[slot_index] = Some(dragged);
+                    }
+                } else {
+                    if let Some(slot) = slot_item {
+                        self.dragged_item = Some(slot);
+                    }
+                }
+            }
+        }
     }
 
     fn handle_block_interactions(&mut self) {
@@ -1396,7 +1468,13 @@ impl State {
                 occlusion_query_set: None,
             });
             if self.inventory_open {
-                self.inventory.draw(&mut ui_render_pass);
+                self.inventory.draw(
+                    &self.device,
+                    &self.queue,
+                    &mut ui_render_pass,
+                    &mut self.item_renderer,
+                    &self.block_atlas_bind_group,
+                );
             } else {
                 self.crosshair.draw(&mut ui_render_pass);
             }
@@ -1407,6 +1485,20 @@ impl State {
                 &mut self.item_renderer,
                 &self.block_atlas_bind_group,
             );
+
+            if let Some(item) = self.dragged_item {
+                let (cursor_x, cursor_y) = self.input_state.cursor_position;
+                let screen_x = cursor_x - self.size.width as f32 / 2.0;
+                let screen_y = -(cursor_y - self.size.height as f32 / 2.0);
+                self.item_renderer.draw(
+                    &self.device,
+                    &self.queue,
+                    &mut ui_render_pass,
+                    &self.inventory.projection_bind_group,
+                    &self.block_atlas_bind_group,
+                    &[(item, [screen_x, screen_y], 50.0 * 0.7, [1.0, 1.0, 1.0, 0.7])],
+                );
+            }
         }
         {
             let mut debug_text_render_pass =

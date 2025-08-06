@@ -205,7 +205,7 @@ impl Hotbar {
             if let Some(item_stack) = item_stack_opt {
                 let position = self.slot_positions[i];
                 let item_size = SLOT_SIZE * 0.7;
-                items_to_render.push((*item_stack, position, item_size));
+                items_to_render.push((*item_stack, position, item_size, [1.0, 1.0, 1.0, 1.0]));
             }
         }
 
