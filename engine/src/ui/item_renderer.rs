@@ -168,41 +168,35 @@ fn generate_item_vertices(
     };
 
     let temp_block = Block::new(block_type);
+    // For a 2D icon, we just need one texture. Let's use the side texture.
     let indices = temp_block.get_texture_atlas_indices();
-    let (uv_top, uv_side, uv_front) = (indices[4], indices[0], indices[2]);
+    let uv_side = indices[0]; // Front face, which is fine for blocks like dirt
 
     let texel_width = 1.0 / ATLAS_WIDTH_IN_BLOCKS;
     let texel_height = 1.0 / ATLAS_HEIGHT_IN_BLOCKS;
 
-    let (u_top, v_top) = (uv_top[0] * texel_width, uv_top[1] * texel_height);
-    let (u_side, v_side) = (uv_side[0] * texel_width, uv_side[1] * texel_height);
-    let (u_front, v_front) = (uv_front[0] * texel_width, uv_front[1] * texel_height);
+    let (u, v) = (uv_side[0] * texel_width, uv_side[1] * texel_height);
 
-    let top_face_uv = [[u_top, v_top], [u_top + texel_width, v_top], [u_top + texel_width, v_top + texel_height], [u_top, v_top + texel_height]];
-    let side_face_uv = [[u_side, v_side], [u_side + texel_width, v_side], [u_side + texel_width, v_side + texel_height], [u_side, v_side + texel_height]];
-    let front_face_uv = [[u_front, v_front], [u_front + texel_width, v_front], [u_front + texel_width, v_front + texel_height], [u_front, v_front + texel_height]];
+    // UV coordinates for a standard quad
+    let uvs = [
+        [u, v],                                 // Top-left
+        [u + texel_width, v],                   // Top-right
+        [u + texel_width, v + texel_height],    // Bottom-right
+        [u, v + texel_height],                  // Bottom-left
+    ];
 
     let color = [1.0, 1.0, 1.0, 1.0];
     let s = size / 2.0;
-    let y_squish = 0.5;
 
-    let p1 = [position[0], position[1] + s * y_squish];
-    let p2 = [position[0] + s, position[1]];
-    let p3 = [position[0], position[1] - s * y_squish];
-    let p4 = [position[0] - s, position[1]];
-    add_quad(vertices, [p1, p2, p3, p4], top_face_uv, color);
+    // A simple centered quad
+    let points = [
+        [position[0] - s, position[1] + s], // Top-left
+        [position[0] + s, position[1] + s], // Top-right
+        [position[0] + s, position[1] - s], // Bottom-right
+        [position[0] - s, position[1] - s], // Bottom-left
+    ];
 
-    let p5 = [p4[0], p4[1]];
-    let p6 = [p3[0], p3[1]];
-    let p7 = [p3[0], p3[1] - s];
-    let p8 = [p4[0], p4[1] - s];
-    add_quad(vertices, [p5, p6, p7, p8], side_face_uv, color);
-
-    let p9 = [p3[0], p3[1]];
-    let p10 = [p2[0], p2[1]];
-    let p11 = [p2[0], p2[1] - s];
-    let p12 = [p3[0], p3[1] - s];
-    add_quad(vertices, [p9, p10, p11, p12], front_face_uv, color);
+    add_quad(vertices, points, uvs, color);
 }
 
 fn add_quad(
@@ -212,12 +206,14 @@ fn add_quad(
     color: [f32; 4],
 ) {
     let v = [
-        UIVertex { position: points[0], color, tex_coords: uvs[0] },
-        UIVertex { position: points[3], color, tex_coords: uvs[3] },
-        UIVertex { position: points[1], color, tex_coords: uvs[1] },
-        UIVertex { position: points[1], color, tex_coords: uvs[1] },
-        UIVertex { position: points[3], color, tex_coords: uvs[3] },
-        UIVertex { position: points[2], color, tex_coords: uvs[2] },
+        // Triangle 1: Top-left, Bottom-left, Top-right
+        UIVertex { position: points[0], color, tex_coords: uvs[0] }, // Top-left
+        UIVertex { position: points[3], color, tex_coords: uvs[3] }, // Bottom-left
+        UIVertex { position: points[1], color, tex_coords: uvs[1] }, // Top-right
+        // Triangle 2: Top-right, Bottom-left, Bottom-right
+        UIVertex { position: points[1], color, tex_coords: uvs[1] }, // Top-right
+        UIVertex { position: points[3], color, tex_coords: uvs[3] }, // Bottom-left
+        UIVertex { position: points[2], color, tex_coords: uvs[2] }, // Bottom-right
     ];
     vertices.extend_from_slice(&v);
 }
