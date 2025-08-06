@@ -1,9 +1,6 @@
 // engine/src/ui/hotbar.rs
 
-use super::{
-    item::{ItemType, ItemStack},
-    item_renderer::ItemRenderer,
-};
+use super::item::{ItemType, ItemStack};
 use crate::block::BlockType;
 use wgpu::util::DeviceExt;
 
@@ -44,7 +41,7 @@ pub struct Hotbar {
     projection_bind_group: wgpu::BindGroup,
     pub items: [Option<ItemStack>; NUM_SLOTS],
     // Store positions to avoid recalculating them in draw loop
-    slot_positions: [[f32; 2]; NUM_SLOTS],
+    pub slot_positions: [[f32; 2]; NUM_SLOTS],
 }
 
 impl Hotbar {
@@ -57,8 +54,8 @@ impl Hotbar {
 
         let hotbar_width = (NUM_SLOTS as f32 * TOTAL_SLOT_SIZE) + SLOT_MARGIN * 2.0;
         let hotbar_height = TOTAL_SLOT_SIZE + SLOT_MARGIN;
-        let hotbar_start_x = -hotbar_width / 2.0;
-        let hotbar_start_y = -(config.height as f32 / 2.0) + (SLOT_MARGIN * 2.0);
+        let hotbar_start_x = (config.width as f32 - hotbar_width) / 2.0;
+        let hotbar_start_y = config.height as f32 - hotbar_height - SLOT_MARGIN;
         let bg_color = [0.1, 0.1, 0.1, 0.8];
 
         vertices.extend_from_slice(&[
@@ -71,8 +68,8 @@ impl Hotbar {
         ]);
 
         let grid_width = NUM_SLOTS as f32 * TOTAL_SLOT_SIZE - SLOT_MARGIN;
-        let start_x = -grid_width / 2.0;
-        let start_y_slots = -(config.height as f32 / 2.0) + (SLOT_MARGIN * 3.0);
+        let start_x = (config.width as f32 - grid_width) / 2.0;
+        let start_y_slots = config.height as f32 - SLOT_SIZE - (SLOT_MARGIN * 2.0);
         let slot_color = [0.3, 0.3, 0.3, 0.8];
         let mut slot_positions = [[0.0; 2]; NUM_SLOTS];
 
@@ -98,9 +95,12 @@ impl Hotbar {
         let num_vertices = vertices.len() as u32;
 
         let projection_matrix = glam::Mat4::orthographic_rh(
-            -(config.width as f32) / 2.0, config.width as f32 / 2.0,
-            -(config.height as f32) / 2.0, config.height as f32 / 2.0,
-            -1.0, 1.0,
+            0.0,
+            config.width as f32,
+            config.height as f32,
+            0.0,
+            -1.0,
+            1.0,
         );
 
         let projection_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -184,41 +184,10 @@ impl Hotbar {
         }
     }
 
-    pub fn draw<'pass>(
-        &'pass self,
-        device: &wgpu::Device,
-        queue: &wgpu::Queue,
-        render_pass: &mut wgpu::RenderPass<'pass>,
-        item_renderer: &'pass mut ItemRenderer,
-        item_texture_bind_group: &'pass wgpu::BindGroup,
-    ) {
-        // Draw the hotbar background and slots
+    pub fn draw<'pass>(&'pass self, render_pass: &mut wgpu::RenderPass<'pass>) {
         render_pass.set_pipeline(&self.render_pipeline);
         render_pass.set_bind_group(0, &self.projection_bind_group, &[]);
         render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
         render_pass.draw(0..self.num_vertices, 0..1);
-
-        // Prepare items to be rendered
-        const SLOT_SIZE: f32 = 50.0;
-        let mut items_to_render = Vec::new();
-        for (i, item_stack_opt) in self.items.iter().enumerate() {
-            if let Some(item_stack) = item_stack_opt {
-                let position = self.slot_positions[i];
-                let item_size = SLOT_SIZE * 0.7;
-                items_to_render.push((*item_stack, position, item_size));
-            }
-        }
-
-        // Draw the items using the separate ItemRenderer
-        if !items_to_render.is_empty() {
-            item_renderer.draw(
-                device,
-                queue,
-                render_pass,
-                &self.projection_bind_group,
-                item_texture_bind_group,
-                &items_to_render,
-            );
-        }
     }
 }

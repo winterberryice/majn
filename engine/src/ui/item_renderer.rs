@@ -123,11 +123,17 @@ impl ItemRenderer {
         render_pass: &mut wgpu::RenderPass<'pass>,
         projection_bind_group: &'pass wgpu::BindGroup,
         ui_texture_bind_group: &'pass wgpu::BindGroup,
-        items: &[(ItemStack, [f32; 2], f32)],
+        items: &[(ItemStack, [f32; 2], f32, [f32; 4])],
     ) {
         let mut vertices: Vec<UIVertex> = Vec::new();
-        for (item_stack, position, size) in items {
-            generate_item_vertices(item_stack.item_type, *position, *size, &mut vertices);
+        for (item_stack, position, size, color) in items {
+            generate_item_vertices(
+                item_stack.item_type,
+                *position,
+                *size,
+                *color,
+                &mut vertices,
+            );
         }
 
         if vertices.is_empty() {
@@ -161,6 +167,7 @@ fn generate_item_vertices(
     item_type: ItemType,
     position: [f32; 2],
     size: f32,
+    color: [f32; 4],
     vertices: &mut Vec<UIVertex>,
 ) {
     let block_type = match item_type {
@@ -182,7 +189,6 @@ fn generate_item_vertices(
     let side_face_uv = [[u_side, v_side], [u_side + texel_width, v_side], [u_side + texel_width, v_side + texel_height], [u_side, v_side + texel_height]];
     let front_face_uv = [[u_front, v_front], [u_front + texel_width, v_front], [u_front + texel_width, v_front + texel_height], [u_front, v_front + texel_height]];
 
-    let color = [1.0, 1.0, 1.0, 1.0];
     let s = size / 2.0;
     let y_squish = 0.5;
 
