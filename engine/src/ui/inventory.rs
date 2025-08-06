@@ -54,8 +54,8 @@ impl Inventory {
         let bg_width = (GRID_COLS as f32 * TOTAL_SLOT_SIZE) + SLOT_MARGIN * 2.0;
         let bg_height =
             (GRID_ROWS as f32 * TOTAL_SLOT_SIZE) + SLOT_MARGIN * 2.0 + SLOT_MARGIN * 2.0;
-        let bg_start_x = -bg_width / 2.0;
-        let bg_start_y = -bg_height / 2.0 + SLOT_MARGIN;
+        let bg_start_x = (config.width as f32 - bg_width) / 2.0;
+        let bg_start_y = (config.height as f32 - bg_height) / 2.0;
         let bg_color = [0.1, 0.1, 0.1, 0.8];
 
         vertices.extend_from_slice(&[
@@ -87,8 +87,8 @@ impl Inventory {
 
         let grid_width = GRID_COLS as f32 * TOTAL_SLOT_SIZE - SLOT_MARGIN;
         let grid_height = GRID_ROWS as f32 * TOTAL_SLOT_SIZE - SLOT_MARGIN;
-        let start_x = -grid_width / 2.0;
-        let start_y = -grid_height / 2.0;
+        let start_x = (config.width as f32 - grid_width) / 2.0;
+        let start_y = (config.height as f32 - grid_height) / 2.0;
         let slot_color = [0.3, 0.3, 0.3, 0.8];
 
         for row in 0..GRID_ROWS {
