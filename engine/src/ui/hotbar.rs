@@ -1,5 +1,14 @@
 // engine/src/ui/hotbar.rs
 
+use super::{
+    item::{ItemType, ItemStack},
+    item_renderer::ItemRenderer,
+};
+use crate::block::BlockType;
+use wgpu::util::DeviceExt;
+
+const NUM_SLOTS: usize = 9;
+
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct HotbarVertex {
@@ -29,94 +38,56 @@ impl HotbarVertex {
 }
 
 pub struct Hotbar {
-    pub vertex_buffer: wgpu::Buffer,
-    pub num_vertices: u32,
-    pub render_pipeline: wgpu::RenderPipeline,
-    pub projection_bind_group: wgpu::BindGroup,
+    vertex_buffer: wgpu::Buffer,
+    num_vertices: u32,
+    render_pipeline: wgpu::RenderPipeline,
+    projection_bind_group: wgpu::BindGroup,
+    pub items: [Option<ItemStack>; NUM_SLOTS],
+    // Store positions to avoid recalculating them in draw loop
+    slot_positions: [[f32; 2]; NUM_SLOTS],
 }
 
 impl Hotbar {
     pub fn new(device: &wgpu::Device, config: &wgpu::SurfaceConfiguration) -> Self {
-        use wgpu::util::DeviceExt;
-
         const SLOT_SIZE: f32 = 50.0;
         const SLOT_MARGIN: f32 = 5.0;
         const TOTAL_SLOT_SIZE: f32 = SLOT_SIZE + SLOT_MARGIN;
-        const GRID_COLS: i32 = 9;
 
         let mut vertices: Vec<HotbarVertex> = Vec::new();
 
-        // Hotbar background
-        let hotbar_width = (GRID_COLS as f32 * TOTAL_SLOT_SIZE) + SLOT_MARGIN * 2.0;
+        let hotbar_width = (NUM_SLOTS as f32 * TOTAL_SLOT_SIZE) + SLOT_MARGIN * 2.0;
         let hotbar_height = TOTAL_SLOT_SIZE + SLOT_MARGIN;
         let hotbar_start_x = -hotbar_width / 2.0;
         let hotbar_start_y = -(config.height as f32 / 2.0) + (SLOT_MARGIN * 2.0);
         let bg_color = [0.1, 0.1, 0.1, 0.8];
 
-        vertices.push(HotbarVertex {
-            position: [hotbar_start_x, hotbar_start_y],
-            color: bg_color,
-        });
-        vertices.push(HotbarVertex {
-            position: [hotbar_start_x + hotbar_width, hotbar_start_y],
-            color: bg_color,
-        });
-        vertices.push(HotbarVertex {
-            position: [hotbar_start_x, hotbar_start_y + hotbar_height],
-            color: bg_color,
-        });
-        vertices.push(HotbarVertex {
-            position: [hotbar_start_x + hotbar_width, hotbar_start_y],
-            color: bg_color,
-        });
-        vertices.push(HotbarVertex {
-            position: [
-                hotbar_start_x + hotbar_width,
-                hotbar_start_y + hotbar_height,
-            ],
-            color: bg_color,
-        });
-        vertices.push(HotbarVertex {
-            position: [hotbar_start_x, hotbar_start_y + hotbar_height],
-            color: bg_color,
-        });
+        vertices.extend_from_slice(&[
+            HotbarVertex { position: [hotbar_start_x, hotbar_start_y], color: bg_color },
+            HotbarVertex { position: [hotbar_start_x + hotbar_width, hotbar_start_y + hotbar_height], color: bg_color },
+            HotbarVertex { position: [hotbar_start_x, hotbar_start_y + hotbar_height], color: bg_color },
+            HotbarVertex { position: [hotbar_start_x, hotbar_start_y], color: bg_color },
+            HotbarVertex { position: [hotbar_start_x + hotbar_width, hotbar_start_y], color: bg_color },
+            HotbarVertex { position: [hotbar_start_x + hotbar_width, hotbar_start_y + hotbar_height], color: bg_color },
+        ]);
 
-        // Hotbar slots (1x9)
-        let grid_width = GRID_COLS as f32 * TOTAL_SLOT_SIZE - SLOT_MARGIN;
+        let grid_width = NUM_SLOTS as f32 * TOTAL_SLOT_SIZE - SLOT_MARGIN;
         let start_x = -grid_width / 2.0;
-        let start_y = -(config.height as f32 / 2.0) + (SLOT_MARGIN * 3.0);
+        let start_y_slots = -(config.height as f32 / 2.0) + (SLOT_MARGIN * 3.0);
         let slot_color = [0.3, 0.3, 0.3, 0.8];
+        let mut slot_positions = [[0.0; 2]; NUM_SLOTS];
 
-        for col in 0..GRID_COLS {
+        for col in 0..NUM_SLOTS {
             let x = start_x + col as f32 * TOTAL_SLOT_SIZE;
-            let y = start_y;
-
-            // Create a quad for each slot
-            vertices.push(HotbarVertex {
-                position: [x, y],
-                color: slot_color,
-            });
-            vertices.push(HotbarVertex {
-                position: [x + SLOT_SIZE, y],
-                color: slot_color,
-            });
-            vertices.push(HotbarVertex {
-                position: [x, y + SLOT_SIZE],
-                color: slot_color,
-            });
-
-            vertices.push(HotbarVertex {
-                position: [x + SLOT_SIZE, y],
-                color: slot_color,
-            });
-            vertices.push(HotbarVertex {
-                position: [x + SLOT_SIZE, y + SLOT_SIZE],
-                color: slot_color,
-            });
-            vertices.push(HotbarVertex {
-                position: [x, y + SLOT_SIZE],
-                color: slot_color,
-            });
+            let y = start_y_slots;
+            slot_positions[col] = [x + SLOT_SIZE / 2.0, y + SLOT_SIZE / 2.0];
+            vertices.extend_from_slice(&[
+                HotbarVertex { position: [x, y], color: slot_color },
+                HotbarVertex { position: [x + SLOT_SIZE, y + SLOT_SIZE], color: slot_color },
+                HotbarVertex { position: [x, y + SLOT_SIZE], color: slot_color },
+                HotbarVertex { position: [x, y], color: slot_color },
+                HotbarVertex { position: [x + SLOT_SIZE, y], color: slot_color },
+                HotbarVertex { position: [x + SLOT_SIZE, y + SLOT_SIZE], color: slot_color },
+            ]);
         }
 
         let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -127,12 +98,9 @@ impl Hotbar {
         let num_vertices = vertices.len() as u32;
 
         let projection_matrix = glam::Mat4::orthographic_rh(
-            -(config.width as f32) / 2.0,
-            config.width as f32 / 2.0,
-            -(config.height as f32) / 2.0,
-            config.height as f32 / 2.0,
-            -1.0,
-            1.0,
+            -(config.width as f32) / 2.0, config.width as f32 / 2.0,
+            -(config.height as f32) / 2.0, config.height as f32 / 2.0,
+            -1.0, 1.0,
         );
 
         let projection_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -196,33 +164,61 @@ impl Hotbar {
                 })],
                 compilation_options: wgpu::PipelineCompilationOptions::default(),
             }),
-            primitive: wgpu::PrimitiveState {
-                topology: wgpu::PrimitiveTopology::TriangleList,
-                strip_index_format: None,
-                front_face: wgpu::FrontFace::Ccw,
-                cull_mode: None,
-                polygon_mode: wgpu::PolygonMode::Fill,
-                unclipped_depth: false,
-                conservative: false,
-            },
+            primitive: wgpu::PrimitiveState::default(),
             depth_stencil: None,
             multisample: wgpu::MultisampleState::default(),
             multiview: None,
             cache: None,
         });
 
+        let mut items: [Option<ItemStack>; NUM_SLOTS] = Default::default();
+        items[0] = Some(ItemStack::new(ItemType::Block(BlockType::Dirt), 1));
+
         Self {
             vertex_buffer,
             num_vertices,
             render_pipeline,
             projection_bind_group,
+            items,
+            slot_positions,
         }
     }
 
-    pub fn draw<'pass>(&'pass self, render_pass: &mut wgpu::RenderPass<'pass>) {
+    pub fn draw<'pass>(
+        &'pass self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        render_pass: &mut wgpu::RenderPass<'pass>,
+        item_renderer: &'pass mut ItemRenderer,
+        item_texture_bind_group: &'pass wgpu::BindGroup,
+    ) {
+        // Draw the hotbar background and slots
         render_pass.set_pipeline(&self.render_pipeline);
         render_pass.set_bind_group(0, &self.projection_bind_group, &[]);
         render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
         render_pass.draw(0..self.num_vertices, 0..1);
+
+        // Prepare items to be rendered
+        const SLOT_SIZE: f32 = 50.0;
+        let mut items_to_render = Vec::new();
+        for (i, item_stack_opt) in self.items.iter().enumerate() {
+            if let Some(item_stack) = item_stack_opt {
+                let position = self.slot_positions[i];
+                let item_size = SLOT_SIZE * 0.7;
+                items_to_render.push((*item_stack, position, item_size));
+            }
+        }
+
+        // Draw the items using the separate ItemRenderer
+        if !items_to_render.is_empty() {
+            item_renderer.draw(
+                device,
+                queue,
+                render_pass,
+                &self.projection_bind_group,
+                item_texture_bind_group,
+                &items_to_render,
+            );
+        }
     }
 }

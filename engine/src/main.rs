@@ -289,6 +289,7 @@ use crate::physics::AABB;
 use crate::physics::PLAYER_EYE_HEIGHT;
 use crate::player::Player;
 use crate::raycast::BlockFace;
+use crate::ui::item_renderer::ItemRenderer;
 use crate::wireframe_renderer::WireframeRenderer;
 use crate::world::World;
 use glam::IVec3;
@@ -330,8 +331,9 @@ struct State {
     inventory_open: bool,
     wireframe_renderer: WireframeRenderer,
     selected_block: Option<(IVec3, BlockFace)>,
-    diffuse_bind_group: wgpu::BindGroup,
+    block_atlas_bind_group: wgpu::BindGroup,
     input_state: input::InputState,
+    item_renderer: ItemRenderer,
 }
 
 const ATLAS_COLS: f32 = 16.0;
@@ -437,7 +439,7 @@ impl State {
                 label: Some("texture_bind_group_layout"),
             });
 
-        let diffuse_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+        let block_atlas_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             layout: &texture_bind_group_layout,
             entries: &[
                 wgpu::BindGroupEntry {
@@ -449,7 +451,7 @@ impl State {
                     resource: wgpu::BindingResource::Sampler(&diffuse_texture.sampler),
                 },
             ],
-            label: Some("diffuse_bind_group"),
+            label: Some("block_atlas_bind_group"),
         });
 
         let camera_bind_group_layout =
@@ -622,6 +624,29 @@ impl State {
         let crosshair = ui::crosshair::Crosshair::new(&device, &config);
         let inventory = ui::inventory::Inventory::new(&device, &config);
         let hotbar = ui::hotbar::Hotbar::new(&device, &config);
+
+        let ui_projection_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                entries: &[wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::VERTEX,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                }],
+                label: Some("ui_projection_bind_group_layout"),
+            });
+
+        let item_renderer = ItemRenderer::new(
+            &device,
+            &config,
+            &ui_projection_bind_group_layout,
+            &texture_bind_group_layout,
+        );
+
         let wireframe_renderer =
             WireframeRenderer::new(&device, &config, &camera_bind_group_layout);
 
@@ -649,8 +674,9 @@ impl State {
             inventory,
             hotbar,
             inventory_open: false,
-            diffuse_bind_group,
+            block_atlas_bind_group,
             input_state: input::InputState::new(),
+            item_renderer,
         }
     }
 
@@ -1280,7 +1306,7 @@ impl State {
             });
             render_pass.set_pipeline(&self.render_pipeline);
             render_pass.set_bind_group(0, &self.camera_bind_group, &[]);
-            render_pass.set_bind_group(1, &self.diffuse_bind_group, &[]);
+            render_pass.set_bind_group(1, &self.block_atlas_bind_group, &[]);
             for chunk_coord in &self.active_chunk_coords {
                 if let Some(chunk_data) = self.chunk_render_data.get(chunk_coord) {
                     if let Some(ref opaque_buffers) = chunk_data.opaque_buffers {
@@ -1299,7 +1325,7 @@ impl State {
             self.wireframe_renderer
                 .draw(&mut render_pass, &self.queue, &self.world);
             render_pass.set_pipeline(&self.transparent_render_pipeline);
-            render_pass.set_bind_group(1, &self.diffuse_bind_group, &[]);
+            render_pass.set_bind_group(1, &self.block_atlas_bind_group, &[]);
             let mut sorted_transparent_chunks = self.active_chunk_coords.clone();
             let player_pos = self.player.position;
             sorted_transparent_chunks.sort_by(|a, b| {
@@ -1374,7 +1400,13 @@ impl State {
             } else {
                 self.crosshair.draw(&mut ui_render_pass);
             }
-            self.hotbar.draw(&mut ui_render_pass);
+            self.hotbar.draw(
+                &self.device,
+                &self.queue,
+                &mut ui_render_pass,
+                &mut self.item_renderer,
+                &self.block_atlas_bind_group,
+            );
         }
         {
             let mut debug_text_render_pass =
