@@ -39,7 +39,7 @@ impl UIVertex {
     }
 }
 
-const ATLAS_WIDTH_IN_BLOCKS: f32 = 7.0;
+const ATLAS_WIDTH_IN_BLOCKS: f32 = 16.0;
 const ATLAS_HEIGHT_IN_BLOCKS: f32 = 1.0;
 
 pub struct ItemRenderer {
@@ -185,6 +185,8 @@ fn generate_item_vertices(
     let color = [1.0, 1.0, 1.0, 1.0];
     let s = size / 2.0;
     let y_squish = 0.5;
+
+    let position = [position[0], position[1] + size / 4.0];
 
     let p1 = [position[0], position[1] + s * y_squish];
     let p2 = [position[0] + s, position[1]];
