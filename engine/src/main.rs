@@ -1269,9 +1269,8 @@ impl State {
 
     fn handle_inventory_interaction(&mut self) {
         if self.input_state.left_mouse_pressed_this_frame {
-            let (cursor_x, cursor_y) = self.input_state.cursor_position;
-            let screen_x = cursor_x - self.size.width as f32 / 2.0;
-            let screen_y = cursor_y - self.size.height as f32 / 2.0;
+            let screen_x = self.input_state.cursor_position.0;
+            let screen_y = self.input_state.cursor_position.1;
 
             if let Some((container_type, slot_index)) = self.get_clicked_slot(screen_x, screen_y) {
                 if container_type == 0 {
@@ -1500,9 +1499,7 @@ impl State {
 
             if let Some(item) = self.dragged_item {
                 let (cursor_x, cursor_y) = self.input_state.cursor_position;
-                let screen_x = cursor_x - self.size.width as f32 / 2.0;
-                let screen_y = cursor_y - self.size.height as f32 / 2.0;
-                items_to_render.push((item, [screen_x, screen_y], 50.0 * 0.7, [1.0, 1.0, 1.0, 0.7]));
+                items_to_render.push((item, [cursor_x, cursor_y], 50.0 * 0.7, [1.0, 1.0, 1.0, 0.7]));
             }
 
             self.item_renderer.draw(
