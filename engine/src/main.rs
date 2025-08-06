@@ -1250,6 +1250,26 @@ impl State {
         None
     }
 
+    fn handle_slot_click(
+        dragged_item: &mut Option<ItemStack>,
+        items: &mut [Option<ItemStack>],
+        slot_index: usize,
+    ) {
+        let slot_item = items[slot_index].take();
+        if let Some(dragged) = dragged_item.take() {
+            if let Some(slot) = slot_item {
+                items[slot_index] = Some(dragged);
+                *dragged_item = Some(slot);
+            } else {
+                items[slot_index] = Some(dragged);
+            }
+        } else {
+            if let Some(slot) = slot_item {
+                *dragged_item = Some(slot);
+            }
+        }
+    }
+
     fn handle_inventory_interaction(&mut self) {
         if self.input_state.left_mouse_pressed_this_frame {
             let (cursor_x, cursor_y) = self.input_state.cursor_position;
@@ -1257,26 +1277,18 @@ impl State {
             let screen_y = -(cursor_y - self.size.height as f32 / 2.0);
 
             if let Some((container_type, slot_index)) = self.get_clicked_slot(screen_x, screen_y) {
-                let items = if container_type == 0 {
-                    &mut self.inventory.items
+                if container_type == 0 {
+                    Self::handle_slot_click(
+                        &mut self.dragged_item,
+                        &mut self.inventory.items,
+                        slot_index,
+                    );
                 } else {
-                    &mut self.hotbar.items
-                };
-
-                let dragged_item = self.dragged_item.take();
-                let slot_item = items[slot_index].take();
-
-                if let Some(dragged) = dragged_item {
-                    if let Some(slot) = slot_item {
-                        items[slot_index] = Some(dragged);
-                        self.dragged_item = Some(slot);
-                    } else {
-                        items[slot_index] = Some(dragged);
-                    }
-                } else {
-                    if let Some(slot) = slot_item {
-                        self.dragged_item = Some(slot);
-                    }
+                    Self::handle_slot_click(
+                        &mut self.dragged_item,
+                        &mut self.hotbar.items,
+                        slot_index,
+                    );
                 }
             }
         }
@@ -1467,38 +1479,43 @@ impl State {
                 timestamp_writes: None,
                 occlusion_query_set: None,
             });
+            let mut items_to_render = Vec::new();
+
             if self.inventory_open {
-                self.inventory.draw(
-                    &self.device,
-                    &self.queue,
-                    &mut ui_render_pass,
-                    &mut self.item_renderer,
-                    &self.block_atlas_bind_group,
-                );
+                self.inventory.draw(&mut ui_render_pass);
+                for (i, item_stack_opt) in self.inventory.items.iter().enumerate() {
+                    if let Some(item_stack) = item_stack_opt {
+                        let position = self.inventory.slot_positions[i];
+                        items_to_render.push((*item_stack, position, 50.0 * 0.7, [1.0, 1.0, 1.0, 1.0]));
+                    }
+                }
             } else {
                 self.crosshair.draw(&mut ui_render_pass);
             }
-            self.hotbar.draw(
-                &self.device,
-                &self.queue,
-                &mut ui_render_pass,
-                &mut self.item_renderer,
-                &self.block_atlas_bind_group,
-            );
+
+            self.hotbar.draw(&mut ui_render_pass);
+            for (i, item_stack_opt) in self.hotbar.items.iter().enumerate() {
+                if let Some(item_stack) = item_stack_opt {
+                    let position = self.hotbar.slot_positions[i];
+                    items_to_render.push((*item_stack, position, 50.0 * 0.7, [1.0, 1.0, 1.0, 1.0]));
+                }
+            }
 
             if let Some(item) = self.dragged_item {
                 let (cursor_x, cursor_y) = self.input_state.cursor_position;
                 let screen_x = cursor_x - self.size.width as f32 / 2.0;
                 let screen_y = -(cursor_y - self.size.height as f32 / 2.0);
-                self.item_renderer.draw(
-                    &self.device,
-                    &self.queue,
-                    &mut ui_render_pass,
-                    &self.inventory.projection_bind_group,
-                    &self.block_atlas_bind_group,
-                    &[(item, [screen_x, screen_y], 50.0 * 0.7, [1.0, 1.0, 1.0, 0.7])],
-                );
+                items_to_render.push((item, [screen_x, screen_y], 50.0 * 0.7, [1.0, 1.0, 1.0, 0.7]));
             }
+
+            self.item_renderer.draw(
+                &self.device,
+                &self.queue,
+                &mut ui_render_pass,
+                &self.inventory.projection_bind_group,
+                &self.block_atlas_bind_group,
+                &items_to_render,
+            );
         }
         {
             let mut debug_text_render_pass =

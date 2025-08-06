@@ -1,9 +1,6 @@
 // engine/src/ui/hotbar.rs
 
-use super::{
-    item::{ItemType, ItemStack},
-    item_renderer::ItemRenderer,
-};
+use super::item::{ItemType, ItemStack};
 use crate::block::BlockType;
 use wgpu::util::DeviceExt;
 
@@ -44,7 +41,7 @@ pub struct Hotbar {
     projection_bind_group: wgpu::BindGroup,
     pub items: [Option<ItemStack>; NUM_SLOTS],
     // Store positions to avoid recalculating them in draw loop
-    slot_positions: [[f32; 2]; NUM_SLOTS],
+    pub slot_positions: [[f32; 2]; NUM_SLOTS],
 }
 
 impl Hotbar {
@@ -184,41 +181,10 @@ impl Hotbar {
         }
     }
 
-    pub fn draw<'pass>(
-        &'pass self,
-        device: &wgpu::Device,
-        queue: &wgpu::Queue,
-        render_pass: &mut wgpu::RenderPass<'pass>,
-        item_renderer: &'pass mut ItemRenderer,
-        item_texture_bind_group: &'pass wgpu::BindGroup,
-    ) {
-        // Draw the hotbar background and slots
+    pub fn draw<'pass>(&'pass self, render_pass: &mut wgpu::RenderPass<'pass>) {
         render_pass.set_pipeline(&self.render_pipeline);
         render_pass.set_bind_group(0, &self.projection_bind_group, &[]);
         render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
         render_pass.draw(0..self.num_vertices, 0..1);
-
-        // Prepare items to be rendered
-        const SLOT_SIZE: f32 = 50.0;
-        let mut items_to_render = Vec::new();
-        for (i, item_stack_opt) in self.items.iter().enumerate() {
-            if let Some(item_stack) = item_stack_opt {
-                let position = self.slot_positions[i];
-                let item_size = SLOT_SIZE * 0.7;
-                items_to_render.push((*item_stack, position, item_size, [1.0, 1.0, 1.0, 1.0]));
-            }
-        }
-
-        // Draw the items using the separate ItemRenderer
-        if !items_to_render.is_empty() {
-            item_renderer.draw(
-                device,
-                queue,
-                render_pass,
-                &self.projection_bind_group,
-                item_texture_bind_group,
-                &items_to_render,
-            );
-        }
     }
 }
