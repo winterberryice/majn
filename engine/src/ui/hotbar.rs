@@ -55,7 +55,7 @@ impl Hotbar {
         let hotbar_width = (NUM_SLOTS as f32 * TOTAL_SLOT_SIZE) + SLOT_MARGIN * 2.0;
         let hotbar_height = TOTAL_SLOT_SIZE + SLOT_MARGIN;
         let hotbar_start_x = -hotbar_width / 2.0;
-        let hotbar_start_y = -(config.height as f32 / 2.0) + (SLOT_MARGIN * 2.0);
+        let hotbar_start_y = -(config.height as f32 / 2.0) + SLOT_SIZE + (SLOT_MARGIN * 4.0);
         let bg_color = [0.1, 0.1, 0.1, 0.8];
 
         vertices.extend_from_slice(&[
@@ -69,7 +69,7 @@ impl Hotbar {
 
         let grid_width = NUM_SLOTS as f32 * TOTAL_SLOT_SIZE - SLOT_MARGIN;
         let start_x = -grid_width / 2.0;
-        let start_y_slots = -(config.height as f32 / 2.0) + (SLOT_MARGIN * 3.0);
+        let start_y_slots = -(config.height as f32 / 2.0) + SLOT_SIZE + (SLOT_MARGIN * 5.0);
         let slot_color = [0.3, 0.3, 0.3, 0.8];
         let mut slot_positions = [[0.0; 2]; NUM_SLOTS];
 
@@ -95,9 +95,12 @@ impl Hotbar {
         let num_vertices = vertices.len() as u32;
 
         let projection_matrix = glam::Mat4::orthographic_rh(
-            -(config.width as f32) / 2.0, config.width as f32 / 2.0,
-            -(config.height as f32) / 2.0, config.height as f32 / 2.0,
-            -1.0, 1.0,
+            0.0,
+            config.width as f32,
+            config.height as f32,
+            0.0,
+            -1.0,
+            1.0,
         );
 
         let projection_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {

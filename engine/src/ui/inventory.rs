@@ -139,10 +139,10 @@ impl Inventory {
         let num_vertices = vertices.len() as u32;
 
         let projection_matrix = glam::Mat4::orthographic_rh(
-            -(config.width as f32) / 2.0,
-            config.width as f32 / 2.0,
-            config.height as f32 / 2.0,
-            -(config.height as f32) / 2.0,
+            0.0,
+            config.width as f32,
+            config.height as f32,
+            0.0,
             -1.0,
             1.0,
         );

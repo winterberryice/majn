@@ -1271,7 +1271,7 @@ impl State {
         if self.input_state.left_mouse_pressed_this_frame {
             let (cursor_x, cursor_y) = self.input_state.cursor_position;
             let screen_x = cursor_x - self.size.width as f32 / 2.0;
-            let screen_y = -(cursor_y - self.size.height as f32 / 2.0);
+            let screen_y = cursor_y - self.size.height as f32 / 2.0;
 
             if let Some((container_type, slot_index)) = self.get_clicked_slot(screen_x, screen_y) {
                 if container_type == 0 {
