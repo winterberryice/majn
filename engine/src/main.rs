@@ -1287,6 +1287,28 @@ impl State {
                     );
                 }
             }
+        } else if self.input_state.left_mouse_released_this_frame {
+            if self.dragged_item.is_some() {
+                let screen_x = self.input_state.cursor_position.0;
+                let screen_y = self.input_state.cursor_position.1;
+
+                if let Some((container_type, slot_index)) = self.get_clicked_slot(screen_x, screen_y)
+                {
+                    if container_type == 0 {
+                        Self::handle_slot_click(
+                            &mut self.dragged_item,
+                            &mut self.inventory.items,
+                            slot_index,
+                        );
+                    } else {
+                        Self::handle_slot_click(
+                            &mut self.dragged_item,
+                            &mut self.hotbar.items,
+                            slot_index,
+                        );
+                    }
+                }
+            }
         }
     }
 
