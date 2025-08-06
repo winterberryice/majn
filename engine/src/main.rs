@@ -628,12 +628,9 @@ impl State {
 
         let debug_overlay = DebugOverlay::new(&device, &config);
         let crosshair = ui::crosshair::Crosshair::new(&device, &config);
-        let mut inventory = ui::inventory::Inventory::new(&device, &config);
-        inventory.items[0] = Some(ItemStack::new(ItemType::Block(BlockType::OakLog), 1));
-        inventory.items[1] = Some(ItemStack::new(ItemType::Block(BlockType::OakLeaves), 5));
-        inventory.items[10] = Some(ItemStack::new(ItemType::Block(BlockType::Grass), 10));
-
-        let hotbar = ui::hotbar::Hotbar::new(&device, &config);
+        let inventory = ui::inventory::Inventory::new(&device, &config);
+        let mut hotbar = ui::hotbar::Hotbar::new(&device, &config);
+        hotbar.items[0] = Some(ItemStack::new(ItemType::Block(BlockType::Dirt), 1));
 
         let ui_projection_bind_group_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -1504,7 +1501,7 @@ impl State {
             if let Some(item) = self.dragged_item {
                 let (cursor_x, cursor_y) = self.input_state.cursor_position;
                 let screen_x = cursor_x - self.size.width as f32 / 2.0;
-                let screen_y = -(cursor_y - self.size.height as f32 / 2.0);
+                let screen_y = cursor_y - self.size.height as f32 / 2.0;
                 items_to_render.push((item, [screen_x, screen_y], 50.0 * 0.7, [1.0, 1.0, 1.0, 0.7]));
             }
 
