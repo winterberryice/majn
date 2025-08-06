@@ -10,6 +10,7 @@ pub enum ItemType {
 #[derive(Debug, Clone, Copy)]
 pub struct ItemStack {
     pub item_type: ItemType,
+    #[allow(dead_code)]
     pub count: u8,
 }
 
