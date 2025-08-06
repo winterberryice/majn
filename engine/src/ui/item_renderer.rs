@@ -186,6 +186,8 @@ fn generate_item_vertices(
     let s = size / 2.0;
     let y_squish = 0.5;
 
+    let position = [position[0], position[1] + size / 4.0];
+
     let p1 = [position[0], position[1] + s * y_squish];
     let p2 = [position[0] + s, position[1]];
     let p3 = [position[0], position[1] - s * y_squish];
