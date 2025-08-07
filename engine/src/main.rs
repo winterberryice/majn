@@ -341,7 +341,6 @@ struct State {
     block_atlas_bind_group: wgpu::BindGroup,
     input_state: input::InputState,
     item_renderer: ItemRenderer,
-    dragged_item: Option<ItemStack>,
     ui_text: UIText,
 }
 
@@ -689,7 +688,6 @@ impl State {
             block_atlas_bind_group,
             input_state: input::InputState::new(),
             item_renderer,
-            dragged_item: None,
             ui_text,
         }
     }
@@ -1228,96 +1226,11 @@ impl State {
         self.input_state.clear_frame_state();
     }
 
-    fn get_clicked_slot(&self, screen_x: f32, screen_y: f32) -> Option<(i32, usize)> {
-        const SLOT_SIZE: f32 = 50.0;
-        let half_slot = SLOT_SIZE / 2.0;
-
-        for (i, slot_pos) in self.inventory.slot_positions.iter().enumerate() {
-            if screen_x >= slot_pos[0] - half_slot
-                && screen_x <= slot_pos[0] + half_slot
-                && screen_y >= slot_pos[1] - half_slot
-                && screen_y <= slot_pos[1] + half_slot
-            {
-                return Some((0, i));
-            }
-        }
-
-        for (i, slot_pos) in self.hotbar.slot_positions.iter().enumerate() {
-            if screen_x >= slot_pos[0] - half_slot
-                && screen_x <= slot_pos[0] + half_slot
-                && screen_y >= slot_pos[1] - half_slot
-                && screen_y <= slot_pos[1] + half_slot
-            {
-                return Some((1, i));
-            }
-        }
-
-        None
-    }
-
-    fn handle_slot_click(
-        dragged_item: &mut Option<ItemStack>,
-        items: &mut [Option<ItemStack>],
-        slot_index: usize,
-    ) {
-        let slot_item = items[slot_index].take();
-        if let Some(dragged) = dragged_item.take() {
-            if let Some(slot) = slot_item {
-                items[slot_index] = Some(dragged);
-                *dragged_item = Some(slot);
-            } else {
-                items[slot_index] = Some(dragged);
-            }
-        } else {
-            if let Some(slot) = slot_item {
-                *dragged_item = Some(slot);
-            }
-        }
-    }
 
     fn handle_inventory_interaction(&mut self) {
-        if self.input_state.left_mouse_pressed_this_frame {
-            let screen_x = self.input_state.cursor_position.0;
-            let screen_y = self.input_state.cursor_position.1;
-
-            if let Some((container_type, slot_index)) = self.get_clicked_slot(screen_x, screen_y) {
-                if container_type == 0 {
-                    Self::handle_slot_click(
-                        &mut self.dragged_item,
-                        &mut self.inventory.items,
-                        slot_index,
-                    );
-                } else {
-                    Self::handle_slot_click(
-                        &mut self.dragged_item,
-                        &mut self.hotbar.items,
-                        slot_index,
-                    );
-                }
-            }
-        } else if self.input_state.left_mouse_released_this_frame {
-            if self.dragged_item.is_some() {
-                let screen_x = self.input_state.cursor_position.0;
-                let screen_y = self.input_state.cursor_position.1;
-
-                if let Some((container_type, slot_index)) = self.get_clicked_slot(screen_x, screen_y)
-                {
-                    if container_type == 0 {
-                        Self::handle_slot_click(
-                            &mut self.dragged_item,
-                            &mut self.inventory.items,
-                            slot_index,
-                        );
-                    } else {
-                        Self::handle_slot_click(
-                            &mut self.dragged_item,
-                            &mut self.hotbar.items,
-                            slot_index,
-                        );
-                    }
-                }
-            }
-        }
+        let (width, height) = (self.config.width, self.config.height);
+        self.inventory
+            .handle_mouse_click(&self.input_state, (width, height));
     }
 
     fn handle_block_interactions(&mut self) {
@@ -1527,7 +1440,7 @@ impl State {
                 }
             }
 
-            if let Some(item) = self.dragged_item {
+            if let Some(item) = self.inventory.drag_item {
                 let (cursor_x, cursor_y) = self.input_state.cursor_position;
                 items_to_render.push((item, [cursor_x, cursor_y], 50.0 * 0.7, [1.0, 1.0, 1.0, 0.7]));
             }
@@ -1582,7 +1495,7 @@ impl State {
                 }
             }
 
-            if let Some(item_stack) = self.dragged_item {
+            if let Some(item_stack) = self.inventory.drag_item {
                 if item_stack.count > 1 {
                     let (cursor_x, cursor_y) = self.input_state.cursor_position;
                     let section = OwnedSection::default()
