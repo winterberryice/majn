@@ -244,32 +244,34 @@ impl Inventory {
 
     pub fn handle_mouse_click(&mut self, input: &crate::input::InputState, window_size: (u32, u32)) {
         const SLOT_SIZE: f32 = 50.0;
-        let (window_width, window_height) = window_size;
+        const SLOT_MARGIN: f32 = 5.0;
+        const TOTAL_SLOT_SIZE: f32 = SLOT_SIZE + SLOT_MARGIN;
 
+        let (window_width, window_height) = window_size;
         let (cursor_x, cursor_y) = input.cursor_position;
 
-        // Check if the click is within the inventory bounds
-        let grid_width = GRID_COLS as f32 * (SLOT_SIZE + 5.0) - 5.0;
-        let grid_height = GRID_ROWS as f32 * (SLOT_SIZE + 5.0) - 5.0;
+        let grid_width = GRID_COLS as f32 * TOTAL_SLOT_SIZE - SLOT_MARGIN;
+        let grid_height = GRID_ROWS as f32 * TOTAL_SLOT_SIZE - SLOT_MARGIN;
         let start_x = (window_width as f32 - grid_width) / 2.0;
         let start_y = (window_height as f32 - grid_height) / 2.0;
 
-        if cursor_x >= start_x
+        let is_in_bounds = cursor_x >= start_x
             && cursor_x <= start_x + grid_width
             && cursor_y >= start_y
-            && cursor_y <= start_y + grid_height
-        {
+            && cursor_y <= start_y + grid_height;
+
+        if is_in_bounds {
             for i in 0..NUM_SLOTS {
                 let slot_x = self.slot_positions[i][0] - SLOT_SIZE / 2.0;
                 let slot_y = self.slot_positions[i][1] - SLOT_SIZE / 2.0;
 
-                if cursor_x >= slot_x
+                let is_in_slot = cursor_x >= slot_x
                     && cursor_x <= slot_x + SLOT_SIZE
                     && cursor_y >= slot_y
-                    && cursor_y <= slot_y + SLOT_SIZE
-                {
-                    if input.left_mouse_pressed_this_frame {
-                        // Handle left click
+                    && cursor_y <= slot_y + SLOT_SIZE;
+
+                if is_in_slot {
+                    if input.left_mouse_released_this_frame {
                         let slot_item = self.items[i].take();
                         let drag_item = self.drag_item.take();
 
@@ -293,16 +295,34 @@ impl Inventory {
                         } else if let Some(d_item) = drag_item {
                             self.items[i] = Some(d_item);
                         }
-                    } else if input.right_mouse_pressed_this_frame {
-                        // Handle right click
-                        let slot_item = self.items[i].as_mut();
-
-                        if let Some(s_item) = slot_item {
-                            if self.drag_item.is_none() {
+                    } else if input.right_mouse_released_this_frame {
+                        if let Some(d_item) = self.drag_item.as_mut() {
+                            if let Some(s_item) = self.items[i].as_mut() {
+                                if s_item.item_type == d_item.item_type {
+                                    if s_item.count < 64 {
+                                        s_item.count += 1;
+                                        d_item.count -= 1;
+                                        if d_item.count == 0 {
+                                            self.drag_item = None;
+                                        }
+                                    }
+                                }
+                            } else {
+                                self.items[i] = Some(super::item::ItemStack::new(d_item.item_type, 1));
+                                d_item.count -= 1;
+                                if d_item.count == 0 {
+                                    self.drag_item = None;
+                                }
+                            }
+                        } else if let Some(s_item) = self.items[i].as_mut() {
+                            if s_item.count > 0 {
                                 let half = (s_item.count + 1) / 2;
-                                let new_stack = super::item::ItemStack::new(s_item.item_type, half);
-                                s_item.count -= half;
-                                self.drag_item = Some(new_stack);
+                                if half > 0 {
+                                    let new_stack =
+                                        super::item::ItemStack::new(s_item.item_type, half);
+                                    s_item.count -= half;
+                                    self.drag_item = Some(new_stack);
+                                }
                             }
                         }
                     }
