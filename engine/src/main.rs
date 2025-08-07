@@ -301,7 +301,7 @@ use crate::world::World;
 use glam::IVec3;
 use glam::Mat4;
 use std::collections::HashMap;
-use wgpu_text::glyph_brush::{OwnedSection, OwnedText};
+use wgpu_text::glyph_brush::{HorizontalAlign, Layout, OwnedSection, OwnedText, VerticalAlign};
 
 struct ChunkRenderBuffers {
     vertex_buffer: wgpu::Buffer,
@@ -633,7 +633,7 @@ impl State {
         let crosshair = ui::crosshair::Crosshair::new(&device, &config);
         let inventory = ui::inventory::Inventory::new(&device, &config);
         let mut hotbar = ui::hotbar::Hotbar::new(&device, &config);
-        hotbar.items[0] = Some(ItemStack::new(ItemType::Block(BlockType::Dirt), 2));
+        hotbar.items[0] = Some(ItemStack::new(ItemType::Block(BlockType::Dirt), 64));
 
         let ui_projection_bind_group_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -1542,6 +1542,10 @@ impl State {
             );
 
             let mut text_sections = Vec::new();
+            let layout = Layout::default()
+                .h_align(HorizontalAlign::Right)
+                .v_align(VerticalAlign::Bottom);
+
             if self.inventory_open {
                 for (i, item_stack_opt) in self.inventory.items.iter().enumerate() {
                     if let Some(item_stack) = item_stack_opt {
@@ -1553,7 +1557,8 @@ impl State {
                                         .with_scale(20.0)
                                         .with_color([1.0, 1.0, 1.0, 1.0]),
                                 )
-                                .with_screen_position((position[0] + 15.0, position[1] + 15.0));
+                                .with_screen_position((position[0] + 22.0, position[1] + 22.0))
+                                .with_layout(layout.clone());
                             text_sections.push(section);
                         }
                     }
@@ -1570,7 +1575,8 @@ impl State {
                                     .with_scale(20.0)
                                     .with_color([1.0, 1.0, 1.0, 1.0]),
                             )
-                            .with_screen_position((position[0] + 15.0, position[1] + 15.0));
+                            .with_screen_position((position[0] + 22.0, position[1] + 22.0))
+                            .with_layout(layout.clone());
                         text_sections.push(section);
                     }
                 }
