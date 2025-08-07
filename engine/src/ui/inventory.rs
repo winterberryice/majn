@@ -40,7 +40,6 @@ pub struct Inventory {
     pub projection_bind_group: wgpu::BindGroup,
     pub items: [Option<ItemStack>; NUM_SLOTS],
     pub slot_positions: [[f32; 2]; NUM_SLOTS],
-    pub drag_item: Option<ItemStack>,
 }
 
 impl Inventory {
@@ -231,7 +230,6 @@ impl Inventory {
             projection_bind_group,
             items: [None; NUM_SLOTS],
             slot_positions,
-            drag_item: None,
         }
     }
 
@@ -242,11 +240,11 @@ impl Inventory {
         render_pass.draw(0..self.num_vertices, 0..1);
     }
 
-    pub fn handle_mouse_click(&mut self, input: &crate::input::InputState, _window_size: (u32, u32)) {
-        println!("--- New Mouse Click Frame ---");
-        println!("Left released: {}, Right released: {}", input.left_mouse_released_this_frame, input.right_mouse_released_this_frame);
-        println!("Drag item before: {:?}", self.drag_item);
-
+    pub fn handle_mouse_click(
+        &mut self,
+        input: &crate::input::InputState,
+        drag_item: &mut Option<ItemStack>,
+    ) {
         const SLOT_SIZE: f32 = 50.0;
         let (cursor_x, cursor_y) = input.cursor_position;
 
@@ -260,71 +258,51 @@ impl Inventory {
                 && cursor_y <= slot_y + SLOT_SIZE;
 
             if is_in_slot {
-                println!("Action in slot {}", i);
                 if input.left_mouse_released_this_frame {
-                    println!("-> Left click detected");
-                    let slot_item_before = self.items[i];
-                    println!("  Slot item before: {:?}", slot_item_before);
-                    let drag_item_before = self.drag_item;
-                    println!("  Drag item before: {:?}", drag_item_before);
-
                     let slot_item = self.items[i].take();
-                    let drag_item = self.drag_item.take();
+                    let taken_drag_item = drag_item.take();
 
                     if let Some(mut s_item) = slot_item {
-                        if let Some(mut d_item) = drag_item {
+                        if let Some(mut d_item) = taken_drag_item {
                             if s_item.item_type == d_item.item_type {
-                                println!("  Merging stacks");
                                 let total = s_item.count + d_item.count;
                                 s_item.count = total.min(64);
                                 d_item.count = total.saturating_sub(64);
                                 self.items[i] = Some(s_item);
                                 if d_item.count > 0 {
-                                    self.drag_item = Some(d_item);
+                                    *drag_item = Some(d_item);
                                 }
                             } else {
-                                println!("  Swapping items");
                                 self.items[i] = Some(d_item);
-                                self.drag_item = Some(s_item);
+                                *drag_item = Some(s_item);
                             }
                         } else {
-                            println!("  Picking up from slot");
-                            self.drag_item = Some(s_item);
+                            *drag_item = Some(s_item);
                         }
-                    } else if let Some(d_item) = drag_item {
-                        println!("  Placing into empty slot");
+                    } else if let Some(d_item) = taken_drag_item {
                         self.items[i] = Some(d_item);
                     }
-                     println!("  Slot item after: {:?}", self.items[i]);
-                     println!("  Drag item after: {:?}", self.drag_item);
                 } else if input.right_mouse_released_this_frame {
-                    println!("-> Right click detected");
-                    println!("  Slot item before: {:?}", self.items[i]);
-                    println!("  Drag item before: {:?}", self.drag_item);
-
-                    if let Some(d_item) = self.drag_item.as_mut() {
+                    if let Some(d_item) = drag_item.as_mut() {
                         if let Some(s_item) = self.items[i].as_mut() {
                             if s_item.item_type == d_item.item_type {
                                 if s_item.count < 64 {
-                                    println!("  Adding one to stack");
                                     s_item.count += 1;
                                     d_item.count -= 1;
                                     if d_item.count == 0 {
-                                        self.drag_item = None;
+                                        *drag_item = None;
                                     }
                                 }
                             }
                         } else {
-                             println!("  Placing one in empty slot");
                             self.items[i] = Some(super::item::ItemStack::new(d_item.item_type, 1));
                             d_item.count -= 1;
                             if d_item.count == 0 {
-                                self.drag_item = None;
+                                *drag_item = None;
                             }
                         }
                     } else if let Some(s_item) = self.items[i].as_mut() {
                         if s_item.count > 1 {
-                             println!("  Splitting stack");
                             let half = (s_item.count + 1) / 2;
                             let new_stack =
                                 super::item::ItemStack::new(s_item.item_type, half);
@@ -332,13 +310,11 @@ impl Inventory {
                             if s_item.count == 0 {
                                 self.items[i] = None;
                             }
-                            self.drag_item = Some(new_stack);
+                            *drag_item = Some(new_stack);
                         }
                     }
-                    println!("  Slot item after: {:?}", self.items[i]);
-                    println!("  Drag item after: {:?}", self.drag_item);
                 }
-                return; // Exit after handling the click for one slot
+                return;
             }
         }
     }

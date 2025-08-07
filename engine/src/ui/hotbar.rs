@@ -190,4 +190,83 @@ impl Hotbar {
         render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
         render_pass.draw(0..self.num_vertices, 0..1);
     }
+
+    pub fn handle_mouse_click(
+        &mut self,
+        input: &crate::input::InputState,
+        drag_item: &mut Option<ItemStack>,
+    ) {
+        const SLOT_SIZE: f32 = 50.0;
+        let (cursor_x, cursor_y) = input.cursor_position;
+
+        for i in 0..NUM_SLOTS {
+            let slot_x = self.slot_positions[i][0] - SLOT_SIZE / 2.0;
+            let slot_y = self.slot_positions[i][1] - SLOT_SIZE / 2.0;
+
+            let is_in_slot = cursor_x >= slot_x
+                && cursor_x <= slot_x + SLOT_SIZE
+                && cursor_y >= slot_y
+                && cursor_y <= slot_y + SLOT_SIZE;
+
+            if is_in_slot {
+                if input.left_mouse_released_this_frame {
+                    let slot_item = self.items[i].take();
+                    let taken_drag_item = drag_item.take();
+
+                    if let Some(mut s_item) = slot_item {
+                        if let Some(mut d_item) = taken_drag_item {
+                            if s_item.item_type == d_item.item_type {
+                                let total = s_item.count + d_item.count;
+                                s_item.count = total.min(64);
+                                d_item.count = total.saturating_sub(64);
+                                self.items[i] = Some(s_item);
+                                if d_item.count > 0 {
+                                    *drag_item = Some(d_item);
+                                }
+                            } else {
+                                self.items[i] = Some(d_item);
+                                *drag_item = Some(s_item);
+                            }
+                        } else {
+                            *drag_item = Some(s_item);
+                        }
+                    } else if let Some(d_item) = taken_drag_item {
+                        self.items[i] = Some(d_item);
+                    }
+                } else if input.right_mouse_released_this_frame {
+                    if let Some(d_item) = drag_item.as_mut() {
+                        if let Some(s_item) = self.items[i].as_mut() {
+                            if s_item.item_type == d_item.item_type {
+                                if s_item.count < 64 {
+                                    s_item.count += 1;
+                                    d_item.count -= 1;
+                                    if d_item.count == 0 {
+                                        *drag_item = None;
+                                    }
+                                }
+                            }
+                        } else {
+                            self.items[i] = Some(super::item::ItemStack::new(d_item.item_type, 1));
+                            d_item.count -= 1;
+                            if d_item.count == 0 {
+                                *drag_item = None;
+                            }
+                        }
+                    } else if let Some(s_item) = self.items[i].as_mut() {
+                        if s_item.count > 1 {
+                            let half = (s_item.count + 1) / 2;
+                            let new_stack =
+                                super::item::ItemStack::new(s_item.item_type, half);
+                            s_item.count -= half;
+                            if s_item.count == 0 {
+                                self.items[i] = None;
+                            }
+                            *drag_item = Some(new_stack);
+                        }
+                    }
+                }
+                return;
+            }
+        }
+    }
 }

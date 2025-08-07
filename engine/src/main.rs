@@ -341,6 +341,7 @@ struct State {
     block_atlas_bind_group: wgpu::BindGroup,
     input_state: input::InputState,
     item_renderer: ItemRenderer,
+    dragged_item: Option<ItemStack>,
     ui_text: UIText,
 }
 
@@ -688,6 +689,7 @@ impl State {
             block_atlas_bind_group,
             input_state: input::InputState::new(),
             item_renderer,
+            dragged_item: None,
             ui_text,
         }
     }
@@ -1230,7 +1232,9 @@ impl State {
     fn handle_inventory_interaction(&mut self) {
         let (width, height) = (self.config.width, self.config.height);
         self.inventory
-            .handle_mouse_click(&self.input_state, (width, height));
+            .handle_mouse_click(&self.input_state, &mut self.dragged_item);
+        self.hotbar
+            .handle_mouse_click(&self.input_state, &mut self.dragged_item);
     }
 
     fn handle_block_interactions(&mut self) {
@@ -1440,7 +1444,7 @@ impl State {
                 }
             }
 
-            if let Some(item) = self.inventory.drag_item {
+            if let Some(item) = self.dragged_item {
                 let (cursor_x, cursor_y) = self.input_state.cursor_position;
                 items_to_render.push((item, [cursor_x, cursor_y], 50.0 * 0.7, [1.0, 1.0, 1.0, 0.7]));
             }
@@ -1495,7 +1499,7 @@ impl State {
                 }
             }
 
-            if let Some(item_stack) = self.inventory.drag_item {
+            if let Some(item_stack) = self.dragged_item {
                 if item_stack.count > 1 {
                     let (cursor_x, cursor_y) = self.input_state.cursor_position;
                     let section = OwnedSection::default()
