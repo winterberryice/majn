@@ -3,7 +3,9 @@ pub struct InputState {
     pub left_mouse_pressed_this_frame: bool,
     pub right_mouse_pressed_this_frame: bool,
     pub left_mouse_released_this_frame: bool,
+    pub right_mouse_released_this_frame: bool,
     pub left_mouse_is_down: bool,
+    pub right_mouse_is_down: bool,
     left_mouse_was_pressed_event: bool,
     right_mouse_was_pressed_event: bool,
     pub cursor_position: (f32, f32),
@@ -36,6 +38,10 @@ impl InputState {
                 if is_pressed && !self.right_mouse_was_pressed_event {
                     self.right_mouse_pressed_this_frame = true;
                 }
+                if !is_pressed && self.right_mouse_is_down {
+                    self.right_mouse_released_this_frame = true;
+                }
+                self.right_mouse_is_down = is_pressed;
                 self.right_mouse_was_pressed_event = is_pressed;
             }
             _ => {}
@@ -50,5 +56,6 @@ impl InputState {
         self.left_mouse_pressed_this_frame = false;
         self.right_mouse_pressed_this_frame = false;
         self.left_mouse_released_this_frame = false;
+        self.right_mouse_released_this_frame = false;
     }
 }
