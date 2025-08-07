@@ -1582,6 +1582,21 @@ impl State {
                 }
             }
 
+            if let Some(item_stack) = self.dragged_item {
+                if item_stack.count > 1 {
+                    let (cursor_x, cursor_y) = self.input_state.cursor_position;
+                    let section = OwnedSection::default()
+                        .add_text(
+                            OwnedText::new(item_stack.count.to_string())
+                                .with_scale(20.0)
+                                .with_color([1.0, 1.0, 1.0, 1.0]),
+                        )
+                        .with_screen_position((cursor_x + 22.0, cursor_y + 22.0))
+                        .with_layout(layout.clone());
+                    text_sections.push(section);
+                }
+            }
+
             self.ui_text
                 .prepare(&self.device, &self.queue, &text_sections)
                 .unwrap();
