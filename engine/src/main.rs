@@ -295,11 +295,13 @@ use crate::player::Player;
 use crate::raycast::BlockFace;
 use crate::ui::item::{ItemStack, ItemType};
 use crate::ui::item_renderer::ItemRenderer;
+use crate::ui::ui_text::UIText;
 use crate::wireframe_renderer::WireframeRenderer;
 use crate::world::World;
 use glam::IVec3;
 use glam::Mat4;
 use std::collections::HashMap;
+use wgpu_text::glyph_brush::{OwnedSection, OwnedText};
 
 struct ChunkRenderBuffers {
     vertex_buffer: wgpu::Buffer,
@@ -340,6 +342,7 @@ struct State {
     input_state: input::InputState,
     item_renderer: ItemRenderer,
     dragged_item: Option<ItemStack>,
+    ui_text: UIText,
 }
 
 const ATLAS_COLS: f32 = 16.0;
@@ -630,7 +633,7 @@ impl State {
         let crosshair = ui::crosshair::Crosshair::new(&device, &config);
         let inventory = ui::inventory::Inventory::new(&device, &config);
         let mut hotbar = ui::hotbar::Hotbar::new(&device, &config);
-        hotbar.items[0] = Some(ItemStack::new(ItemType::Block(BlockType::Dirt), 1));
+        hotbar.items[0] = Some(ItemStack::new(ItemType::Block(BlockType::Dirt), 2));
 
         let ui_projection_bind_group_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -656,6 +659,8 @@ impl State {
 
         let wireframe_renderer =
             WireframeRenderer::new(&device, &config, &camera_bind_group_layout);
+
+        let ui_text = UIText::new(&device, &config);
 
         Self {
             surface,
@@ -685,6 +690,7 @@ impl State {
             input_state: input::InputState::new(),
             item_renderer,
             dragged_item: None,
+            ui_text,
         }
     }
 
@@ -1069,6 +1075,8 @@ impl State {
             self.debug_overlay
                 .resize(new_size.width, new_size.height, &self.queue);
             self.crosshair.resize(new_size, &self.queue);
+            self.ui_text
+                .resize(new_size.width, new_size.height, &self.queue);
         }
     }
 
@@ -1532,6 +1540,46 @@ impl State {
                 &self.block_atlas_bind_group,
                 &items_to_render,
             );
+
+            let mut text_sections = Vec::new();
+            if self.inventory_open {
+                for (i, item_stack_opt) in self.inventory.items.iter().enumerate() {
+                    if let Some(item_stack) = item_stack_opt {
+                        if item_stack.count > 1 {
+                            let position = self.inventory.slot_positions[i];
+                            let section = OwnedSection::default()
+                                .add_text(
+                                    OwnedText::new(item_stack.count.to_string())
+                                        .with_scale(20.0)
+                                        .with_color([1.0, 1.0, 1.0, 1.0]),
+                                )
+                                .with_screen_position((position[0] + 15.0, position[1] + 15.0));
+                            text_sections.push(section);
+                        }
+                    }
+                }
+            }
+
+            for (i, item_stack_opt) in self.hotbar.items.iter().enumerate() {
+                if let Some(item_stack) = item_stack_opt {
+                    if item_stack.count > 1 {
+                        let position = self.hotbar.slot_positions[i];
+                        let section = OwnedSection::default()
+                            .add_text(
+                                OwnedText::new(item_stack.count.to_string())
+                                    .with_scale(20.0)
+                                    .with_color([1.0, 1.0, 1.0, 1.0]),
+                            )
+                            .with_screen_position((position[0] + 15.0, position[1] + 15.0));
+                        text_sections.push(section);
+                    }
+                }
+            }
+
+            self.ui_text
+                .prepare(&self.device, &self.queue, &text_sections)
+                .unwrap();
+            self.ui_text.render(&mut ui_render_pass);
         }
         {
             let mut debug_text_render_pass =
