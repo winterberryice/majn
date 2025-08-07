@@ -1230,7 +1230,6 @@ impl State {
 
 
     fn handle_inventory_interaction(&mut self) {
-        let (width, height) = (self.config.width, self.config.height);
         self.inventory
             .handle_mouse_click(&self.input_state, &mut self.dragged_item);
         self.hotbar

@@ -209,29 +209,31 @@ impl Hotbar {
                 && cursor_y <= slot_y + SLOT_SIZE;
 
             if is_in_slot {
-                if input.left_mouse_released_this_frame {
-                    let slot_item = self.items[i].take();
-                    let taken_drag_item = drag_item.take();
-
-                    if let Some(mut s_item) = slot_item {
-                        if let Some(mut d_item) = taken_drag_item {
+                if input.left_mouse_pressed_this_frame {
+                    if drag_item.is_none() {
+                        if let Some(s_item) = self.items[i].take() {
+                            *drag_item = Some(s_item);
+                        }
+                    }
+                } else if input.left_mouse_released_this_frame {
+                    if let Some(d_item) = drag_item.take() {
+                        if let Some(s_item) = self.items[i].as_mut() {
                             if s_item.item_type == d_item.item_type {
                                 let total = s_item.count + d_item.count;
                                 s_item.count = total.min(64);
-                                d_item.count = total.saturating_sub(64);
-                                self.items[i] = Some(s_item);
-                                if d_item.count > 0 {
-                                    *drag_item = Some(d_item);
+                                let remaining = total.saturating_sub(64);
+                                if remaining > 0 {
+                                    let mut new_d_item = d_item;
+                                    new_d_item.count = remaining;
+                                    *drag_item = Some(new_d_item);
                                 }
                             } else {
-                                self.items[i] = Some(d_item);
-                                *drag_item = Some(s_item);
+                                let old_slot_item = self.items[i].replace(d_item);
+                                *drag_item = old_slot_item;
                             }
                         } else {
-                            *drag_item = Some(s_item);
+                            self.items[i] = Some(d_item);
                         }
-                    } else if let Some(d_item) = taken_drag_item {
-                        self.items[i] = Some(d_item);
                     }
                 } else if input.right_mouse_released_this_frame {
                     if let Some(d_item) = drag_item.as_mut() {
