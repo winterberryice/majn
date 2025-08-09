@@ -2,7 +2,7 @@ use super::item::ItemStack;
 use wgpu::util::DeviceExt;
 
 const GRID_COLS: usize = 9;
-const GRID_ROWS: usize = 4;
+const GRID_ROWS: usize = 3;
 const NUM_SLOTS: usize = GRID_COLS * GRID_ROWS;
 
 #[repr(C)]
@@ -52,8 +52,7 @@ impl Inventory {
         let mut slot_positions = [[0.0; 2]; NUM_SLOTS];
 
         let bg_width = (GRID_COLS as f32 * TOTAL_SLOT_SIZE) + SLOT_MARGIN * 2.0;
-        let bg_height =
-            (GRID_ROWS as f32 * TOTAL_SLOT_SIZE) + SLOT_MARGIN * 2.0 + SLOT_MARGIN * 2.0;
+        let bg_height = (GRID_ROWS as f32 * TOTAL_SLOT_SIZE) + SLOT_MARGIN * 2.0;
         let bg_start_x = (config.width as f32 - bg_width) / 2.0;
         let bg_start_y = (config.height as f32 - bg_height) / 2.0;
         let bg_color = [0.1, 0.1, 0.1, 0.8];
@@ -94,10 +93,7 @@ impl Inventory {
         for row in 0..GRID_ROWS {
             for col in 0..GRID_COLS {
                 let x = start_x + col as f32 * TOTAL_SLOT_SIZE;
-                let mut y = start_y + row as f32 * TOTAL_SLOT_SIZE;
-                if row > 2 {
-                    y += SLOT_MARGIN * 2.0;
-                }
+                let y = start_y + row as f32 * TOTAL_SLOT_SIZE;
 
                 let index = row * GRID_COLS + col;
                 slot_positions[index] = [x + SLOT_SIZE / 2.0, y + SLOT_SIZE / 2.0];
