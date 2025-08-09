@@ -52,8 +52,7 @@ impl Inventory {
         let mut slot_positions = [[0.0; 2]; NUM_SLOTS];
 
         let bg_width = (GRID_COLS as f32 * TOTAL_SLOT_SIZE) + SLOT_MARGIN * 2.0;
-        let bg_height =
-            (GRID_ROWS as f32 * TOTAL_SLOT_SIZE) + SLOT_MARGIN * 2.0 + SLOT_MARGIN * 2.0;
+        let bg_height = (GRID_ROWS as f32 * TOTAL_SLOT_SIZE) + SLOT_MARGIN * 2.0;
         let bg_start_x = (config.width as f32 - bg_width) / 2.0;
         let bg_start_y = (config.height as f32 - bg_height) / 2.0;
         let bg_color = [0.1, 0.1, 0.1, 0.8];
