@@ -75,7 +75,7 @@ impl Hotbar {
         let start_x = (config.width as f32 - grid_width) / 2.0;
         let start_y_slots = config.height as f32 - SLOT_SIZE - (SLOT_MARGIN * 2.0);
         let slot_color = [0.3, 0.3, 0.3, 0.8];
-        let selection_color = [1.0, 1.0, 1.0, 1.0];
+        let selection_color = [0.5, 0.5, 0.5, 1.0];
         let mut slot_positions = [[0.0; 2]; NUM_SLOTS];
 
         for col in 0..NUM_SLOTS {
