@@ -21,6 +21,7 @@ pub struct Player {
     pub velocity: Vec3,
     pub local_bounding_box: AABB, // Relative to player's position (feet)
     pub on_ground: bool,
+    pub selected_hotbar_slot: usize,
 
     // Camera orientation fields
     pub yaw: f32,   // Radians. Rotation around the Y axis (vertical)
@@ -41,6 +42,7 @@ impl Player {
                 max: Vec3::new(PLAYER_HALF_WIDTH, PLAYER_HEIGHT, PLAYER_HALF_WIDTH),
             },
             on_ground: false,
+            selected_hotbar_slot: 0,
             yaw: initial_yaw,
             pitch: initial_pitch,
             mouse_sensitivity,

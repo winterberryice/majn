@@ -37,10 +37,11 @@ impl HotbarVertex {
 pub struct Hotbar {
     vertex_buffer: wgpu::Buffer,
     num_vertices: u32,
+    selection_vertex_buffer: wgpu::Buffer,
+    selection_index_buffer: wgpu::Buffer,
     render_pipeline: wgpu::RenderPipeline,
     projection_bind_group: wgpu::BindGroup,
     pub items: [Option<ItemStack>; NUM_SLOTS],
-    // Store positions to avoid recalculating them in draw loop
     pub slot_positions: [[f32; 2]; NUM_SLOTS],
 }
 
@@ -49,8 +50,11 @@ impl Hotbar {
         const SLOT_SIZE: f32 = 50.0;
         const SLOT_MARGIN: f32 = 5.0;
         const TOTAL_SLOT_SIZE: f32 = SLOT_SIZE + SLOT_MARGIN;
+        const BORDER_WIDTH: f32 = 3.0;
 
         let mut vertices: Vec<HotbarVertex> = Vec::new();
+        let mut selection_vertices: Vec<HotbarVertex> = Vec::new();
+        let mut selection_indices: Vec<u16> = Vec::new();
 
         let hotbar_width = (NUM_SLOTS as f32 * TOTAL_SLOT_SIZE) + SLOT_MARGIN * 2.0;
         let hotbar_height = TOTAL_SLOT_SIZE + SLOT_MARGIN;
@@ -71,6 +75,7 @@ impl Hotbar {
         let start_x = (config.width as f32 - grid_width) / 2.0;
         let start_y_slots = config.height as f32 - SLOT_SIZE - (SLOT_MARGIN * 2.0);
         let slot_color = [0.3, 0.3, 0.3, 0.8];
+        let selection_color = [1.0, 1.0, 1.0, 1.0];
         let mut slot_positions = [[0.0; 2]; NUM_SLOTS];
 
         for col in 0..NUM_SLOTS {
@@ -85,6 +90,21 @@ impl Hotbar {
                 HotbarVertex { position: [x + SLOT_SIZE, y], color: slot_color },
                 HotbarVertex { position: [x + SLOT_SIZE, y + SLOT_SIZE], color: slot_color },
             ]);
+
+            let sel_x = x - BORDER_WIDTH;
+            let sel_y = y - BORDER_WIDTH;
+            let sel_size = SLOT_SIZE + BORDER_WIDTH * 2.0;
+            let base_vertex = (col * 4) as u16;
+            selection_vertices.extend_from_slice(&[
+                HotbarVertex { position: [sel_x, sel_y], color: selection_color },
+                HotbarVertex { position: [sel_x + sel_size, sel_y], color: selection_color },
+                HotbarVertex { position: [sel_x + sel_size, sel_y + sel_size], color: selection_color },
+                HotbarVertex { position: [sel_x, sel_y + sel_size], color: selection_color },
+            ]);
+            selection_indices.extend_from_slice(&[
+                base_vertex, base_vertex + 1, base_vertex + 2,
+                base_vertex, base_vertex + 2, base_vertex + 3,
+            ]);
         }
 
         let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -93,6 +113,18 @@ impl Hotbar {
             usage: wgpu::BufferUsages::VERTEX,
         });
         let num_vertices = vertices.len() as u32;
+
+        let selection_vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Hotbar Selection Vertex Buffer"),
+            contents: bytemuck::cast_slice(&selection_vertices),
+            usage: wgpu::BufferUsages::VERTEX,
+        });
+
+        let selection_index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Hotbar Selection Index Buffer"),
+            contents: bytemuck::cast_slice(&selection_indices),
+            usage: wgpu::BufferUsages::INDEX,
+        });
 
         let projection_matrix = glam::Mat4::orthographic_rh(
             0.0,
@@ -177,6 +209,8 @@ impl Hotbar {
         Self {
             vertex_buffer,
             num_vertices,
+            selection_vertex_buffer,
+            selection_index_buffer,
             render_pipeline,
             projection_bind_group,
             items,
@@ -184,9 +218,17 @@ impl Hotbar {
         }
     }
 
-    pub fn draw<'pass>(&'pass self, render_pass: &mut wgpu::RenderPass<'pass>) {
+    pub fn draw<'pass>(&'pass self, render_pass: &mut wgpu::RenderPass<'pass>, selected_slot: usize) {
         render_pass.set_pipeline(&self.render_pipeline);
         render_pass.set_bind_group(0, &self.projection_bind_group, &[]);
+
+        // Draw selection box first
+        let start_index = (selected_slot * 6) as u32;
+        render_pass.set_vertex_buffer(0, self.selection_vertex_buffer.slice(..));
+        render_pass.set_index_buffer(self.selection_index_buffer.slice(..), wgpu::IndexFormat::Uint16);
+        render_pass.draw_indexed(start_index..start_index + 6, 0, 0..1);
+
+        // Draw hotbar bg and slots
         render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
         render_pass.draw(0..self.num_vertices, 0..1);
     }

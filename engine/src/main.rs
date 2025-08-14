@@ -61,33 +61,44 @@ impl App {
     fn handle_window_event(&mut self, event: WindowEvent, active_loop: &ActiveEventLoop) {
         let mut event_consumed_by_grab_logic = false;
         match event {
+            WindowEvent::MouseWheel { delta, .. } => {
+                if let Some(s) = self.state.as_mut() {
+                    s.input_state.on_mouse_wheel(delta);
+                }
+            }
             WindowEvent::KeyboardInput {
-                event: ref key_event,
-                ..
-            } if key_event.state == ElementState::Pressed => match key_event.physical_key {
-                PhysicalKey::Code(KeyCode::Escape) => {
-                    if self.mouse_grabbed {
-                        self.set_mouse_grab(false);
-                        if let Some(state) = self.state.as_mut() {
-                            state.inventory_open = false;
+                event: ref key_event, ..
+            } => {
+                if let Some(s) = self.state.as_mut() {
+                    s.input_state.on_keyboard_input(key_event);
+                }
+                if key_event.state == ElementState::Pressed {
+                    match key_event.physical_key {
+                        PhysicalKey::Code(KeyCode::Escape) => {
+                            if self.mouse_grabbed {
+                                self.set_mouse_grab(false);
+                                if let Some(state) = self.state.as_mut() {
+                                    state.inventory_open = false;
+                                }
+                                event_consumed_by_grab_logic = true;
+                            } else {
+                                active_loop.exit();
+                                return;
+                            }
                         }
-                        event_consumed_by_grab_logic = true;
-                    } else {
-                        active_loop.exit();
-                        return;
+                        PhysicalKey::Code(KeyCode::KeyE) => {
+                            let mut inventory_open = false;
+                            if let Some(state) = self.state.as_mut() {
+                                state.inventory_open = !state.inventory_open;
+                                inventory_open = state.inventory_open;
+                                event_consumed_by_grab_logic = true;
+                            }
+                            self.set_mouse_grab(!inventory_open);
+                        }
+                        _ => {}
                     }
                 }
-                PhysicalKey::Code(KeyCode::KeyE) => {
-                    let mut inventory_open = false;
-                    if let Some(state) = self.state.as_mut() {
-                        state.inventory_open = !state.inventory_open;
-                        inventory_open = state.inventory_open;
-                        event_consumed_by_grab_logic = true;
-                    }
-                    self.set_mouse_grab(!inventory_open);
-                }
-                _ => {}
-            },
+            }
             WindowEvent::MouseInput {
                 button,
                 state: mouse_element_state,
@@ -95,7 +106,7 @@ impl App {
             } => {
                 if let Some(s) = self.state.as_mut() {
                     s.input_state
-                        .on_mouse_input(button, mouse_element_state, s.inventory_open);
+                        .on_mouse_button(button, mouse_element_state, s.inventory_open);
                 }
                 if mouse_element_state == ElementState::Pressed {
                     if !self.mouse_grabbed {
@@ -115,23 +126,7 @@ impl App {
             None => return,
         };
 
-        let mut event_handled_by_state_input = false;
-        if !(event_consumed_by_grab_logic
-            && matches!(
-                event,
-                WindowEvent::KeyboardInput {
-                    event: KeyEvent {
-                        physical_key: PhysicalKey::Code(KeyCode::Escape),
-                        state: ElementState::Pressed,
-                        ..
-                    },
-                    ..
-                }
-            ))
-        {
-            event_handled_by_state_input = state.input(&event);
-        }
-
+        let event_handled_by_state_input = false;
         let mut cursor_moved_while_grabbed = false;
         if self.mouse_grabbed {
             if let WindowEvent::CursorMoved { position, .. } = event {
@@ -1086,62 +1081,11 @@ impl State {
         }
     }
 
-    fn input(&mut self, event: &WindowEvent) -> bool {
-        if self.inventory_open {
-            return false;
-        }
-
-        match event {
-            WindowEvent::KeyboardInput {
-                event:
-                    KeyEvent {
-                        physical_key: PhysicalKey::Code(key_code),
-                        state,
-                        ..
-                    },
-                ..
-            } => {
-                let is_pressed = *state == ElementState::Pressed;
-                match key_code {
-                    KeyCode::KeyW | KeyCode::ArrowUp => {
-                        self.player.movement_intention.forward = is_pressed;
-                        true
-                    }
-                    KeyCode::KeyS | KeyCode::ArrowDown => {
-                        self.player.movement_intention.backward = is_pressed;
-                        true
-                    }
-                    KeyCode::KeyA | KeyCode::ArrowLeft => {
-                        self.player.movement_intention.left = is_pressed;
-                        true
-                    }
-                    KeyCode::KeyD | KeyCode::ArrowRight => {
-                        self.player.movement_intention.right = is_pressed;
-                        true
-                    }
-                    KeyCode::Space => {
-                        self.player.movement_intention.jump = is_pressed;
-                        true
-                    }
-                    KeyCode::ShiftLeft | KeyCode::ShiftRight => false,
-                    KeyCode::Escape => false,
-                    KeyCode::F3 => {
-                        if is_pressed {
-                            self.debug_overlay.toggle_visibility();
-                        }
-                        true
-                    }
-                    _ => false,
-                }
-            }
-            _ => false,
-        }
-    }
-
     fn update(&mut self) {
         if self.inventory_open {
             self.handle_inventory_interaction();
         } else {
+            self.handle_gameplay_input();
             self.handle_block_interactions();
         }
         let dt_secs = 1.0 / 60.0;
@@ -1229,6 +1173,43 @@ impl State {
     }
 
 
+    fn handle_gameplay_input(&mut self) {
+        // Movement
+        self.player.movement_intention.forward = self.input_state.keys_held.contains(&KeyCode::KeyW);
+        self.player.movement_intention.backward = self.input_state.keys_held.contains(&KeyCode::KeyS);
+        self.player.movement_intention.left = self.input_state.keys_held.contains(&KeyCode::KeyA);
+        self.player.movement_intention.right = self.input_state.keys_held.contains(&KeyCode::KeyD);
+        self.player.movement_intention.jump = self.input_state.keys_held.contains(&KeyCode::Space);
+
+        // Hotbar selection
+        if self.input_state.mouse_wheel_delta != 0.0 {
+            let current_slot = self.player.selected_hotbar_slot as i32;
+            let new_slot =
+                (current_slot - self.input_state.mouse_wheel_delta.signum() as i32 + 9) % 9;
+            self.player.selected_hotbar_slot = new_slot as usize;
+        }
+
+        let key_codes = [
+            KeyCode::Digit1,
+            KeyCode::Digit2,
+            KeyCode::Digit3,
+            KeyCode::Digit4,
+            KeyCode::Digit5,
+            KeyCode::Digit6,
+            KeyCode::Digit7,
+            KeyCode::Digit8,
+            KeyCode::Digit9,
+        ];
+        for (i, key_code) in key_codes.iter().enumerate() {
+            if self.input_state.keys_pressed_this_frame.contains(key_code) {
+                self.player.selected_hotbar_slot = i;
+            }
+        }
+
+        if self.input_state.keys_pressed_this_frame.contains(&KeyCode::F3) {
+            self.debug_overlay.toggle_visibility();
+        }
+    }
     fn handle_inventory_interaction(&mut self) {
         self.inventory
             .handle_mouse_click(&self.input_state, &mut self.dragged_item);
@@ -1435,7 +1416,7 @@ impl State {
                 self.crosshair.draw(&mut ui_render_pass);
             }
 
-            self.hotbar.draw(&mut ui_render_pass);
+            self.hotbar.draw(&mut ui_render_pass, self.player.selected_hotbar_slot);
             for (i, item_stack_opt) in self.hotbar.items.iter().enumerate() {
                 if let Some(item_stack) = item_stack_opt {
                     let position = self.hotbar.slot_positions[i];
